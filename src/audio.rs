@@ -21,9 +21,9 @@ use std::mem;
 use crate::app::{ActiveNote, AppMessage};
 use crate::organ::Organ;
 
-const BUFFER_SIZE_MS: u32 = 10; 
+const BUFFER_SIZE_MS: u32 = 5; 
 const CHANNEL_COUNT: usize = 2; // Stereo
-const RESAMPLER_CHUNK_SIZE: usize = 1024;
+const RESAMPLER_CHUNK_SIZE: usize = 512;
 /// 2 seconds of stereo, resampled audio.
 const VOICE_BUFFER_FRAMES: usize = 48000; 
 
@@ -32,7 +32,6 @@ struct Voice {
     gain: f32, // Linear amplitude
     debug_path: std::path::PathBuf, // For debugging
     
-    // --- NEW ARCHITECTURE ---
     // The main thread *only* interacts with these:
     consumer: HeapCons<f32>, // <-- Use concrete type HeapCons
     is_finished: Arc<AtomicBool>, // Has the loader thread finished?
@@ -64,9 +63,8 @@ impl Voice {
         
         // --- 3. Spawn the Loader Thread ---
         // All blocking work now happens inside this thread.
-let loader_handle = thread::spawn(move || {
-            // --- This code now runs on a separate, non-real-time thread ---
-            
+        let loader_handle = thread::spawn(move || {
+
             // We wrap the fallible logic in a function
             let result: Result<()> = (|| {
                 // 3a. Open the file
@@ -383,10 +381,10 @@ fn spawn_audio_processing_thread<P>(
                         mix_buffer_stereo[1][frame] += voice_read_buffer[frame * CHANNEL_COUNT + 1] * voice.gain;
                     }
 
-                    // Drain any remaining samples so the buffer empties quickly
-                    // let mut tmp = vec![0.0f32; voice_read_buffer.len()];
-                    // let _ = voice.consumer.pop_slice(&mut tmp);
-                    let _ = voice.consumer.pop_slice(&mut tmp_drain_buffer);
+                    // Drain any remaining samples
+                    while voice.consumer.pop_slice(&mut tmp_drain_buffer) > 0 {
+                        // Keep popping until the buffer is empty
+                    }
 
                     // Remove once loader is finished and buffer is empty
                     return !(is_finished && voice.consumer.is_empty());
