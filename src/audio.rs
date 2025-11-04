@@ -11,6 +11,7 @@ use std::io::BufReader;
 use std::sync::{mpsc, Arc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::{Instant, Duration};
 use rodio::source::Source;
 use rodio::Decoder;
@@ -244,6 +245,7 @@ impl Drop for Voice {
         // Tell the loader thread to stop, just in case
         self.is_cancelled.store(true, Ordering::SeqCst);
         if let Some(handle) = self.loader_handle.take() {
+            log::warn!("[Voice::Drop] Leaking thread handle for {:?}.", self.debug_path.file_name().unwrap_or_default());
             mem::forget(handle);
         }
     }
@@ -260,6 +262,10 @@ fn spawn_audio_processing_thread<P>(
 ) where
     P: Producer<Item = f32> + Send + 'static,
 {
+
+    let (reaper_tx, reaper_rx) = mpsc::channel::<thread::JoinHandle<()>>();
+    spawn_reaper_thread(reaper_rx);
+
     thread::spawn(move || {
         let mut active_stops: BTreeSet<usize> = BTreeSet::new();
         let mut active_notes: HashMap<u8, Vec<ActiveNote>> = HashMap::new();
@@ -280,8 +286,10 @@ fn spawn_audio_processing_thread<P>(
 
         let mut loop_counter: u64 = 0;
 
+        let mut voices_to_remove: Vec<u64> = Vec::with_capacity(32);
+
         loop {
-            // --- 1. Handle incoming messages ---
+            // --- Handle incoming messages ---
             while let Ok(msg) = rx.try_recv() {
                 match msg {
                     AppMessage::NoteOn(note, _vel) => {
@@ -346,12 +354,13 @@ fn spawn_audio_processing_thread<P>(
                         }
                     }
                     AppMessage::Quit => {
+                        drop(reaper_tx);
                         return; // Exit thread
                     }
                 }
             }
 
-            // --- 2. Process all active voices ---
+            // --- Process all active voices ---
             // Clear mix buffer
             for ch_buf in mix_buffer_stereo.iter_mut() {
                 ch_buf.fill(0.0);
@@ -364,7 +373,8 @@ fn spawn_audio_processing_thread<P>(
             let fade_frames = (sample_rate as f32 * 0.10) as usize; 
             let fade_increment = if fade_frames > 0 { 1.0 / fade_frames as f32 } else { 1.0 };
 
-            voices.retain(|_voice_id, voice| {
+            // --- process voices ---
+            for (voice_id, voice) in voices.iter_mut() {
                 let is_loader_finished = voice.is_finished.load(Ordering::Relaxed);
                 let mut is_buffer_empty = voice.consumer.is_empty();
 
@@ -374,10 +384,8 @@ fn spawn_audio_processing_thread<P>(
                 let samples_read = voice.consumer.pop_slice(&mut voice_read_buffer[..samples_to_read]);
                 let frames_read = samples_read / CHANNEL_COUNT;
 
-                // --- Mix all samples, applying crossfade logic ---
+                // --- Mix / Crossfade Logic (unchanged) ---
                 for i in 0..frames_read {
-                    
-                    // --- FADE LOGIC ---
                     if voice.is_fading_in {
                         voice.fade_level += fade_increment;
                         if voice.fade_level >= 1.0 {
@@ -385,51 +393,58 @@ fn spawn_audio_processing_thread<P>(
                             voice.is_fading_in = false;
                         }
                     } else if voice.is_fading_out {
-                        voice.fade_level -= fade_increment; // Use same value
+                        voice.fade_level -= fade_increment;
                         if voice.fade_level <= 0.0 {
                             voice.fade_level = 0.0;
                         }
                     }
-                    // --- END FADE LOGIC ---
-
-                    // Final gain is the voice's gain * its fade level
                     let current_gain = voice.gain * voice.fade_level;
-
                     let l_sample = voice_read_buffer[i * CHANNEL_COUNT] * current_gain;
                     let r_sample = voice_read_buffer[i * CHANNEL_COUNT + 1] * current_gain;
-                    
                     mix_buffer_stereo[0][i] += l_sample;
                     mix_buffer_stereo[1][i] += r_sample;
-                    
                     if l_sample.abs() > max_abs_sample {
                         max_abs_sample = l_sample.abs();
                     }
                 }
 
-                // --- Decide whether to keep the voice ---
+                // --- Decide whether to REMOVE the voice ---
                 let is_faded_out = voice.is_fading_out && voice.fade_level == 0.0;
 
                 if is_faded_out && !is_buffer_empty {
-                    // This voice is silent, but its buffer still has data.
-                    // We must drain it completely so 'is_buffer_empty'
-                    // becomes true and it can be collected.
-                    while voice.consumer.pop_slice(&mut tmp_drain_buffer) > 0 {
-                        // Draining...
-                    }
-                    is_buffer_empty = true; // Update status after drain
+                    while voice.consumer.pop_slice(&mut tmp_drain_buffer) > 0 { /* Draining... */ }
+                    is_buffer_empty = true; // Update status
                 }
                 
                 let is_done_playing = is_loader_finished && is_buffer_empty;
 
                 if is_done_playing && (is_faded_out || !voice.is_fading_out) {
-                    // Remove if:
-                    // 1. It's finished loading AND its buffer is empty
-                    // 2. AND (it's faded out OR it was never supposed to fade out)
-                    return false; // Remove the voice
+                    // Mark for removal instead of returning false
+                    voices_to_remove.push(*voice_id);
                 }
-                
-                return true; // Keep the voice
-            });
+            } // --- End of voice processing loop ---
+
+            // --- 4. Perform deferred removal ---
+            if !voices_to_remove.is_empty() {
+                for voice_id in voices_to_remove.iter() {
+                    // Remove the voice from the active map, gaining ownership
+                    if let Some(mut voice) = voices.remove(voice_id) {
+                        // We now own the voice.
+                        // Take the handle and send it to the reaper.
+                        if let Some(handle) = voice.loader_handle.take() {
+                            if let Err(e) = reaper_tx.send(handle) {
+                                // This should only happen if the reaper died.
+                                // Fall back to forgetting the handle to avoid blocking.
+                                log::error!("[AudioThread] Failed to send handle to reaper: {}", e);
+                                mem::forget(e.0);
+                            }
+                        }
+                        // `voice` is dropped here, but its handle is now None,
+                        // so the Drop impl (see below) does nothing.
+                    }
+                }
+                voices_to_remove.clear();
+            }
 
 
             // if max_abs_sample > 0.001 {
@@ -648,3 +663,26 @@ pub fn start_audio_playback(rx: mpsc::Receiver<AppMessage>, organ: Arc<Organ>) -
     Ok(stream)
 }
 
+/// Spawns a low-priority "reaper" thread.
+/// This thread's only job is to receive finished thread handles
+/// and call .join() on them, freeing their resources.
+/// This prevents the real-time audio thread from ever blocking.
+fn spawn_reaper_thread(rx: mpsc::Receiver<JoinHandle<()>>) {
+    thread::spawn(move || {
+        log::info!("[ReaperThread] Starting...");
+        
+        // This loop will block on .recv() until a handle is sent.
+        // It will then block on .join() until that thread finishes.
+        // This is perfectly safe as it's not on the audio path.
+        for handle in rx {
+            if let Err(e) = handle.join() {
+                log::warn!("[ReaperThread] A voice loader thread panicked: {:?}", e);
+            } else {
+                log::debug!("[ReaperThread] Cleaned up a voice thread.");
+            }
+        }
+        
+        // The loop exits when the sender (in AudioThread) is dropped.
+        log::info!("[ReaperThread] Shutting down.");
+    });
+}
