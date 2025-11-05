@@ -26,7 +26,7 @@ const BUFFER_SIZE_MS: u32 = 5;
 const CHANNEL_COUNT: usize = 2; // Stereo
 const RESAMPLER_CHUNK_SIZE: usize = 512;
 /// 2 seconds of stereo, resampled audio.
-const VOICE_BUFFER_FRAMES: usize = 48000; 
+const VOICE_BUFFER_FRAMES: usize = 14400; 
 
 /// Represents one playing sample, either attack or release.
 struct Voice {
@@ -114,6 +114,8 @@ impl Voice {
                     
                     // --- The Loader Loop ---
                     'loader_loop: loop {
+                        loader_loop_counter += 1;
+
                         if is_cancelled_clone.load(Ordering::Relaxed) {
                             if !cancelled_log_sent {
                                 log::debug!("[LoaderThread] CANCELLED: {:?} (in loader_loop)", path_str);
@@ -127,11 +129,11 @@ impl Voice {
                             log::debug!("[LoaderThread] ALIVE: {:?} (Loop {})", path_str, loader_loop_counter);
                         }
 
+                        // Get frames needed by resampler
                         let input_frames_needed = resampler.input_frames_next();
-                        
-                        //for buf in input_buffer.iter_mut() { buf.clear(); }
-                        
                         let mut frames_read = 0;
+
+                        // If we are not EOF, read data
                         if input_frames_needed > 0 && !source_is_finished {
                             for _ in 0..input_frames_needed {
                                 if let Some(sample_l) = source.next() {
@@ -156,6 +158,7 @@ impl Voice {
                             }
                         }
                         
+                        // Process the data
                         let in_buf_slices: Vec<&[f32]> = input_buffer.iter().map(|v| v.as_slice()).collect();
                         let mut out_buf_slices: Vec<&mut [f32]> = output_buffer.iter_mut().map(|v| v.as_mut_slice()).collect();
 
@@ -175,6 +178,7 @@ impl Voice {
                             resampler.process_partial_into_buffer(Some(&empty_slices), &mut out_buf_slices, None)?
                         };
 
+                        // Push to buffer
                         if frames_produced > 0 {
                             for i in 0..frames_produced {
                                 interleaved_output[i * CHANNEL_COUNT] = output_buffer[0][i];
@@ -199,6 +203,7 @@ impl Voice {
                             }
                         }
 
+                        // Decide to sleep or exit
                         if source_is_finished && frames_produced == 0 && resampler.output_frames_next() == 0 {
                             // File is done, nothing was produced, and resampler has no more frames.
                             // We are 100% finished.
@@ -217,8 +222,18 @@ impl Voice {
 
                     } // --- End of 'loader_loop ---
 
+                    log::debug!("[LoaderThread] EXITED_MAIN_LOOP: {:?}", path_str);
+
+                    let mut flush_loop_counter = 0u64;
+                    
                     // --- Flush the resampler ---
                     'flush_loop: loop {
+                        flush_loop_counter += 1;
+                        if flush_loop_counter > 100 { // 100 loops is *more* than enough
+                            log::warn!("[LoaderThread] Flush loop stuck, forcing exit: {:?}", path_str);
+                            break 'flush_loop;
+                        }
+
                         if is_cancelled_clone.load(Ordering::Relaxed) {
                             if !cancelled_log_sent {
                                 log::debug!("[LoaderThread] CANCELLED: {:?} (in flush_loop)", path_str);
@@ -226,8 +241,8 @@ impl Voice {
                             }
                             break 'flush_loop;
                         }
+
                         let mut out_buf_slices: Vec<&mut [f32]> = output_buffer.iter_mut().map(|v| v.as_mut_slice()).collect();
-                        
                         let (frames_consumed, frames_produced) = resampler.process_partial_into_buffer(None::<&[&[f32]]>, &mut out_buf_slices, None)?;
 
                         if frames_produced > 0 {
@@ -250,15 +265,8 @@ impl Voice {
                                 let pushed = producer.push_slice(&interleaved_output[offset..needed]);
                                 offset += pushed;
                                 if offset < needed {
-                                    if is_cancelled_clone.load(Ordering::Relaxed) {
-                                        break; // break inner while
-                                    }
                                     thread::sleep(Duration::from_millis(1));
                                 }
-                            }
-
-                            if is_cancelled_clone.load(Ordering::Relaxed) {
-                                break 'flush_loop;
                             }
                         } else {
                             break 'flush_loop;
