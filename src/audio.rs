@@ -71,7 +71,7 @@ impl Voice {
             let path_buf_clone = path_buf.clone();
             let path_str = path_buf_clone.file_name().unwrap_or_default().to_string_lossy();
             let path_str_clone = path_str.clone();
-//            log::debug!("[LoaderThread] START: {:?}", path_str);
+            log::trace!("[LoaderThread] START: {:?}", path_str);
             
             // --- Use catch_unwind to handle ALL panics ---
             let panic_result = std::panic::catch_unwind(move || {
@@ -118,7 +118,7 @@ impl Voice {
 
                         if is_cancelled_clone.load(Ordering::Relaxed) {
                             if !cancelled_log_sent {
-//                                log::debug!("[LoaderThread] CANCELLED: {:?} (in loader_loop)", path_str);
+                                log::trace!("[LoaderThread] CANCELLED: {:?} (in loader_loop)", path_str);
                                 cancelled_log_sent = true;
                             }
                             break 'loader_loop;
@@ -126,7 +126,7 @@ impl Voice {
 
                         log_throttle += 1;
                         if log_throttle % 100 == 0 { // Log every 100 iterations
-//                            log::debug!("[LoaderThread] ALIVE: {:?} (Loop {})", path_str, loader_loop_counter);
+                            log::trace!("[LoaderThread] ALIVE: {:?} (Loop {})", path_str, loader_loop_counter);
                         }
 
                         // Get frames needed by resampler
@@ -190,7 +190,7 @@ impl Voice {
                             while offset < needed {
                                 if is_cancelled_clone.load(Ordering::Relaxed) {
                                     if !cancelled_log_sent {
-//                                        log::debug!("[LoaderThread] CANCELLED: {:?} (in push_loop)", path_str);
+                                        log::trace!("[LoaderThread] CANCELLED: {:?} (in push_loop)", path_str);
                                         cancelled_log_sent = true;
                                     }
                                     break 'loader_loop; 
@@ -207,7 +207,7 @@ impl Voice {
                         if source_is_finished && frames_produced == 0 && resampler.output_frames_next() == 0 {
                             // File is done, nothing was produced, and resampler has no more frames.
                             // We are 100% finished.
-//                            log::debug!("[LoaderThread] FINISHED_SOURCE_AND_RESAMPLER: {:?}", path_str);
+                            log::trace!("[LoaderThread] FINISHED_SOURCE_AND_RESAMPLER: {:?}", path_str);
                             break 'loader_loop;
                         }
                         
@@ -222,7 +222,7 @@ impl Voice {
 
                     } // --- End of 'loader_loop ---
 
-//                    log::debug!("[LoaderThread] EXITED_MAIN_LOOP: {:?}", path_str);
+                    log::trace!("[LoaderThread] EXITED_MAIN_LOOP: {:?}", path_str);
 
                     let mut flush_loop_counter = 0u64;
 
@@ -230,13 +230,13 @@ impl Voice {
                     'flush_loop: loop {
                         flush_loop_counter += 1;
                         if flush_loop_counter > 100 { // 100 loops is *more* than enough
-//                            log::warn!("[LoaderThread] Flush loop stuck, forcing exit: {:?}", path_str);
+                            log::trace!("[LoaderThread] Flush loop stuck, forcing exit: {:?}", path_str);
                             break 'flush_loop;
                         }
 
                         if is_cancelled_clone.load(Ordering::Relaxed) {
                             if !cancelled_log_sent {
-//                                log::debug!("[LoaderThread] CANCELLED: {:?} (in flush_loop)", path_str);
+                                log::trace!("[LoaderThread] CANCELLED: {:?} (in flush_loop)", path_str);
                                 cancelled_log_sent = true;
                             }
                             break 'flush_loop;
@@ -256,7 +256,7 @@ impl Voice {
                             while offset < needed {
                                 if is_cancelled_clone.load(Ordering::Relaxed) {
                                     if !cancelled_log_sent {
-//                                        log::debug!("[LoaderThread] CANCELLED: {:?} (in flush_loop)", path_str);
+                                        log::trace!("[LoaderThread] CANCELLED: {:?} (in flush_loop)", path_str);
                                         cancelled_log_sent = true;
                                     }
                                     break 'flush_loop;
@@ -273,7 +273,7 @@ impl Voice {
                         }
                     }
                     
-//                    log::debug!("[LoaderThread] EXITED_FLUSH_LOOP: {:?}", path_str);
+                    log::trace!("[LoaderThread] EXITED_FLUSH_LOOP: {:?}", path_str);
 
                     Ok(()) // Success
                 })(); // End of fallible closure
@@ -289,7 +289,7 @@ impl Voice {
                 log::error!("[LoaderThread] PANICKED. This is a bug. Path: {:?}", path_str_clone);
             }
             
-//            log::debug!("[LoaderThread] SETTING_FINISHED: {:?}", path_str_clone);
+            log::trace!("[LoaderThread] SETTING_FINISHED: {:?}", path_str_clone);
 
             // This line is *outside* the unwind block and will
             // execute *even if* the code inside it panicked.
@@ -525,11 +525,6 @@ fn spawn_audio_processing_thread<P>(
                 voices_to_remove.clear();
             }
 
-
-            // if max_abs_sample > 0.001 {
-            //     log::debug!("[AudioThread] Loop complete. Active voices: {}. Max sample: {:.4}", voices.len(), max_abs_sample);
-            // }
-
             // --- Interleave and push to ring buffer ---
             for i in 0..buffer_size_frames {
                 interleaved_buffer[i * CHANNEL_COUNT] = mix_buffer_stereo[0][i];
@@ -553,17 +548,17 @@ fn spawn_audio_processing_thread<P>(
             }
 
             loop_counter += 1;
-            // if loop_counter % 100 == 0 { // Log approx. every 3 seconds
-            //     let total_voice_buffered: usize = voices.values().map(|v| v.consumer.occupied_len()).sum();
-            //     log::debug!(
-            //         "[AudioThread] STATUS: Loop {}. Active voices: {}. Total buffered samples: {}. Main ringbuf: {}/{}",
-            //         loop_counter,
-            //         voices.len(),
-            //         total_voice_buffered,
-            //         producer.occupied_len(),
-            //         producer.capacity()
-            //     );
-            // }
+            if loop_counter % 100 == 0 { // Log approx. every 3 seconds
+                let total_voice_buffered: usize = voices.values().map(|v| v.consumer.occupied_len()).sum();
+                log::trace!(
+                    "[AudioThread] STATUS: Loop {}. Active voices: {}. Total buffered samples: {}. Main ringbuf: {}/{}",
+                    loop_counter,
+                    voices.len(),
+                    total_voice_buffered,
+                    producer.occupied_len(),
+                    producer.capacity()
+                );
+            }
 
             thread::sleep(Duration::from_millis((BUFFER_SIZE_MS / 3) as u64));
 
@@ -655,16 +650,16 @@ pub fn start_audio_playback(rx: mpsc::Receiver<AppMessage>, organ: Arc<Organ>) -
     let mut supported_configs = device.supported_output_configs()?;
 
     // Show all supported configs
-    // println!("[Cpal] Supported output configs:");
-    // for config in device.supported_output_configs()? {
-    //     println!(
-    //         "  - Channels: {}, Sample Rate: {}-{}, Format: {:?}",
-    //         config.channels(),
-    //         config.min_sample_rate().0,
-    //         config.max_sample_rate().0,
-    //         config.sample_format()
-    //     );
-    // }
+    log::debug!("[Cpal] Supported output configs:");
+    for config in device.supported_output_configs()? {
+        log::debug!(
+            "  - Channels: {}, Sample Rate: {}-{}, Format: {:?}",
+            config.channels(),
+            config.min_sample_rate().0,
+            config.max_sample_rate().0,
+            config.sample_format()
+        );
+    }
 
     let config = supported_configs
         .find(|c| c.channels() == 2 && c.sample_format() == SampleFormat::F32)
@@ -687,7 +682,7 @@ pub fn start_audio_playback(rx: mpsc::Receiver<AppMessage>, organ: Arc<Organ>) -
     // Create the ring buffer
     let ring_buf_capacity = buffer_size_frames * channels * 10;
     let ring_buf = HeapRb::<f32>::new(ring_buf_capacity);
-    println!(
+    log::debug!(
         "[Cpal] Ring buffer created with capacity for {} frames.",
         ring_buf_capacity / channels
     );
@@ -748,7 +743,7 @@ pub fn start_audio_playback(rx: mpsc::Receiver<AppMessage>, organ: Arc<Organ>) -
 /// This prevents the real-time audio thread from ever blocking.
 fn spawn_reaper_thread(rx: mpsc::Receiver<JoinHandle<()>>) {
     thread::spawn(move || {
-        log::info!("[ReaperThread] Starting...");
+        log::debug!("[ReaperThread] Starting...");
         
         // This loop will block on .recv() until a handle is sent.
         // It will then block on .join() until that thread finishes.
@@ -762,6 +757,6 @@ fn spawn_reaper_thread(rx: mpsc::Receiver<JoinHandle<()>>) {
         }
         
         // The loop exits when the sender (in AudioThread) is dropped.
-        log::info!("[ReaperThread] Shutting down.");
+        log::debug!("[ReaperThread] Shutting down.");
     });
 }
