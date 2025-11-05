@@ -170,6 +170,10 @@ pub fn run_tui_loop(
                         }
                         KeyCode::Char('l') | KeyCode::Right => app_state.next_col(),
                         KeyCode::Char('h') | KeyCode::Left => app_state.prev_col(),
+                        KeyCode::Char('p') => {
+                            // Send "Panic" message
+                            audio_tx.send(AppMessage::AllNotesOff)?;
+                        }
                         KeyCode::Char(' ') | KeyCode::Enter => {
                             let (index, is_active) = app_state.toggle_selected_stop();
                             audio_tx.send(AppMessage::StopToggle(index, is_active))?;
@@ -207,7 +211,7 @@ fn ui(frame: &mut Frame, state: &mut TuiState) {
         Paragraph::new(err.as_str())
             .style(Style::default().fg(Color::White).bg(Color::Red))
     } else {
-        let help_text = "Quit: q | Up: ↑/k | Down: ↓/j | Toggle: Space/Enter";
+        let help_text = "Quit: q | Up: ↑/k | Down: ↓/j | Toggle: Space/Enter | Panic: p | All: a | None: n";
         Paragraph::new(help_text).alignment(Alignment::Center)
     };
     frame.render_widget(footer_widget, main_layout[2]);

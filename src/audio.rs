@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Instant, Duration};
+use std::path::PathBuf;
 use rodio::source::Source;
 use rodio::Decoder;
 use num_traits::cast::ToPrimitive;
@@ -635,7 +636,89 @@ fn spawn_audio_processing_thread<P>(
                         if is_active {
                             active_stops.insert(stop_index);
                         } else {
-                            active_stops.remove(&stop_index);
+                            // Remove the desired stop from set to prevent future notes being played
+                            active_stops.remove(&stop_index); 
+                        
+                            // Find all currently playing notes on this stop
+                            let mut notes_to_stop: Vec<ActiveNote> = Vec::new();
+                        
+                            // Iterate over all active notes (e.g., C4, G#5, etc.)
+                            active_notes.values_mut().for_each(|note_list| {
+                                // Use retain to keep notes that *don't* match the stop_index
+                                note_list.retain(|an| {
+                                    if an.stop_index == stop_index {
+                                        // If it matches, add it to our stop list...
+                                        notes_to_stop.push(an.clone()); // We need to own it
+                                        // ...and return false to remove it from note_list
+                                        false 
+                                    } else {
+                                        // Keep it
+                                        true
+                                    }
+                                });
+                            });
+
+                            // Clean up any note keys that now have empty lists
+                            active_notes.retain(|_note, note_list| !note_list.is_empty());
+
+                            // Process each note that needs to be stopped
+                            for an in notes_to_stop {
+                                // First, remove the sustaining attack/loop voice
+                                voices.remove(&an.voice_id); 
+
+                                // Find the correct rank and pipe to get release samples
+                                if let Some(rank) = organ.ranks.get(&an.rank_id) {
+                                    if let Some(pipe) = rank.pipes.get(&an.note) {
+                                        
+                                        // Calculate how long the key was held in milliseconds
+                                        let key_press_duration_ms = an.start_time.elapsed().as_millis() as i64;
+                                        
+                                        let mut default_release: Option<&PathBuf> = None;
+                                        let mut best_fit_release: Option<&PathBuf> = None;
+                                        let mut min_time_diff = i64::MAX;
+
+                                        for release in &pipe.releases {
+                                            if release.max_key_press_time_ms == -1 {
+                                                default_release = Some(&release.path);
+                                            } else if release.max_key_press_time_ms >= key_press_duration_ms {
+                                                // This is a candidate for a timed release
+                                                let diff = release.max_key_press_time_ms - key_press_duration_ms;
+                                                if diff < min_time_diff {
+                                                    min_time_diff = diff;
+                                                    best_fit_release = Some(&release.path);
+                                                }
+                                            }
+                                        }
+
+                                        // Prioritize the best-fit timed release, but fall back to default
+                                        let release_path = best_fit_release.or(default_release);
+
+                                        if let Some(path) = release_path {
+                                            let total_gain = rank.gain_db + pipe.gain_db;
+                                            // Create a new one-shot voice for the release
+                                            match Voice::new(
+                                                path, // Use the dynamically found release path
+                                                sample_rate,
+                                                pipe.pitch_tuning_cents,
+                                                total_gain,
+                                                false, // Don't loop release sample
+                                                false, // This is not an attack sample
+                                            ) {
+                                                Ok(voice) => {
+                                                    let voice_id = voice_counter;
+                                                    voice_counter += 1;
+                                                    voices.insert(voice_id, voice);
+                                                    // We don't add this to active_notes
+                                                    // as it's just a one-shot sample.
+                                                }
+                                                Err(e) => {
+                                                    log::error!("[AudioThread] Error creating release voice: {}", e)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     AppMessage::Quit => {

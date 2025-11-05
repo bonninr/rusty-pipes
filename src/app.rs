@@ -26,6 +26,7 @@ pub enum TuiMessage {
 
 /// Holds information about a currently playing note.
 #[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub struct ActiveNote {
     /// The MIDI note number.
     pub note: u8,

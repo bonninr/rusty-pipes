@@ -3,9 +3,7 @@ use ini::inistr; // Use the macro import
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-// --- ADD THIS ---
 use crate::wav_converter;
-// ---
 
 /// Top-level structure for the entire organ definition.
 #[derive(Debug, Default)]
@@ -61,15 +59,15 @@ impl Organ {
         println!("Loading organ from: {:?}", path);
         let base_path = path.parent().ok_or_else(|| anyhow!("Invalid file path"))?;
         
-        // 1. Read file to string
+        // Read file to string
         let file_content = std::fs::read_to_string(path)
             .map_err(|e| anyhow!("Failed to read organ file {:?}: {}", path, e))?;
         
-        // 2. Replace '#' with a safe placeholder
+        // Replace '#' with a safe placeholder
         // We use a placeholder that won't be in a real path.
         let safe_content = file_content.replace('#', "__HASH__");
 
-        // 3. Load the modified string
+        // Load the modified string
         let conf = inistr!(&safe_content);
 
         println!("Found {} sections in INI.", conf.len());
