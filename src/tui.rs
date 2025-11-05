@@ -28,20 +28,6 @@ struct PlayedNote {
     end_time: Option<Instant>, // None if still playing
 }
 
-// Map MIDI note number to its display Y-position
-fn midi_note_to_y(note: u8) -> f64 {
-    // We want C1 (MIDI 36) at the bottom, C8 (MIDI 108) at the top.
-    // Let's use 0.0 for the lowest note and scale up.
-    // MIDI note range (approx 0-127). Standard piano is 21-108.
-    const DISPLAY_MIN_MIDI_NOTE: f64 = 21.0; // A0
-    const DISPLAY_MAX_MIDI_NOTE: f64 = 108.0; // C8
-
-    // Scale note to be between 0.0 and 1.0 (or similar) of the drawing area
-    // In a vertical piano roll, lower notes are typically at the bottom.
-    // Canvas y-coordinates typically increase downwards, so we invert.
-    (note as f64 - DISPLAY_MIN_MIDI_NOTE) / (DISPLAY_MAX_MIDI_NOTE - DISPLAY_MIN_MIDI_NOTE)
-}
-
 /// Holds the state for the TUI.
 struct TuiState {
     organ: Arc<Organ>,

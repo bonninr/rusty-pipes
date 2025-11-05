@@ -618,7 +618,7 @@ fn spawn_audio_processing_thread<P>(
                             }
                             if !new_notes.is_empty() {
                                 // insert() returns the old Vec if one existed
-                                let old_notes = active_notes.insert(note, new_notes);
+                                let _old_notes = active_notes.insert(note, new_notes);
 
                                 // // If there were old notes, we MUST kill them
                                 // if let Some(notes_to_stop) = old_notes {
