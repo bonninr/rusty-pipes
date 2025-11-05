@@ -622,6 +622,15 @@ fn spawn_audio_processing_thread<P>(
                             sample_rate, &mut voice_counter,
                         );
                     }
+                    AppMessage::AllNotesOff => {
+                        let notes: Vec<u8> = active_notes.keys().cloned().collect();
+                        for note in notes {
+                            handle_note_off(
+                                note, &organ, &mut voices, &mut active_notes,
+                                sample_rate, &mut voice_counter,
+                            );
+                        }
+                    }
                     AppMessage::StopToggle(stop_index, is_active) => {
                         if is_active {
                             active_stops.insert(stop_index);

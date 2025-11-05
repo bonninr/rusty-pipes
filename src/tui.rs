@@ -238,7 +238,7 @@ fn ui(frame: &mut Frame, state: &mut TuiState) {
         // Calculate items per column
         let items_per_column = (stops_count + NUM_COLUMNS - 1) / NUM_COLUMNS;
         
-        let mut all_stops: Vec<_> = state.organ.stops.iter().enumerate().collect();
+        let all_stops: Vec<_> = state.organ.stops.iter().enumerate().collect();
         
         // Create a list for each column
         for (col_idx, rect) in column_layout.iter().enumerate() {

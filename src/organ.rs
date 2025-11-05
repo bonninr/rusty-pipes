@@ -25,6 +25,7 @@ pub struct Stop {
 }
 
 /// Represents a rank (a set of pipes).
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Rank {
     pub name: String,

@@ -7,6 +7,8 @@ pub enum AppMessage {
     NoteOn(u8, u8),
     /// MIDI Note Off event. (key)
     NoteOff(u8),
+    /// A command to stop all currently playing notes.
+    AllNotesOff,
     /// TUI stop toggle event. (stop_index, is_active)
     StopToggle(usize, bool),
     /// TUI quit event.
@@ -23,6 +25,7 @@ pub enum TuiMessage {
 }
 
 /// Holds information about a currently playing note.
+#[allow(dead_code)]
 pub struct ActiveNote {
     /// The MIDI note number.
     pub note: u8,

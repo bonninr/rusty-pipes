@@ -20,6 +20,7 @@ itertools = "0.14.0"
 num-traits = "0.2.19"
 log = "0.4"
 simplelog = "0.12"
+midly = "0.5"
 
 [profile.release]
 lto = true
