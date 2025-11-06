@@ -7,7 +7,7 @@ use crossterm::{
 use ratatui::{
     prelude::*,
     symbols::Marker,
-    widgets::{Block, Borders, canvas::{Canvas, Rectangle}, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, canvas::{Canvas, Line as CanvasLine}, List, ListItem, ListState, Paragraph},
 };
 use std::{
     io::{stdout, Stdout},
@@ -392,8 +392,8 @@ fn ui(frame: &mut Frame, state: &mut TuiState) {
         .block(Block::default().borders(Borders::ALL).title("Piano Roll"))
         .marker(Marker::Block)
         .x_bounds([
-            PIANO_LOW_NOTE as f64 - 0.5, // -0.5 to make rectangles centered
-            PIANO_HIGH_NOTE as f64 + 0.5,
+            PIANO_LOW_NOTE as f64,
+            PIANO_HIGH_NOTE as f64 + 1.0,
         ])
         // Y-bounds: 0.0 at the oldest time (top), 1.0 at current time (bottom)
         .y_bounds([
@@ -409,11 +409,11 @@ fn ui(frame: &mut Frame, state: &mut TuiState) {
                 let color = if is_black_key { Color::Rgb(50, 50, 50) } else { Color::Rgb(100, 100, 100) }; // Darker gray for white keys
                 
                 // Draw a full-height line for the key
-                ctx.draw(&Rectangle {
-                    x: note as f64 - 0.5,
-                    y: 0.0, // Start from the bottom of the canvas's y-bounds
-                    width: 1.0,
-                    height: area_height_coords, // Extend to the top of the canvas's y-bounds
+                ctx.draw(&CanvasLine {
+                    x1: note as f64,
+                    y1: 0.0,
+                    x2: note as f64, // Vertical line
+                    y2: area_height_coords,
                     color,
                 });
             }
@@ -426,39 +426,37 @@ fn ui(frame: &mut Frame, state: &mut TuiState) {
 
             // Draw finished notes
             for played_note in &state.finished_notes_display {
-                let note_y = played_note.note as f64;
+                let note_x = played_note.note as f64;
                 let start_y = map_time_to_y(played_note.start_time);
                 let end_y = played_note.end_time.map_or_else(
-                    || map_time_to_y(now), // If still playing, project to current time
+                    || map_time_to_y(now),
                     |et| map_time_to_y(et),
                 );
                 
                 // Ensure valid height
                 let height = (end_y - start_y).max(0.01); // Minimum height for visibility
 
-                ctx.draw(&Rectangle {
-                    x: note_y - 0.5,
-                    y: start_y,
-                    width: 1.0,
-                    height: height,
+                ctx.draw(&CanvasLine {
+                    x1: note_x,
+                    y1: start_y,
+                    x2: note_x,
+                    y2: end_y,
                     color: Color::Magenta, // Finished notes color
                 });
             }
 
             // Draw currently playing notes
             for (_, played_note) in &state.currently_playing_notes {
-                let note_y = played_note.note as f64;
+                let note_x = played_note.note as f64;
                 let start_y = map_time_to_y(played_note.start_time);
-                // For currently playing, the end is 'now'
                 let end_y = map_time_to_y(now); 
                 
-                let height = (end_y - start_y).max(0.01); // Minimum height for visibility
-
-                ctx.draw(&Rectangle {
-                    x: note_y - 0.5,
-                    y: start_y,
-                    width: 1.0,
-                    height: height,
+                // --- V V V Draw a vertical Line instead of Rectangle V V V ---
+                ctx.draw(&CanvasLine {
+                    x1: note_x,
+                    y1: start_y,
+                    x2: note_x,
+                    y2: end_y,
                     color: Color::Green, // Active notes color
                 });
             }
