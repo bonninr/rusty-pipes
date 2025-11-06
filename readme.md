@@ -17,14 +17,12 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 * MIDI controlled
 * MIDI file playback
 
-## Missing features / Limitations
+## Missing features / Limitations / Known Issues
 
-* Will not work well on HDDs or slow SDDs
+* Will not work well on HDDs or slow SDDs (little can be done about that)
 * Support for different manuals and switches
 * Mapping of MIDI channels to manuals
-* Crossfade from attack to release sample should only start after new sample has been loaded
-* ...or better yet, the release sample could be pre-loaded as soon as the attack sample has started playing
-* There's some minor clicking noises when toggling a drawbar
+* There's some minor audio artefacts when toggling a drawbar
 * Does not work as a plugin in DAWs
 
 *Contributions are welcome!*
