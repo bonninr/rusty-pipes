@@ -13,7 +13,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Instant, Duration};
-use std::path::PathBuf;
 use rodio::source::Source;
 use rodio::Decoder;
 use num_traits::cast::ToPrimitive;
@@ -533,6 +532,82 @@ impl Drop for Voice {
     }
 }
 
+/// Helper function to stop one specific ActiveNote (one pipe)
+/// and trigger its corresponding release sample, linking them
+/// for a safe crossfade.
+fn trigger_note_release(
+    stopped_note: ActiveNote,
+    organ: &Arc<Organ>,
+    voices: &mut HashMap<u64, Voice>,
+    sample_rate: u32,
+    voice_counter: &mut u64,
+) {
+    let press_duration = stopped_note.start_time.elapsed().as_millis() as i64;
+    let note = stopped_note.note; // Get the note number
+
+    if let Some(rank) = organ.ranks.get(&stopped_note.rank_id) {
+        if let Some(pipe) = rank.pipes.get(&note) {
+            // Find the correct release sample
+            let release_sample = pipe
+                .releases
+                .iter()
+                .find(|r| {
+                    r.max_key_press_time_ms == -1
+                        || press_duration <= r.max_key_press_time_ms
+                })
+                .or_else(|| pipe.releases.last()); // Fallback to last
+
+            if let Some(release) = release_sample {
+                let total_gain = rank.gain_db + pipe.gain_db;
+                // Play release sample
+                match Voice::new(
+                    &release.path,
+                    sample_rate,
+                    pipe.pitch_tuning_cents,
+                    total_gain,
+                    false,
+                    false,
+                ) {
+                    Ok(mut voice) => {
+                        log::debug!("[AudioThread] -> Created RELEASE Voice for {:?} (Duration: {}ms, Gain: {:.2}dB)",
+                            release.path.file_name().unwrap_or_default(), press_duration, total_gain);
+                        
+                        voice.fade_level = 0.0; // Start silent
+
+                        let release_voice_id = *voice_counter;
+                        *voice_counter += 1;
+                        voices.insert(release_voice_id, voice);
+
+                        // Now link the attack voice to this new release voice
+                        if let Some(attack_voice) = voices.get_mut(&stopped_note.voice_id) {
+                            log::debug!("[AudioThread] ...linking attack voice {} to release voice {}", stopped_note.voice_id, release_voice_id);
+                            attack_voice.is_cancelled.store(true, Ordering::SeqCst);
+                            attack_voice.is_awaiting_release_sample = true;
+                            attack_voice.release_voice_id = Some(release_voice_id);
+                        } else {
+                            // Attack voice is already gone, just fade in the release voice
+                            log::warn!("[AudioThread] ...attack voice {} already gone. Fading in release {} immediately.", stopped_note.voice_id, release_voice_id);
+                            if let Some(rv) = voices.get_mut(&release_voice_id) {
+                                rv.is_fading_in = true;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("[AudioThread] Error creating release sample: {}", e)
+                    }
+                }
+            } else {
+                log::warn!("[AudioThread] ...but no release sample found for pipe on note {}.", note);
+                // No release sample, so just fade out the attack voice
+                if let Some(voice) = voices.get_mut(&stopped_note.voice_id) {
+                    log::debug!("[AudioThread] ...no release, fading out attack voice ID {}", stopped_note.voice_id);
+                    voice.is_cancelled.store(true, Ordering::SeqCst);
+                    voice.is_fading_out = true;
+                }
+            }
+        }
+    }
+}
 
 /// Spawns the dedicated audio processing thread.
 fn spawn_audio_processing_thread<P>(
@@ -690,63 +765,16 @@ fn spawn_audio_processing_thread<P>(
                             active_notes.retain(|_note, note_list| !note_list.is_empty());
 
                             // Process each note that needs to be stopped
-                            for an in notes_to_stop {
-                                // First, remove the sustaining attack/loop voice
-                                voices.remove(&an.voice_id); 
-
-                                // Find the correct rank and pipe to get release samples
-                                if let Some(rank) = organ.ranks.get(&an.rank_id) {
-                                    if let Some(pipe) = rank.pipes.get(&an.note) {
-                                        
-                                        // Calculate how long the key was held in milliseconds
-                                        let key_press_duration_ms = an.start_time.elapsed().as_millis() as i64;
-                                        
-                                        let mut default_release: Option<&PathBuf> = None;
-                                        let mut best_fit_release: Option<&PathBuf> = None;
-                                        let mut min_time_diff = i64::MAX;
-
-                                        for release in &pipe.releases {
-                                            if release.max_key_press_time_ms == -1 {
-                                                default_release = Some(&release.path);
-                                            } else if release.max_key_press_time_ms >= key_press_duration_ms {
-                                                // This is a candidate for a timed release
-                                                let diff = release.max_key_press_time_ms - key_press_duration_ms;
-                                                if diff < min_time_diff {
-                                                    min_time_diff = diff;
-                                                    best_fit_release = Some(&release.path);
-                                                }
-                                            }
-                                        }
-
-                                        // Prioritize the best-fit timed release, but fall back to default
-                                        let release_path = best_fit_release.or(default_release);
-
-                                        if let Some(path) = release_path {
-                                            let total_gain = rank.gain_db + pipe.gain_db;
-                                            // Create a new one-shot voice for the release
-                                            match Voice::new(
-                                                path, // Use the dynamically found release path
-                                                sample_rate,
-                                                pipe.pitch_tuning_cents,
-                                                total_gain,
-                                                false, // Don't loop release sample
-                                                false, // This is not an attack sample
-                                            ) {
-                                                Ok(voice) => {
-                                                    let voice_id = voice_counter;
-                                                    voice_counter += 1;
-                                                    voices.insert(voice_id, voice);
-                                                    // We don't add this to active_notes
-                                                    // as it's just a one-shot sample.
-                                                }
-                                                Err(e) => {
-                                                    log::error!("[AudioThread] Error creating release voice: {}", e)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                            for current_note in notes_to_stop {
+                                trigger_note_release(
+                                    current_note,
+                                    &organ,
+                                    &mut voices,
+                                    sample_rate,
+                                    &mut voice_counter
+                                );
                             }
+
                         }
                     }
                     AppMessage::Quit => {
@@ -935,78 +963,15 @@ fn handle_note_off(
     voice_counter: &mut u64,
 ) {
     if let Some(notes_to_stop) = active_notes.remove(&note) {
-        let press_duration = notes_to_stop
-            .get(0)
-            .map(|n| n.start_time.elapsed().as_millis() as i64)
-            .unwrap_or(0);
-
         for stopped_note in notes_to_stop {
-            // We will modify the attack voice *after* creating the release voice.
-            // The `retain` loop will drop it once its buffer is empty.
-            
-            if let Some(rank) = organ.ranks.get(&stopped_note.rank_id) {
-                if let Some(pipe) = rank.pipes.get(&note) {
-                    // Find the correct release sample
-                    let release_sample = pipe
-                        .releases
-                        .iter()
-                        .find(|r| {
-                            r.max_key_press_time_ms == -1
-                                || press_duration <= r.max_key_press_time_ms
-                        })
-                        .or_else(|| pipe.releases.last()); // Fallback to last
-
-                    if let Some(release) = release_sample {
-                        let total_gain = rank.gain_db + pipe.gain_db;
-                        // Play release sample
-                        match Voice::new(
-                            &release.path,
-                            sample_rate,
-                            pipe.pitch_tuning_cents,
-                            total_gain,
-                            false,
-                            false,
-                        ) {
-                            Ok(mut voice) => {
-                                log::debug!("[AudioThread] -> Created RELEASE Voice for {:?} (Duration: {}ms, Gain: {:.2}dB)",
-                                    release.path.file_name().unwrap_or_default(), press_duration, total_gain);
-                                
-                                voice.fade_level = 0.0; // Start silent
-
-                                let release_voice_id = *voice_counter;
-                                *voice_counter += 1;
-                                voices.insert(release_voice_id, voice);
-
-                                // Now link the attack voice to this new release voice
-                                if let Some(attack_voice) = voices.get_mut(&stopped_note.voice_id) {
-                                    log::debug!("[AudioThread] ...linking attack voice {} to release voice {}", stopped_note.voice_id, release_voice_id);
-                                    attack_voice.is_cancelled.store(true, Ordering::SeqCst);
-                                    attack_voice.is_awaiting_release_sample = true;
-                                    attack_voice.release_voice_id = Some(release_voice_id);
-                                } else {
-                                    // Attack voice is already gone, just fade in the release voice
-                                    // This should never happen since attack voices should be looping
-                                    log::warn!("[AudioThread] ...attack voice {} already gone. Fading in release {} immediately.", stopped_note.voice_id, release_voice_id);
-                                    if let Some(rv) = voices.get_mut(&release_voice_id) {
-                                        rv.is_fading_in = true;
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("[AudioThread] Error creating release sample: {}", e)
-                            }
-                        }
-                    } else {
-                        log::warn!("[AudioThread] ...but no release sample found for pipe on note {}.", note);
-                        // No release sample, so just fade out the attack voice
-                        if let Some(voice) = voices.get_mut(&stopped_note.voice_id) {
-                            log::debug!("[AudioThread] ...no release, fading out attack voice ID {}", stopped_note.voice_id);
-                            voice.is_cancelled.store(true, Ordering::SeqCst);
-                            voice.is_fading_out = true;
-                        }
-                    }
-                }
-            }
+            // This `stopped_note` is an `ActiveNote`
+            trigger_note_release(
+                stopped_note, // Pass ownership
+                organ,
+                voices,
+                sample_rate,
+                voice_counter
+            );
         }
     } else {
         log::warn!("[AudioThread] ...but no active notes found for note {}.", note);

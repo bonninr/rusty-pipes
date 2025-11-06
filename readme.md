@@ -11,7 +11,7 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 ## Features
 
 * Streaming-based sample streaming
-* Extremely low memory requirements (a few megabytes)
+* Extremely low memory requirements
 * Works with very large sample sets regardless of installed system RAM
 * Polyphony limited only by CPU power
 * MIDI controlled
@@ -22,7 +22,6 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 * Will not work well on HDDs or slow SDDs (little can be done about that)
 * Support for different manuals and switches
 * Mapping of MIDI channels to manuals
-* There's some minor audio artefacts when toggling a drawbar
 * Does not work as a plugin in DAWs
 
 *Contributions are welcome!*
