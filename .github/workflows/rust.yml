@@ -80,13 +80,17 @@ jobs:
       - name: Install and configure GNU dependencies
         if: runner.os == 'Linux' && !contains(matrix.TARGET, 'musl')
         run: |
+          # [FIX] Install apt helper and robustly add universe/multiverse
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository universe
+          sudo add-apt-repository multiverse
+
           # Add foreign architectures
           sudo dpkg --add-architecture arm64
           sudo dpkg --add-architecture armhf
 
-          # 1. Add 'universe' and 'multiverse' components to find the pkg-config wrappers
-          sudo perl -i -pe 's/Components: main restricted/Components: main restricted universe multiverse/g' /etc/apt/sources.list.d/ubuntu.sources
-          # 2. Restrict this file to 'amd64' so apt doesn't look for arm packages here
+          # Restrict the default 'ubuntu.sources' to amd64
           sudo perl -i -p0e 's/Types: deb/Types: deb\nArchitectures: amd64/g' /etc/apt/sources.list.d/ubuntu.sources
           
           # Add the 'ubuntu-ports' repository for arm64/armhf packages
@@ -101,7 +105,7 @@ jobs:
           # Update package lists
           sudo apt-get update
           
-          # Install all dependencies
+          # Install all dependencies (this will now find the pkg-config packages)
           sudo apt-get install -qq -y \
             crossbuild-essential-arm64 \
             crossbuild-essential-armhf \
@@ -132,20 +136,20 @@ jobs:
           cat <<EOF > Cross.toml
           [target.x86_64-unknown-linux-musl]
           image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5"
-          # [FIX] Use sudo to run the command as root
-          pre-build = ["sudo /sbin/apk add --no-cache alsa-lib-dev"]
+          # [FIX] Use absolute paths for both sudo and apk
+          pre-build = ["/usr/bin/sudo /sbin/apk add --no-cache alsa-lib-dev"]
 
           [target.aarch64-unknown-linux-musl]
           image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"
-          pre-build = ["sudo /sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = ["/usr/bin/sudo /sbin/apk add --no-cache alsa-lib-dev"]
 
           [target.armv7-unknown-linux-musleabihf]
           image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:0.2.5"
-          pre-build = ["sudo /sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = ["/usr/bin/sudo /sbin/apk add --no-cache alsa-lib-dev"]
 
           [target.arm-unknown-linux-musleabihf]
           image = "ghcr.io/cross-rs/arm-unknown-linux-musleabihf:0.2.5"
-          pre-build = ["sudo /sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = ["/usr/bin/sudo /sbin/apk add --no-cache alsa-lib-dev"]
           EOF
 
       - name: Install rust target
