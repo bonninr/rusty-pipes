@@ -17,7 +17,7 @@ use std::mem;
 
 use crate::app::{ActiveNote, AppMessage};
 use crate::organ::Organ;
-use crate::wav::{parse_wav_metadata, WavSampleReader};
+use crate::wav::{parse_wav_metadata, WavSampleReader, parse_smpl_chunk};
 use crate::wav_converter::SampleMetadata;
 
 const AUDIO_SAMPLE_RATE: u32 = 48000;
@@ -132,10 +132,10 @@ impl Voice {
                         let mut reader = BufReader::new(file);
 
                         // Assuming parse_wav_metadata is in a shared wav_reader mod
-                        let (fmt, loop_info_from_file, data_start, data_size) = 
-                            parse_wav_metadata(&mut reader)
+                        let (fmt, other_chunks, data_start, data_size) = 
+                            parse_wav_metadata(&mut reader, &path_buf)
                             .map_err(|e| anyhow!("[LoaderThread] Failed to parse WAV metadata for {:?}: {}", path_buf.clone(), e))?;
-                        
+
                         if fmt.sample_rate != sample_rate {
                             return Err(anyhow!(
                                 "[LoaderThread] File {:?} has wrong sample rate: {} (expected {}). Please re-process samples.",
@@ -143,6 +143,13 @@ impl Voice {
                             ));
                         }
                         
+                        let mut loop_info_from_file = None;
+                        for chunk in other_chunks {
+                            if &chunk.id == b"smpl" {
+                                loop_info_from_file = parse_smpl_chunk(&chunk.data);
+                                break;
+                            }
+                        }
                         // Set metadata from file
                         loop_info = if is_attack_sample_clone { loop_info_from_file } else { None };
                         input_channels = fmt.num_channels as usize;
@@ -156,7 +163,7 @@ impl Voice {
                             log::debug!("[LoaderThread] Reading {:?} into memory for looping (streaming mode).", path_str);
                             samples_in_memory = decoder.collect();
                             use_memory_reader = true;
-                            source_is_finished = true;
+                            source_is_finished = false;
                         } else {
                             source = Some(Box::new(decoder));
                             source_is_finished = false;

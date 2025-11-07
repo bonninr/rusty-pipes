@@ -5,28 +5,12 @@ use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write, Cursor};
 use std::path::{Path, PathBuf};
 use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
 
-use crate::wav::parse_smpl_chunk;
+use crate::wav::{parse_smpl_chunk, WavFmt, OtherChunk};
 
 const TARGET_SAMPLE_RATE: u32 = 48000;
 const I16_MAX_F: f32 = 32768.0;  // 2^15
 const I24_MAX_F: f32 = 8388608.0; // 2^23
 const I32_MAX_F: f32 = 2147483648.0; // 2^31
-
-/// A simple struct to hold the format info we care about.
-#[derive(Debug, Clone, Copy)]
-pub struct WavFormat {
-    pub audio_format: u16,
-    pub channel_count: u16,
-    pub sampling_rate: u32,
-    pub bits_per_sample: u16,
-}
-
-/// A struct to hold metadata chunks (like 'smpl') that we want to preserve.
-#[derive(Debug, Clone)]
-pub struct OtherChunk {
-    pub id: [u8; 4],
-    pub data: Vec<u8>,
-}
 
 #[derive(Debug)]
 pub struct SampleMetadata {
@@ -47,12 +31,12 @@ fn read_i24<R: Read>(reader: &mut R) -> std::io::Result<i32> {
 /// Helper to read all audio data from a reader into f32 waves
 fn read_f32_waves<R: Read>(
     mut reader: R, 
-    format: WavFormat, 
+    format: WavFmt,
     data_size: u32
 ) -> Result<Vec<Vec<f32>>> {
     let bytes_per_sample = (format.bits_per_sample / 8) as u32;
-    let num_frames = data_size / (bytes_per_sample * format.channel_count as u32);
-    let num_channels = format.channel_count as usize;
+    let num_frames = data_size / (bytes_per_sample * format.num_channels as u32);
+    let num_channels = format.num_channels as usize;
     let mut output_waves = vec![Vec::with_capacity(num_frames as usize); num_channels];
     
     for _ in 0..num_frames {
@@ -117,7 +101,7 @@ fn write_f32_waves_to_bytes(
 pub fn parse_wav_metadata<R: Read + Seek>(
     reader: &mut R,
     full_path_for_logs: &Path,
-) -> Result<(WavFormat, Vec<OtherChunk>, u64, u32)> {
+) -> Result<(WavFmt, Vec<OtherChunk>, u64, u32)> {
     let mut riff_header = [0; 4];
     reader.read_exact(&mut riff_header)?;
     if &riff_header != b"RIFF" { return Err(anyhow!("Not a RIFF file: {:?}", full_path_for_logs)); }
@@ -126,7 +110,7 @@ pub fn parse_wav_metadata<R: Read + Seek>(
     reader.read_exact(&mut wave_header)?;
     if &wave_header != b"WAVE" { return Err(anyhow!("Not a WAVE file: {:?}", full_path_for_logs)); }
 
-    let mut format_chunk: Option<WavFormat> = None;
+    let mut format_chunk: Option<WavFmt> = None;
     let mut data_chunk_info: Option<(u64, u32)> = None; // (offset, size)
     let mut other_chunks: Vec<OtherChunk> = Vec::new();
 
@@ -141,10 +125,10 @@ pub fn parse_wav_metadata<R: Read + Seek>(
                 let mut fmt_data = vec![0; chunk_size as usize];
                 reader.read_exact(&mut fmt_data)?;
                 let mut cursor = Cursor::new(fmt_data);
-                format_chunk = Some(WavFormat {
+                format_chunk = Some(WavFmt {
                     audio_format: cursor.read_u16::<LittleEndian>()?,
-                    channel_count: cursor.read_u16::<LittleEndian>()?,
-                    sampling_rate: cursor.read_u32::<LittleEndian>()?,
+                    num_channels: cursor.read_u16::<LittleEndian>()?,
+                    sample_rate: cursor.read_u32::<LittleEndian>()?,
                     bits_per_sample: {
                         cursor.seek(SeekFrom::Start(14))?;
                         cursor.read_u16::<LittleEndian>()?
@@ -181,10 +165,10 @@ pub fn load_sample_as_f32(path: &Path) -> Result<(Vec<f32>, SampleMetadata)> {
         parse_wav_metadata(&mut reader, path)?;
 
     // Sanity check
-    if format.sampling_rate != TARGET_SAMPLE_RATE {
+    if format.sample_rate != TARGET_SAMPLE_RATE {
         return Err(anyhow!(
             "Attempted to cache non-processed file: {:?} (Rate: {}Hz)",
-            path, format.sampling_rate
+            path, format.sample_rate
         ));
     }
 
@@ -199,7 +183,7 @@ pub fn load_sample_as_f32(path: &Path) -> Result<(Vec<f32>, SampleMetadata)> {
     
     let metadata = SampleMetadata {
         loop_info,
-        channel_count: format.channel_count,
+        channel_count: format.num_channels,
     };
 
     reader.seek(SeekFrom::Start(data_offset))?;
@@ -248,7 +232,7 @@ pub fn process_sample_file(
     let target_sample_rate = TARGET_SAMPLE_RATE;
     let target_is_float = format.audio_format == 3 && !convert_to_16_bit;
 
-    let needs_resample = format.sampling_rate != target_sample_rate || pitch_tuning_cents != 0.0;
+    let needs_resample = format.sample_rate != target_sample_rate || pitch_tuning_cents != 0.0;
     let needs_bit_change = target_bits != format.bits_per_sample || (format.audio_format == 3 && !target_is_float);
     
     // Early exit
@@ -267,7 +251,7 @@ pub fn process_sample_file(
     if pitch_tuning_cents != 0.0 {
         suffixes.push(format!("p{:+.1}", pitch_tuning_cents));
     }
-    if format.sampling_rate != target_sample_rate {
+    if format.sample_rate != target_sample_rate {
         suffixes.push(format!("{}k", target_sample_rate / 1000));
     }
 
@@ -294,7 +278,7 @@ pub fn process_sample_file(
     // Resample if needed
     let output_waves = if needs_resample {
         let pitch_factor = 2.0f64.powf(pitch_tuning_cents as f64 / 1200.0);
-        let effective_input_rate = format.sampling_rate as f64 / pitch_factor;
+        let effective_input_rate = format.sample_rate as f64 / pitch_factor;
         let resample_ratio = target_sample_rate as f64 / effective_input_rate;
 
         // Use high-quality Sinc resampler for offline processing
@@ -328,7 +312,7 @@ pub fn process_sample_file(
     let new_data_size = final_data_chunk.len() as u32;
     let new_bits_per_sample: u16 = target_bits;
     let new_audio_format = if target_is_float { 3 } else { 1 };
-    let new_block_align = format.channel_count * (new_bits_per_sample / 8);
+    let new_block_align = format.num_channels * (new_bits_per_sample / 8);
     let new_byte_rate = target_sample_rate * new_block_align as u32; // Use target rate
     
     let mut other_chunks_total_size: u32 = 0;
@@ -348,7 +332,7 @@ pub fn process_sample_file(
     writer.write_all(b"fmt ")?;
     writer.write_u32::<LittleEndian>(16)?; // chunk size (minimal PCM)
     writer.write_u16::<LittleEndian>(new_audio_format)?;
-    writer.write_u16::<LittleEndian>(format.channel_count)?;
+    writer.write_u16::<LittleEndian>(format.num_channels)?;
     writer.write_u32::<LittleEndian>(target_sample_rate)?; // <-- Write new rate
     writer.write_u32::<LittleEndian>(new_byte_rate)?;
     writer.write_u16::<LittleEndian>(new_block_align)?;

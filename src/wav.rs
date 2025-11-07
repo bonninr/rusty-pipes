@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use std::io::{Seek, SeekFrom, Read, Cursor};
+use std::path::Path;
 use byteorder::{ReadBytesExt as OtherReadBytesExt, LittleEndian};
 
 const I16_MAX_F: f32 = 32768.0;  // 2^15
@@ -14,58 +15,32 @@ pub struct WavFmt {
     pub sample_rate: u32,
     pub bits_per_sample: u16,
 }
-
-impl WavFmt {
-    /// Parses the 'fmt ' chunk data.
-    fn parse(data: &[u8]) -> Result<Self> {
-        if data.len() < 16 {
-            return Err(anyhow!("'fmt ' chunk is too small: {} bytes", data.len()));
-        }
-        let mut cursor = Cursor::new(data);
-        let audio_format = cursor.read_u16::<LittleEndian>()?;
-        let num_channels = cursor.read_u16::<LittleEndian>()?;
-        let sample_rate = cursor.read_u32::<LittleEndian>()?;
-        let _byte_rate = cursor.read_u32::<LittleEndian>()?; // Not needed
-        let _block_align = cursor.read_u16::<LittleEndian>()?; // Not needed
-        let bits_per_sample = cursor.read_u16::<LittleEndian>()?;
-
-        if audio_format != 1 && audio_format != 3 {
-            return Err(anyhow!("Unsupported audio format: {} (only 1=PCM or 3=Float)", audio_format));
-        }
-        
-        log::trace!("[WavFmt] Parsed: {}ch, {}Hz, {}b, format={}", num_channels, sample_rate, bits_per_sample, audio_format);
-
-        Ok(Self {
-            audio_format,
-            num_channels,
-            sample_rate,
-            bits_per_sample,
-        })
-    }
+/// A struct to hold metadata chunks (like 'smpl') that we want to preserve.
+#[derive(Debug, Clone)]
+pub struct OtherChunk {
+    pub id: [u8; 4],
+    pub data: Vec<u8>,
 }
 
 /// Parses all necessary metadata from a WAV file in one pass.
 /// Returns (format, loop_info, data_chunk_start_pos, data_chunk_size)
 pub fn parse_wav_metadata<R: Read + Seek>(
-    reader: &mut R
-) -> Result<(WavFmt, Option<(u32, u32)>, u64, u32)> {
+    reader: &mut R,
+    full_path_for_logs: &Path,
+) -> Result<(WavFmt, Vec<OtherChunk>, u64, u32)> {
     let mut riff_header = [0; 4];
     reader.read_exact(&mut riff_header)?;
-    if &riff_header != b"RIFF" {
-        return Err(anyhow!("Not a RIFF file"));
-    }
+    if &riff_header != b"RIFF" { return Err(anyhow!("Not a RIFF file: {:?}", full_path_for_logs)); }
     let _file_size = reader.read_u32::<LittleEndian>()?;
     let mut wave_header = [0; 4];
     reader.read_exact(&mut wave_header)?;
-    if &wave_header != b"WAVE" {
-        return Err(anyhow!("Not a WAVE file"));
-    }
+    if &wave_header != b"WAVE" { return Err(anyhow!("Not a WAVE file: {:?}", full_path_for_logs)); }
 
-    let mut fmt: Option<WavFmt> = None;
-    let mut loop_info: Option<(u32, u32)> = None;
-    let mut data_info: Option<(u64, u32)> = None; // (start_pos, size_in_bytes)
+    let mut format_chunk: Option<WavFmt> = None;
+    let mut data_chunk_info: Option<(u64, u32)> = None; // (offset, size)
+    let mut other_chunks: Vec<OtherChunk> = Vec::new();
 
-    'chunk_loop: while let Ok(chunk_id) = reader.read_u32::<LittleEndian>().map(|id| id.to_le_bytes()) {
+    while let Ok(chunk_id) = reader.read_u32::<LittleEndian>().map(|id| id.to_le_bytes()) {
         let chunk_size = reader.read_u32::<LittleEndian>()?;
         let chunk_data_start_pos = reader.stream_position()?;
         let next_chunk_aligned_pos =
@@ -73,40 +48,37 @@ pub fn parse_wav_metadata<R: Read + Seek>(
 
         match &chunk_id {
             b"fmt " => {
-                let mut chunk_data = vec![0; chunk_size as usize];
-                reader.read_exact(&mut chunk_data)?;
-                fmt = Some(WavFmt::parse(&chunk_data)?);
-            }
-            b"smpl" => {
-                let mut chunk_data = vec![0; chunk_size as usize];
-                reader.read_exact(&mut chunk_data)?;
-                loop_info = parse_smpl_chunk(&chunk_data);
+                let mut fmt_data = vec![0; chunk_size as usize];
+                reader.read_exact(&mut fmt_data)?;
+                let mut cursor = Cursor::new(fmt_data);
+                format_chunk = Some(WavFmt {
+                    audio_format: cursor.read_u16::<LittleEndian>()?,
+                    num_channels: cursor.read_u16::<LittleEndian>()?,
+                    sample_rate: cursor.read_u32::<LittleEndian>()?,
+                    bits_per_sample: {
+                        cursor.seek(SeekFrom::Start(14))?;
+                        cursor.read_u16::<LittleEndian>()?
+                    },
+                });
             }
             b"data" => {
-                // Found data, store its position and size.
-                data_info = Some((chunk_data_start_pos, chunk_size));
-                
-                // We MUST break here. Any 'smpl' chunk *must* come before 'data'.
-                // If it comes after, it's a non-standard file and we won't find it.
-                // This matches the behavior of the original parser.
-                break 'chunk_loop;
+                data_chunk_info = Some((chunk_data_start_pos, chunk_size));
             }
             _ => {
-                // Other chunk, skip it
+                let mut chunk_data = vec![0; chunk_size as usize];
+                reader.read_exact(&mut chunk_data)?;
+                other_chunks.push(OtherChunk { id: chunk_id, data: chunk_data });
             }
         }
-        
-        // Seek to the *start* of the next chunk
         if reader.seek(SeekFrom::Start(next_chunk_aligned_pos)).is_err() {
-            // End of file, break loop
-            break 'chunk_loop;
+            break; // Reached end of file
         }
     }
+    
+    let format = format_chunk.ok_or_else(|| anyhow!("File has no 'fmt ' chunk: {:?}", full_path_for_logs))?;
+    let (data_offset, data_size) = data_chunk_info.ok_or_else(|| anyhow!("File has no 'data' chunk: {:?}", full_path_for_logs))?;
 
-    let fmt = fmt.ok_or_else(|| anyhow!("'fmt ' chunk not found"))?;
-    let (data_start, data_size) = data_info.ok_or_else(|| anyhow!("'data' chunk not found"))?;
-
-    Ok((fmt, loop_info, data_start, data_size))
+    Ok((format, other_chunks, data_offset, data_size))
 }
 
 
