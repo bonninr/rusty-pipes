@@ -104,8 +104,10 @@ jobs:
             crossbuild-essential-armhf \
             libasound2-dev \
             libasound2-dev:arm64 \
-            libasound2-dev:armhf
-
+            libasound2-dev:armhf \
+            pkg-config-aarch64-linux-gnu \
+            pkg-config-arm-linux-gnueabihf
+            
           # Configure cargo linkers for GNU targets
           cat >>~/.cargo/config <<EOF
           [target.aarch64-unknown-linux-gnu]
@@ -127,20 +129,20 @@ jobs:
           cat <<EOF > Cross.toml
           [target.x86_64-unknown-linux-musl]
           image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5"
-          # [FIX] Use the absolute path /sbin/apk
-          pre-build = ["/sbin/apk add --no-cache alsa-lib-dev"]
+          # [FIX] Use sudo to run the command as root
+          pre-build = ["sudo /sbin/apk add --no-cache alsa-lib-dev"]
 
           [target.aarch64-unknown-linux-musl]
           image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"
-          pre-build = ["/sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = ["sudo /sbin/apk add --no-cache alsa-lib-dev"]
 
           [target.armv7-unknown-linux-musleabihf]
           image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:0.2.5"
-          pre-build = ["/sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = ["sudo /sbin/apk add --no-cache alsa-lib-dev"]
 
           [target.arm-unknown-linux-musleabihf]
           image = "ghcr.io/cross-rs/arm-unknown-linux-musleabihf:0.2.5"
-          pre-build = ["/sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = ["sudo /sbin/apk add --no-cache alsa-lib-dev"]
           EOF
 
       - name: Install rust target
