@@ -80,21 +80,22 @@ jobs:
       - name: Install and configure GNU dependencies
         if: runner.os == 'Linux' && !contains(matrix.TARGET, 'musl')
         run: |
-          # [FIX] Install apt helper and robustly add universe/multiverse
-          sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository universe
-          sudo add-apt-repository multiverse
-
           # Add foreign architectures
           sudo dpkg --add-architecture arm64
           sudo dpkg --add-architecture armhf
-
-          # Restrict the default 'ubuntu.sources' to amd64
-          sudo perl -i -p0e 's/Types: deb/Types: deb\nArchitectures: amd64/g' /etc/apt/sources.list.d/ubuntu.sources
           
-          # Add the 'ubuntu-ports' repository for arm64/armhf packages
           UBUNTU_CODENAME=$(lsb_release -cs)
+
+          # [FIX] Manually write the host's (amd64) source list
+          # This ensures 'universe' and 'multiverse' are enabled for amd64
+          cat <<EOF | sudo tee /etc/apt/sources.list.d/ubuntu-host.list
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${UBUNTU_CODENAME} main restricted universe multiverse
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${UBUNTU_CODENAME}-updates main restricted universe multiverse
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${UBUNTU_CODENAME}-security main restricted universe multiverse
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${UBUNTU_CODENAME}-backports main restricted universe multiverse
+          EOF
+
+          # Add the 'ubuntu-ports' repository for arm64/armhf packages
           cat <<EOF | sudo tee /etc/apt/sources.list.d/ubuntu-ports.list
           deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports ${UBUNTU_CODENAME} main restricted universe multiverse
           deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports ${UBUNTU_CODENAME}-updates main restricted universe multiverse
@@ -102,10 +103,13 @@ jobs:
           deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports ${UBUNTU_CODENAME}-backports main restricted universe multiverse
           EOF
 
+          # Now, disable the default GitHub sources file to avoid conflicts
+          sudo rm /etc/apt/sources.list.d/ubuntu.sources
+
           # Update package lists
           sudo apt-get update
           
-          # Install all dependencies (this will now find the pkg-config packages)
+          # Install all dependencies
           sudo apt-get install -qq -y \
             crossbuild-essential-arm64 \
             crossbuild-essential-armhf \
@@ -134,22 +138,34 @@ jobs:
         if: contains(matrix.TARGET, 'musl')
         run: |
           cat <<EOF > Cross.toml
+          # [FIX] Use apt-get inside the Debian-based MUSL container
           [target.x86_64-unknown-linux-musl]
           image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5"
-          # [FIX] Use absolute paths for both sudo and apk
-          pre-build = ["/usr/bin/sudo /sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = [
+              "apt-get update",
+              "apt-get install -y --no-install-recommends libasound2-dev"
+          ]
 
           [target.aarch64-unknown-linux-musl]
           image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"
-          pre-build = ["/usr/bin/sudo /sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = [
+              "apt-get update",
+              "apt-get install -y --no-install-recommends libasound2-dev"
+          ]
 
           [target.armv7-unknown-linux-musleabihf]
           image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:0.2.5"
-          pre-build = ["/usr/bin/sudo /sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = [
+              "apt-get update",
+              "apt-get install -y --no-install-recommends libasound2-dev"
+          ]
 
           [target.arm-unknown-linux-musleabihf]
           image = "ghcr.io/cross-rs/arm-unknown-linux-musleabihf:0.2.5"
-          pre-build = ["/usr/bin/sudo /sbin/apk add --no-cache alsa-lib-dev"]
+          pre-build = [
+              "apt-get update",
+              "apt-get install -y --no-install-recommends libasound2-dev"
+          ]
           EOF
 
       - name: Install rust target
