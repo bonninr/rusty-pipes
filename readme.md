@@ -10,7 +10,7 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 
 ## Features
 
-* Streaming-based sample streaming
+* Streaming-based sample playback
 * Extremely low memory requirements
 * Works with very large sample sets regardless of installed system RAM
 * Polyphony limited only by CPU power
@@ -28,7 +28,7 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 
 ## Starting
 
-Note: RustyPipes will create 16-bit versions of all samples on startup. It will not overwrite the original files, though the original files can be deleted after the first start to save on disk space.
+Note: RustyPipes will create pitch-corrected samples of all pipes that have a pitch factor configured on startup. It will not overwrite the original files, but create new files with the pitch shift in the filename. This step is done automatically and only done the first time a particular organ is loaded.
 
 ### Control via MIDI input
 
