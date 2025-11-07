@@ -153,7 +153,11 @@ jobs:
           else
             cargo build --release --verbose --target $TARGET
           fi
-          
+
+      - name: Install zip
+        if: runner.os == 'Windows'
+        run: choco install zip
+        
       - name: List target
         run: find ./target
       - name: Compress
@@ -168,12 +172,12 @@ jobs:
               EXEC=$NAME.exe
               mv ./target/$TARGET/release/$EXEC ./$EXEC
               # Use 'zip' for Windows
-              zip ./artifacts/$NAME-$TARGET-$TAG.zip $EXEC readme.md LICENSE.txt
+              zip ./artifacts/$NAME-$TARGET-$TAG.zip $EXEC readme.md LICENSE
           else
               EXEC=$NAME
               mv ./target/$TARGET/release/$EXEC ./$EXEC
               # Use 'tar' for Linux/macOS
-              tar -czf ./artifacts/$NAME-$TARGET-$TAG.tar.gz $EXEC readme.md LICENSE.txt
+              tar -czf ./artifacts/$NAME-$TARGET-$TAG.tar.gz $EXEC readme.md LICENSE
           fi
       - name: Archive artifact
         uses: actions/upload-artifact@v4
