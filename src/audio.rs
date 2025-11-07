@@ -826,12 +826,20 @@ fn handle_note_off(
 
 /// Sets up the cpal audio stream and spawns the processing thread.
 pub fn start_audio_playback(rx: mpsc::Receiver<AppMessage>, organ: Arc<Organ>) -> Result<Stream> {
-    let host = cpal::default_host();
+    let host = cpal::available_hosts()
+        .into_iter()
+        .find(|id| id.name() == "Jack")
+        .and_then(|id| cpal::host_from_id(id).ok())
+        .unwrap_or_else(|| {
+            // If JACK isn't found or fails to initialize, fall back to the default host.
+            log::info!("JACK host not found or failed to initialize. Falling back to default host.");
+            cpal::default_host()
+        });
     let device = host
         .default_output_device()
         .ok_or_else(|| anyhow!("No default output device available"))?;
 
-    println!(
+    log::info!(
         "[Cpal] Default output device: {}",
         device.name().unwrap_or_else(|_| "Unknown".to_string())
     );
