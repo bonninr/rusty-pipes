@@ -5,6 +5,8 @@ use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write, Cursor};
 use std::path::{Path, PathBuf};
 use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
 
+use crate::wav::parse_smpl_chunk;
+
 const TARGET_SAMPLE_RATE: u32 = 48000;
 const I16_MAX_F: f32 = 32768.0;  // 2^15
 const I24_MAX_F: f32 = 8388608.0; // 2^23
@@ -12,18 +14,24 @@ const I32_MAX_F: f32 = 2147483648.0; // 2^31
 
 /// A simple struct to hold the format info we care about.
 #[derive(Debug, Clone, Copy)]
-struct WavFormat {
-    audio_format: u16,
-    channel_count: u16,
-    sampling_rate: u32,
-    bits_per_sample: u16,
+pub struct WavFormat {
+    pub audio_format: u16,
+    pub channel_count: u16,
+    pub sampling_rate: u32,
+    pub bits_per_sample: u16,
 }
 
 /// A struct to hold metadata chunks (like 'smpl') that we want to preserve.
 #[derive(Debug, Clone)]
-struct OtherChunk {
-    id: [u8; 4],
-    data: Vec<u8>,
+pub struct OtherChunk {
+    pub id: [u8; 4],
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct SampleMetadata {
+    pub loop_info: Option<(u32, u32)>,
+    pub channel_count: u16,
 }
 
 /// Helper to read a 24-bit sample from a reader
@@ -104,34 +112,20 @@ fn write_f32_waves_to_bytes(
     Ok(output_bytes)
 }
 
-/// Checks a .wav file. If `convert_to_16_bit` is true, `pitch_tuning_cents` is not 0,
-/// or sample rate is not 48kHz, this creates a new processed .wav file.
-pub fn process_sample_file(
-    relative_path: &Path,
-    base_dir: &Path,
-    pitch_tuning_cents: f32,
-    convert_to_16_bit: bool,
-) -> Result<PathBuf> {
-    
-    let full_path = base_dir.join(relative_path);
-    if !full_path.exists() {
-        return Err(anyhow!("Sample file not found: {:?}", full_path));
-    }
 
-    // Manually parse the file
-    let file = File::open(&full_path)?;
-    let mut reader = BufReader::new(file);
-
-    // Check RIFF header
+/// Parses WAV file metadata chunks.
+pub fn parse_wav_metadata<R: Read + Seek>(
+    reader: &mut R,
+    full_path_for_logs: &Path,
+) -> Result<(WavFormat, Vec<OtherChunk>, u64, u32)> {
     let mut riff_header = [0; 4];
     reader.read_exact(&mut riff_header)?;
-    if &riff_header != b"RIFF" { return Err(anyhow!("Not a RIFF file: {:?}", full_path)); }
+    if &riff_header != b"RIFF" { return Err(anyhow!("Not a RIFF file: {:?}", full_path_for_logs)); }
     let _file_size = reader.read_u32::<LittleEndian>()?;
     let mut wave_header = [0; 4];
     reader.read_exact(&mut wave_header)?;
-    if &wave_header != b"WAVE" { return Err(anyhow!("Not a WAVE file: {:?}", full_path)); }
+    if &wave_header != b"WAVE" { return Err(anyhow!("Not a WAVE file: {:?}", full_path_for_logs)); }
 
-    // --- Loop through all chunks ---
     let mut format_chunk: Option<WavFormat> = None;
     let mut data_chunk_info: Option<(u64, u32)> = None; // (offset, size)
     let mut other_chunks: Vec<OtherChunk> = Vec::new();
@@ -158,12 +152,9 @@ pub fn process_sample_file(
                 });
             }
             b"data" => {
-                // We found the data chunk. Record its position and size.
-                // We will skip reading the data for now.
                 data_chunk_info = Some((chunk_data_start_pos, chunk_size));
             }
             _ => {
-                // Unknown or metadata chunk (like `smpl`), read and store it
                 let mut chunk_data = vec![0; chunk_size as usize];
                 reader.read_exact(&mut chunk_data)?;
                 other_chunks.push(OtherChunk { id: chunk_id, data: chunk_data });
@@ -173,10 +164,85 @@ pub fn process_sample_file(
             break; // Reached end of file
         }
     }
+    
+    let format = format_chunk.ok_or_else(|| anyhow!("File has no 'fmt ' chunk: {:?}", full_path_for_logs))?;
+    let (data_offset, data_size) = data_chunk_info.ok_or_else(|| anyhow!("File has no 'data' chunk: {:?}", full_path_for_logs))?;
 
-    // Validate and check if processing is needed
-    let format = format_chunk.ok_or_else(|| anyhow!("File has no 'fmt ' chunk: {:?}", full_path))?;
-    let (data_offset, data_size) = data_chunk_info.ok_or_else(|| anyhow!("File has no 'data' chunk: {:?}", full_path))?;
+    Ok((format, other_chunks, data_offset, data_size))
+}
+
+/// Loads a processed (48kHz) sample file and returns its data
+/// as an interleaved f32 vector and its metadata.
+pub fn load_sample_as_f32(path: &Path) -> Result<(Vec<f32>, SampleMetadata)> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+
+    let (format, other_chunks, data_offset, data_size) = 
+        parse_wav_metadata(&mut reader, path)?;
+
+    // Sanity check
+    if format.sampling_rate != TARGET_SAMPLE_RATE {
+        return Err(anyhow!(
+            "Attempted to cache non-processed file: {:?} (Rate: {}Hz)",
+            path, format.sampling_rate
+        ));
+    }
+
+    // --- Find loop info from parsed chunks ---
+    let mut loop_info = None;
+    for chunk in other_chunks {
+        if &chunk.id == b"smpl" {
+            loop_info = parse_smpl_chunk(&chunk.data);
+            break;
+        }
+    }
+    
+    let metadata = SampleMetadata {
+        loop_info,
+        channel_count: format.channel_count,
+    };
+
+    reader.seek(SeekFrom::Start(data_offset))?;
+    let waves = read_f32_waves(reader, format, data_size)?;
+
+    // Interleave the waves for the cache
+    if waves.is_empty() || waves[0].is_empty() {
+        return Ok((Vec::new(), metadata));
+    }
+    
+    let num_channels = waves.len();
+    let num_frames = waves[0].len();
+    let mut interleaved = vec![0.0f32; num_frames * num_channels];
+    for i in 0..num_frames {
+        for ch in 0..num_channels {
+            interleaved[i * num_channels + ch] = waves[ch][i];
+        }
+    }
+    
+    log::debug!("[Cache] Loaded {:?} ({} frames)", path.file_name().unwrap_or_default(), num_frames);
+    Ok((interleaved, metadata))
+}
+
+/// Checks a .wav file. If `convert_to_16_bit` is true, `pitch_tuning_cents` is not 0,
+/// or sample rate is not 48kHz, this creates a new processed .wav file.
+pub fn process_sample_file(
+    relative_path: &Path,
+    base_dir: &Path,
+    pitch_tuning_cents: f32,
+    convert_to_16_bit: bool,
+) -> Result<PathBuf> {
+    
+    let full_path = base_dir.join(relative_path);
+    if !full_path.exists() {
+        return Err(anyhow!("Sample file not found: {:?}", full_path));
+    }
+
+    // Manually parse the file
+    let file = File::open(&full_path)?;
+    let mut reader = BufReader::new(file);
+
+    let (format, other_chunks, data_offset, data_size) = 
+        parse_wav_metadata(&mut reader, &full_path)?;
 
     let target_bits = if convert_to_16_bit { 16 } else { format.bits_per_sample };
     let target_sample_rate = TARGET_SAMPLE_RATE;

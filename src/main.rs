@@ -41,11 +41,13 @@ fn main() -> Result<()> {
     // Check for optional MIDI file path
     let midi_file_path: Option<PathBuf> = args.get(2).map(PathBuf::from);
 
+    let precache = true;
+
     // --- Parse the organ definition ---
     // This is the immutable definition of the instrument.
     // We wrap it in an Arc to share it safely and cheaply with all threads.
     println!("Loading organ definition...");
-    let organ = Arc::new(Organ::load(&organ_path, CONVERT_TO_16_BIT)?);
+    let organ = Arc::new(Organ::load(&organ_path, CONVERT_TO_16_BIT, precache)?);
     println!("Successfully loaded organ: {}", organ.name);
     println!("Found {} stops.", organ.stops.len());
 

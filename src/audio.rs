@@ -18,6 +18,7 @@ use std::mem;
 use crate::app::{ActiveNote, AppMessage};
 use crate::organ::Organ;
 use crate::wav::{parse_wav_metadata, WavSampleReader};
+use crate::wav_converter::SampleMetadata;
 
 const AUDIO_SAMPLE_RATE: u32 = 48000;
 const BUFFER_SIZE_MS: u32 = 10; 
@@ -51,7 +52,7 @@ struct Voice {
 }
 
 impl Voice {
-    fn new(path: &Path, sample_rate: u32, gain_db: f32, start_fading_in: bool, is_attack_sample: bool, note_on_time: Instant) -> Result<Self> {
+    fn new(path: &Path, organ: Arc<Organ>, sample_rate: u32, gain_db: f32, start_fading_in: bool, is_attack_sample: bool, note_on_time: Instant) -> Result<Self> {
         
         let amplitude_ratio: AmplitudeRatio<f64> = DecibelRatio(gain_db as f64).into();
         let gain = amplitude_ratio.amplitude_value() as f32;
@@ -69,6 +70,7 @@ impl Voice {
         let path_buf = path.to_path_buf();
         let is_finished_clone = Arc::clone(&is_finished);
         let is_cancelled_clone = Arc::clone(&is_cancelled);
+        let organ_clone = Arc::clone(&organ);
         
         // --- Spawn the Loader Thread ---
         let loader_handle = thread::spawn(move || {
@@ -86,85 +88,103 @@ impl Voice {
 
                 // This inner closure contains all the fallible logic
                 let result: Result<()> = (|| {
-                    // Open the file
-                    let file = File::open(&path_buf.clone())
-                        .map_err(|e| anyhow!("[LoaderThread] Failed to open {:?}: {}", path_buf.clone(), e))?;
-                    let mut reader = BufReader::new(file);
+                    // Check cache first
+                    let maybe_cached_data: Option<Arc<Vec<f32>>> = 
+                        organ_clone.sample_cache.as_ref().and_then(|cache| {
+                            cache.get(&path_buf).cloned()
+                        });
 
-                    // --- Parse WAV metadata in one pass ---
-                    let (fmt, loop_info_from_file, data_start, data_size) = 
-                        parse_wav_metadata(&mut reader)
-                        .map_err(|e| anyhow!("[LoaderThread] Failed to parse WAV metadata for {:?}: {}", path_buf.clone(), e))?;
+                    let maybe_cached_metadata: Option<Arc<SampleMetadata>> =
+                        organ_clone.metadata_cache.as_ref().and_then(|cache| {
+                            cache.get(&path_buf).cloned()
+                        });
 
-                    // --- Verify sample rate ---
-                    if fmt.sample_rate != sample_rate {
-                        return Err(anyhow!(
-                            "[LoaderThread] File {:?} has wrong sample rate: {} (expected {}). Please re-process samples.",
-                            path_buf, fmt.sample_rate, sample_rate
-                        ));
-                    }
-
-                    // --- Check if we should *use* the loop info ---
-                    let loop_info: Option<(u32, u32)> = if is_attack_sample_clone {
-                        if loop_info_from_file.is_some() {
-                            log::trace!("[LoaderThread] 'smpl' chunk found in {:?}", path_str);
-                        } else {
-                            log::trace!("[LoaderThread] 'smpl' chunk NOT found in {:?}", path_str);
-                        }
-                        loop_info_from_file
-                    } else {
-                        None // Not an attack sample, so don't loop
-                    };
-
-                    // --- Create the custom sample reader ---
-                    let decoder = WavSampleReader::new(reader, fmt, data_start, data_size)
-                        .map_err(|e| anyhow!("[LoaderThread] Failed to create sample reader for {:?}: {}", path_buf.clone(), e))?;
-
-                    let input_channels = decoder.channels() as usize;
-                    let is_mono = input_channels == 1;
-
-                    let mut source: Option<Box<dyn Iterator<Item = f32>>> =
-                        Some(Box::new(decoder));
-                    let mut source_is_finished = false;
-
+                    let loop_info: Option<(u32, u32)>;
+                    let input_channels: usize;
+                    let mut source: Option<Box<dyn Iterator<Item = f32>>> = None;
+                    let mut source_is_finished;
+                    let use_memory_reader;
+                    let mut samples_in_memory: Vec<f32> = Vec::new();
+                    
                     let mut interleaved_buffer = vec![0.0f32; 1024 * CHANNEL_COUNT];
 
-                    // Variables for looping attack samples
-                    let mut samples_in_memory: Vec<f32> = Vec::new(); 
+                    if let (Some(cached_samples), Some(cached_metadata)) = (maybe_cached_data, maybe_cached_metadata) {
+                        // --- CACHED PATH ---
+                        log::trace!("[LoaderThread] Using CACHED samples for {:?}", path_str);
+                        samples_in_memory = (*cached_samples).clone();
+                        // Get metadata from cache
+                        loop_info = if is_attack_sample_clone { cached_metadata.loop_info } else { None };
+                        input_channels = cached_metadata.channel_count as usize;
+                        
+                        use_memory_reader = true;
+                        source_is_finished = false; // This prevents the release sample from being prematurely marked as finished
+                    
+                    } else {
+                        // --- STREAMING PATH ---
+                        if organ_clone.sample_cache.is_some() {
+                            log::warn!("[LoaderThread] CACHE MISS for {:?}. Falling back to streaming.", path_str);
+                        } else {
+                            log::trace!("[LoaderThread] STREAMING samples for {:?}", path_str);
+                        }
+                        
+                        let file = File::open(&path_buf.clone())
+                            .map_err(|e| anyhow!("[LoaderThread] Failed to open {:?}: {}", path_buf.clone(), e))?;
+                        let mut reader = BufReader::new(file);
+
+                        // Assuming parse_wav_metadata is in a shared wav_reader mod
+                        let (fmt, loop_info_from_file, data_start, data_size) = 
+                            parse_wav_metadata(&mut reader)
+                            .map_err(|e| anyhow!("[LoaderThread] Failed to parse WAV metadata for {:?}: {}", path_buf.clone(), e))?;
+                        
+                        if fmt.sample_rate != sample_rate {
+                            return Err(anyhow!(
+                                "[LoaderThread] File {:?} has wrong sample rate: {} (expected {}). Please re-process samples.",
+                                path_buf, fmt.sample_rate, sample_rate
+                            ));
+                        }
+                        
+                        // Set metadata from file
+                        loop_info = if is_attack_sample_clone { loop_info_from_file } else { None };
+                        input_channels = fmt.num_channels as usize;
+
+                        // Assuming WavSampleReader is in a shared wav_reader mod
+                        let decoder = WavSampleReader::new(reader, fmt, data_start, data_size)
+                            .map_err(|e| anyhow!("[LoaderThread] Failed to create sample reader for {:?}: {}", path_buf.clone(), e))?;
+
+                        let is_looping = is_attack_sample_clone && loop_info.is_some();
+                        if is_looping {
+                            log::debug!("[LoaderThread] Reading {:?} into memory for looping (streaming mode).", path_str);
+                            samples_in_memory = decoder.collect();
+                            use_memory_reader = true;
+                            source_is_finished = true;
+                        } else {
+                            source = Some(Box::new(decoder));
+                            source_is_finished = false;
+                            use_memory_reader = false;
+                        }
+                    }
+
+                    // --- Setup loop points (applies to both cached and streaming-loaded-to-memory) ---
+                    let is_mono = input_channels == 1;
                     let mut current_frame_index: usize = 0;
                     let mut loop_start_frame: usize = 0;
                     let mut loop_end_frame: usize = 0;
-                    
                     let mut is_looping_sample = is_attack_sample_clone && loop_info.is_some();
-                    let mut use_memory_reader = false;
-                    
-                    if is_looping_sample {
-                        log::debug!("[LoaderThread] Reading {:?} into memory for looping.", path_str);
-                        // --- Read ALL samples into memory ---
-                        samples_in_memory = source.take().unwrap().collect();
-                        use_memory_reader = true;
-                        source_is_finished = true; // The 'source' iterator is now consumed
-                        
-                        let (start, end) = loop_info.unwrap();
+
+                    if use_memory_reader && is_looping_sample {
+                        let (start, end) = loop_info.unwrap(); // Safe
                         loop_start_frame = start as usize;
                         let total_frames = samples_in_memory.len() / input_channels;
-                        
-                        // 'end' is exclusive. 0 often means 'end of file'.
                         loop_end_frame = if end == 0 { total_frames } else { end as usize };
 
-                        // Sanity check loop points
+                        // ... (Sanity check loop points logic is unchanged) ...
                         if loop_start_frame >= loop_end_frame || loop_end_frame > total_frames {
                             log::warn!(
                                 "[LoaderThread] Invalid loop points for {:?}: start {}, end {}, total {}. Disabling loop.",
                                 path_str, loop_start_frame, loop_end_frame, total_frames
                             );
-                            is_looping_sample = false; // It's now a one-shot, but still from memory
-                            current_frame_index = 0; // Reset index to play from start
-                        } else {
-                            log::debug!(
-                                "[LoaderThread] Loop active for {:?}: {} -> {} ({} frames)",
-                                path_str, loop_start_frame, loop_end_frame, total_frames
-                            );
+                            is_looping_sample = false;
+                            current_frame_index = 0;
                         }
                     }
 
@@ -362,6 +382,7 @@ fn trigger_note_release(
                 // Play release sample
                 match Voice::new(
                     &release.path,
+                    Arc::clone(&organ),
                     sample_rate,
                     total_gain,
                     false,
@@ -469,6 +490,7 @@ fn spawn_audio_processing_thread<P>(
                                             // Play attack sample
                                             match Voice::new(
                                                 &pipe.attack_sample_path,
+                                                Arc::clone(&organ),
                                                 sample_rate,
                                                 total_gain,
                                                 false,
@@ -691,11 +713,15 @@ fn spawn_audio_processing_thread<P>(
                 let is_done_playing = is_loader_finished && is_buffer_empty;
 
                 // We must remove a voice if:
-                // 1. It's a "normal" voice (like a release) and it has finished playing.
-                //    (is_done_playing && !voice.is_fading_out)
+                // 1. It's a "normal" voice (like a release) and it has finished playing
+                //    AND it is *not* currently fading in.
+                let normal_finish = is_done_playing && !voice.is_fading_out && !voice.is_fading_in;
+
                 // OR
                 // 2. It's a "fading" voice (an attack) and it has finished fading out.
-                if (is_done_playing && !voice.is_fading_out) || (is_faded_out && is_buffer_empty) {
+                let fade_out_finish = is_faded_out; // `is_buffer_empty` is checked if needed above
+
+                if normal_finish || fade_out_finish {
                     voices_to_remove.push(*voice_id);
                 }
             } // --- End of voice processing loop ---

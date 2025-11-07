@@ -2,8 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use ini::inistr; // Use the macro import
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::wav_converter;
+use crate::wav_converter::SampleMetadata;
 
 /// Top-level structure for the entire organ definition.
 #[derive(Debug, Default)]
@@ -12,6 +14,8 @@ pub struct Organ {
     pub stops: Vec<Stop>,
     pub ranks: HashMap<String, Rank>, // Keyed by rank ID (e.g., "013")
     pub base_path: PathBuf, // The directory containing the .organ file
+    pub sample_cache: Option<HashMap<PathBuf, Arc<Vec<f32>>>>, // Cache for loaded samples
+    pub metadata_cache: Option<HashMap<PathBuf, Arc<SampleMetadata>>>, // Cache for loop points etc.
 }
 
 /// Represents a single stop (a button on the TUI).
@@ -56,9 +60,12 @@ pub struct ReleaseSample {
 
 impl Organ {
     /// Loads and parses a .organ file.
-    pub fn load(path: &Path, convert_to_16_bit: bool) -> Result<Self> {
+    pub fn load(path: &Path, convert_to_16_bit: bool, pre_cache: bool) -> Result<Self> {
         println!("Loading organ from: {:?}", path);
         let base_path = path.parent().ok_or_else(|| anyhow!("Invalid file path"))?;
+        if pre_cache {
+            println!("[Organ] Pre-caching mode enabled. This may take a moment...");
+        }
         
         // Read file to string
         let file_content = std::fs::read_to_string(path)
@@ -76,6 +83,8 @@ impl Organ {
         let mut organ = Organ {
             base_path: base_path.to_path_buf(),
             name: path.file_stem().unwrap_or_default().to_string_lossy().to_string(),
+            sample_cache: if pre_cache { Some(HashMap::new()) } else { None },
+            metadata_cache: if pre_cache { Some(HashMap::new()) } else { None },
             ..Default::default()
         };
 
@@ -181,6 +190,22 @@ impl Organ {
                         // Join with base path for the final absolute-like path
                         let attack_sample_path = organ.base_path.join(attack_sample_path_relative);
 
+                        // Pre-cache attack sample if enabled
+                        if let Some(audio_cache) = &mut organ.sample_cache {
+                            if !audio_cache.contains_key(&attack_sample_path) {
+                                match wav_converter::load_sample_as_f32(&attack_sample_path) {
+                                    Ok((samples, metadata)) => {
+                                        audio_cache.insert(attack_sample_path.clone(), Arc::new(samples));
+                                        // Also cache the metadata
+                                        organ.metadata_cache.as_mut().unwrap().insert(attack_sample_path.clone(), Arc::new(metadata));
+                                    }
+                                    Err(e) => {
+                                        log::error!("[Cache] Failed to load sample {:?}: {}", attack_sample_path, e);
+                                    }
+                                }
+                            }
+                        }
+
                         let release_count: usize = get_prop(
                             &format!("{}ReleaseCount", pipe_key_prefix_upper), 
                             &format!("{}releasecount", pipe_key_prefix_lower), 
@@ -208,6 +233,21 @@ impl Organ {
                                 }
 
                                 let rel_path = organ.base_path.join(rel_path_relative);
+                                
+                                // Pre-cache release sample if enabled
+                                if let Some(audio_cache) = &mut organ.sample_cache {
+                                    if !audio_cache.contains_key(&rel_path) {
+                                         match wav_converter::load_sample_as_f32(&rel_path) {
+                                            Ok((samples, metadata)) => {
+                                                audio_cache.insert(rel_path.clone(), Arc::new(samples));
+                                                organ.metadata_cache.as_mut().unwrap().insert(rel_path.clone(), Arc::new(metadata));
+                                            }
+                                            Err(e) => {
+                                                log::error!("[Cache] Failed to load sample {:?}: {}", rel_path, e);
+                                            }
+                                        }
+                                    }
+                                }
                                 
                                 let time_key_upper = format!("{}MaxKeyPressTime", rel_key_upper);
                                 let time_key_lower = format!("{}maxkeypresstime", rel_key_lower);

@@ -137,6 +137,7 @@ impl<R: Read + Seek> WavSampleReader<R> {
         self.fmt.sample_rate
     }
 
+    #[allow(dead_code)]
     pub fn channels(&self) -> u16 {
         self.fmt.num_channels
     }
