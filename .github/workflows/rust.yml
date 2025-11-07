@@ -37,7 +37,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # a list of all the targets
         include:
           - TARGET: x86_64-unknown-linux-gnu 
             OS: ubuntu-latest
@@ -63,117 +62,15 @@ jobs:
       - name: List
         run: find ./
 
-      - name: Install and configure GNU dependencies
-        if: runner.os == 'Linux' && !contains(matrix.TARGET, 'musl')
-        run: |
-          # Add foreign architectures
-          sudo dpkg --add-architecture arm64
-          sudo dpkg --add-architecture armhf
-          
-          UBUNTU_CODENAME=$(lsb_release -cs)
-
-          # [FIX] Manually write the host's (amd64) source list
-          # This ensures 'universe' and 'multiverse' are enabled for amd64
-          cat <<EOF | sudo tee /etc/apt/sources.list.d/ubuntu-host.list
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${UBUNTU_CODENAME} main restricted universe multiverse
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${UBUNTU_CODENAME}-updates main restricted universe multiverse
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${UBUNTU_CODENAME}-security main restricted universe multiverse
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu ${UBUNTU_CODENAME}-backports main restricted universe multiverse
-          EOF
-
-          # Add the 'ubuntu-ports' repository for arm64/armhf packages
-          cat <<EOF | sudo tee /etc/apt/sources.list.d/ubuntu-ports.list
-          deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports ${UBUNTU_CODENAME} main restricted universe multiverse
-          deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports ${UBUNTU_CODENAME}-updates main restricted universe multiverse
-          deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports ${UBUNTU_CODENAME}-security main restricted universe multiverse
-          deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports ${UBUNTU_CODENAME}-backports main restricted universe multiverse
-          EOF
-
-          # Now, disable the default GitHub sources file to avoid conflicts
-          sudo rm /etc/apt/sources.list.d/ubuntu.sources
-
-          # Update package lists
-          sudo apt-get update
-          
-          # Install all dependencies
-          sudo apt-get install -qq -y \
-            crossbuild-essential-arm64 \
-            crossbuild-essential-armhf \
-            libasound2-dev \
-            libasound2-dev:arm64 \
-            libasound2-dev:armhf \
-            pkg-config-aarch64-linux-gnu \
-            pkg-config-arm-linux-gnueabihf
-
-          # Configure cargo linkers
-          cat >>~/.cargo/config <<EOF
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          [target.armv7-unknown-linux-gnueabihf]
-          linker = "arm-linux-gnueabihf-gcc"
-          [target.arm-unknown-linux-gnueabihf]
-          linker = "arm-linux-gnueabihf-gcc"
-          EOF
-          
-      # Install 'cross' if we are building a MUSL target
-      - name: Install cross
-        if: contains(matrix.TARGET, 'musl')
-        run: cargo install cross
-        
-      - name: Create Cross.toml
-        if: contains(matrix.TARGET, 'musl')
-        run: |
-          cat <<EOF > Cross.toml
-          # [FIX] Use apt-get inside the Debian-based MUSL container
-          [target.x86_64-unknown-linux-musl]
-          image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5"
-          pre-build = [
-              "apt-get update",
-              "apt-get install -y --no-install-recommends libasound2-dev"
-          ]
-
-          [target.aarch64-unknown-linux-musl]
-          image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"
-          pre-build = [
-              "apt-get update",
-              "apt-get install -y --no-install-recommends libasound2-dev"
-          ]
-
-          [target.armv7-unknown-linux-musleabihf]
-          image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:0.2.5"
-          pre-build = [
-              "apt-get update",
-              "apt-get install -y --no-install-recommends libasound2-dev"
-          ]
-
-          [target.arm-unknown-linux-musleabihf]
-          image = "ghcr.io/cross-rs/arm-unknown-linux-musleabihf:0.2.5"
-          pre-build = [
-              "apt-get update",
-              "apt-get install -y --no-install-recommends libasound2-dev"
-          ]
-          EOF
+      - name: Install dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
       - name: Install rust target
         run: rustup target add $TARGET
         
       - name: Run build
-        run: |
-          if [[ $TARGET == *musl* ]]; then
-            cross build --release --verbose --target $TARGET
-          else
-            # Set PKG_CONFIG to the correct cross-compiler wrapper.
-            # This tells the build script to use the target-specific
-            # pkg-config, which knows where to find the arm/aarch64 libs.
-            if [[ $TARGET == 'aarch64-unknown-linux-gnu' ]]; then
-              export PKG_CONFIG="aarch64-linux-gnu-pkg-config"
-            elif [[ $TARGET == *arm*-linux-gnueabihf ]]; then
-              # This covers both 'armv7' and 'arm' targets
-              export PKG_CONFIG="arm-linux-gnueabihf-pkg-config"
-            fi
-            
-            cargo build --release --verbose --target $TARGET
-          fi
+        run: cargo build --release --verbose --target $TARGET
 
       - name: Install zip
         if: runner.os == 'Windows'
@@ -181,6 +78,7 @@ jobs:
         
       - name: List target
         run: find ./target
+        
       - name: Compress
         run: |
           mkdir -p ./artifacts
@@ -200,27 +98,10 @@ jobs:
               # Use 'tar' for Linux/macOS
               tar -czf ./artifacts/$NAME-$TARGET-$TAG.tar.gz $EXEC readme.md LICENSE
           fi
+          
       - name: Archive artifact
         uses: actions/upload-artifact@v4
         with:
           name: result-${{ matrix.TARGET }}
           path: |
             ./artifacts
-
-  deploy:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
-      - name: List
-        run: find ./artifacts
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-           files: |
-            ./artifacts/*/*.tar.gz
-            ./artifacts/*/*.zip
