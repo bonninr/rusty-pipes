@@ -10,7 +10,8 @@ use ratatui::{
     widgets::{Block, Borders, canvas::{Canvas, Line as CanvasLine}, List, ListItem, ListState, Paragraph},
 };
 use std::{
-    io::{stdout, Stdout},
+    fs::File,
+    io::{stdout, BufReader, BufWriter, Stdout},
     path::PathBuf,
     sync::{mpsc::{Sender, Receiver}, Arc},
     time::{Duration, Instant},
@@ -19,8 +20,27 @@ use std::{
 
 use crate::{app::{AppMessage, TuiMessage}, organ::Organ};
 
+const PRESET_FILE_PATH: &str = "rusty-pipes.presets.json";
+type PresetBank = [Option<HashMap<usize, BTreeSet<u8>>>; 12];
+type PresetConfig = HashMap<String, PresetBank>;
+
 const MIDI_LOG_CAPACITY: usize = 10; // Max log lines
 const NUM_COLUMNS: usize = 3; // Number of columns for the stop list
+
+fn load_presets(organ_name: &str) -> PresetBank {
+    File::open(PRESET_FILE_PATH)
+        .map_err(anyhow::Error::from) // Convert std::io::Error
+        .and_then(|file| {
+            // Read the entire config map
+            serde_json::from_reader(BufReader::new(file)).map_err(anyhow::Error::from)
+        })
+        .ok() // Convert Result to Option
+        .and_then(|config: PresetConfig| {
+            // Find the presets for this organ
+            config.get(organ_name).cloned()
+        })
+        .unwrap_or_else(Default::default) // Return an empty bank [None; 12] if not found
+}
 
 #[derive(Debug, Clone, PartialEq)]
 struct PlayedNote {
@@ -47,10 +67,12 @@ struct TuiState {
     piano_roll_display_duration: Duration,
     /// Maps MIDI Channel (0-15) -> Set of active notes (0-127)
     channel_active_notes: HashMap<u8, BTreeSet<u8>>,
+    /// MIDI channel assignment presets
+    presets: PresetBank,
 }
 
 impl TuiState {
-    fn new(organ: Arc<Organ>) -> Self {
+    fn new(organ: Arc<Organ>, presets: PresetBank) -> Self {
         let mut list_state = ListState::default();
         list_state.select(Some(0)); // Select the first item
         let stops_count = organ.stops.len();
@@ -67,6 +89,7 @@ impl TuiState {
             finished_notes_display: VecDeque::new(),
             piano_roll_display_duration: Duration::from_secs(1), // Show 1 second of history
             channel_active_notes: HashMap::new(),
+            presets,
         }
     }
 
@@ -206,6 +229,90 @@ impl TuiState {
         }
     }
 
+    /// Saves the current `stop_channels` and their mapped midi channel number to a preset slot.
+    fn save_preset(&mut self, slot: usize) {
+        if slot >= 12 { return; }
+        self.presets[slot] = Some(self.stop_channels.clone());
+
+        self.add_midi_log(format!("Preset slot F{} saved", slot + 1));
+        
+        // After saving in memory, write the change to disk.
+        if let Err(e) = self.save_all_presets_to_file() {
+            self.add_midi_log(format!("ERROR saving presets: {}", e));
+        }
+    }
+
+    /// Recalls a preset from a slot into `stop_channels` along with the midi channel mapping.
+    fn recall_preset(&mut self, slot: usize, audio_tx: &Sender<AppMessage>) -> Result<()> {
+        if slot >= 12 { return Ok(()); }
+        if let Some(preset) = &self.presets[slot] {
+            let is_valid = preset.keys().all(|&stop_index| stop_index < self.organ.stops.len());
+            if is_valid {
+                // First, update all stops to the preset
+                self.stop_channels = preset.clone();
+
+                // Iterate through all stops
+                for stop in self.organ.stops.iter() {
+                    let stop_name = stop.name.clone();
+                    // Send NoteOff for all active notes on this stop
+                    for notes in self.channel_active_notes.values() {
+                        for &note in notes {
+                            audio_tx.send(AppMessage::NoteOff(note, stop_name.clone()))?;
+                        }
+                    }
+                }
+
+                // Then, for each stop, send NoteOff for channels that are being deactivated
+                for stop in self.organ.stops.iter() {
+                    if let Some(stop) = self.organ.stops.get(stop.id_str.parse::<usize>()?) {
+                        for channel in 0..10 {
+                            let active_notes_on_channel = self.channel_active_notes.get(&channel);
+                            // Get active channels for this stop in the recalled preset
+                            let active_channels = preset.get(&stop.id_str.parse::<usize>()?).cloned().unwrap_or_default();
+                            if !active_channels.contains(&channel) {
+                                // --- Send NoteOff for all active notes on this channel for this stop ---
+                                if let Some(notes_to_stop) = active_notes_on_channel {
+                                    let stop_name = stop.name.clone();
+                                    for &note in notes_to_stop {
+                                        audio_tx.send(AppMessage::NoteOff(note, stop_name.clone()))?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                log::info!("Recalled preset from slot F{}", slot + 1);
+            } else {
+                // This can happen if the organ definition file changed
+                log::warn!(
+                    "Failed to recall preset F{}: stop count mismatch (preset has {}, organ has {})",
+                    slot + 1, preset.len(), self.stop_channels.len()
+                );
+            }
+        } else {
+            log::warn!("No preset found in slot F{}", slot + 1);
+        }
+        Ok(())
+    }
+
+    /// Saves the entire configuration map back to the JSON file.
+    fn save_all_presets_to_file(&self) -> Result<()> {
+        // 1. Load the entire config file (all organs)
+        let mut config: PresetConfig = File::open(PRESET_FILE_PATH)
+            .map_err(anyhow::Error::from)
+            .and_then(|file| serde_json::from_reader(BufReader::new(file)).map_err(anyhow::Error::from))
+            .unwrap_or_default(); // Create a new map if it doesn't exist
+
+        // 2. Update or insert the preset bank for the current organ
+        config.insert(self.organ.name.clone(), self.presets.clone());
+
+        // 3. Write the entire config file back to disk
+        let file = File::create(PRESET_FILE_PATH)?;
+        serde_json::to_writer_pretty(BufWriter::new(file), &config)?;
+        
+        Ok(())
+    }
+
     fn update_piano_roll_state(&mut self) {
         let now = Instant::now();
 
@@ -238,7 +345,8 @@ pub fn run_tui_loop(
     ir_file_path: Option<PathBuf>,
 ) -> Result<()> {
     let mut terminal = setup_terminal()?;
-    let mut app_state = TuiState::new(organ);
+    let organ_name = organ.name.clone();
+    let mut app_state = TuiState::new(organ, load_presets(&organ_name));
 
     if let Some(path) = ir_file_path {
         if path.exists() {
@@ -369,6 +477,17 @@ pub fn run_tui_loop(
                                 // No channels for selected stop
                                 app_state.select_none_channels_for_stop(&audio_tx)?;
                             }
+                            // Save (Shift+F1-F12)
+                            KeyCode::F(n) if (1..=12).contains(&n) && key.modifiers.contains(event::KeyModifiers::SHIFT) => {
+                                app_state.save_preset((n - 1) as usize); // Shift+F1 is slot 0
+                            }
+                            // Recall (F1-F12, no modifier)
+                            KeyCode::F(n) if (1..=12).contains(&n) && key.modifiers.is_empty() => {
+                                // F1 is slot 0
+                                if let Err(e) = app_state.recall_preset((n - 1) as usize, &audio_tx) {
+                                    app_state.add_midi_log(format!("ERROR recalling preset: {}", e));
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -397,7 +516,7 @@ fn ui(frame: &mut Frame, state: &mut TuiState) {
         Paragraph::new(err.as_str())
             .style(Style::default().fg(Color::White).bg(Color::Red))
     } else {
-        let help_text = "Quit: q | Nav: ↑/k, ↓/j, ←/h, →/l | Toggle Chan: 1-0 | Panic: p | Stop All Chan: a | Stop No Chan: n";
+        let help_text = "Quit: q | Nav: ↑/k, ↓/j, ←/h, →/l | Toggle Chan: 1-0 | Panic: p | Assign All Ch: a | Assign No Ch: n";
         Paragraph::new(help_text).alignment(Alignment::Center)    };
     frame.render_widget(footer_widget, main_layout[2]);
 
@@ -474,10 +593,10 @@ fn ui(frame: &mut Frame, state: &mut TuiState) {
                 })
                 .collect();
             
-            let title = if col_idx == 0 { state.organ.name.as_str() } else { "" };
+            let title = if col_idx == 0 { state.organ.name.as_str() } else if col_idx == 2 { "Stops (F1-F12: Recall, Shift+F1-F12: Save)" } else { "" };
             let list_widget = List::new(column_items)
                 .block(Block::default().borders(Borders::ALL).title(title));
-                
+
             // We don't use render_stateful_widget because we handle selection manually
             frame.render_widget(list_widget, *rect);
         }
