@@ -54,6 +54,10 @@ struct Args {
     /// Optional path to a convolution reverb Impulse Response (IR) file
     #[arg(long, value_name = "IR_FILE")]
     ir_file: Option<PathBuf>,
+
+    /// Reverb mix level (0.0 = dry, 1.0 = fully wet)
+    #[arg(long, value_name = "REVERB_MIX", default_value_t = 0.5)]
+    reverb_mix: f32,
 }
 
 fn main() -> Result<()> {
@@ -77,6 +81,7 @@ fn main() -> Result<()> {
     let precache = args.precache;
     let midi_file_path = args.midi_file;
     let ir_file_path = args.ir_file;
+    let reverb_mix = args.reverb_mix;
     if !organ_path.exists() {
         return Err(anyhow::anyhow!("File not found: {}", organ_path.display()));
     }
@@ -132,7 +137,7 @@ fn main() -> Result<()> {
     // This function will block until the user quits.
     // It takes ownership of its own sender to send messages (StopToggle, Quit).
     println!("Starting TUI... Press 'q' to quit.");
-    tui::run_tui_loop(audio_tx, tui_rx, organ, ir_file_path)?;
+    tui::run_tui_loop(audio_tx, tui_rx, organ, ir_file_path, reverb_mix)?;
 
     // --- Shutdown ---
     // When run_tui_loop returns (on quit), main exits.

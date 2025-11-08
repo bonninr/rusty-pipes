@@ -264,18 +264,16 @@ impl TuiState {
 
                 // Then, for each stop, send NoteOff for channels that are being deactivated
                 for stop in self.organ.stops.iter() {
-                    if let Some(stop) = self.organ.stops.get(stop.id_str.parse::<usize>()?) {
-                        for channel in 0..10 {
-                            let active_notes_on_channel = self.channel_active_notes.get(&channel);
-                            // Get active channels for this stop in the recalled preset
-                            let active_channels = preset.get(&stop.id_str.parse::<usize>()?).cloned().unwrap_or_default();
-                            if !active_channels.contains(&channel) {
-                                // --- Send NoteOff for all active notes on this channel for this stop ---
-                                if let Some(notes_to_stop) = active_notes_on_channel {
-                                    let stop_name = stop.name.clone();
-                                    for &note in notes_to_stop {
-                                        audio_tx.send(AppMessage::NoteOff(note, stop_name.clone()))?;
-                                    }
+                    for channel in 0..10 {
+                        let active_notes_on_channel = self.channel_active_notes.get(&channel);
+                        // Get active channels for this stop in the recalled preset
+                        let active_channels = preset.get(&stop.id_str.parse::<usize>()?).cloned().unwrap_or_default();
+                        if !active_channels.contains(&channel) {
+                            // Send NoteOff for all active notes on this channel for this stop
+                            if let Some(notes_to_stop) = active_notes_on_channel {
+                                let stop_name = stop.name.clone();
+                                for &note in notes_to_stop {
+                                    audio_tx.send(AppMessage::NoteOff(note, stop_name.clone()))?;
                                 }
                             }
                         }
@@ -343,6 +341,7 @@ pub fn run_tui_loop(
     tui_rx: Receiver<TuiMessage>,
     organ: Arc<Organ>,
     ir_file_path: Option<PathBuf>,
+    reverb_mix: f32,
 ) -> Result<()> {
     let mut terminal = setup_terminal()?;
     let organ_name = organ.name.clone();
@@ -354,7 +353,7 @@ pub fn run_tui_loop(
             app_state.add_midi_log(log_msg);
             // Send the message to the audio thread
             audio_tx.send(AppMessage::SetReverbIr(path))?;
-            audio_tx.send(AppMessage::SetReverbWetDry(0.3))?; // Default wet/dry mix
+            audio_tx.send(AppMessage::SetReverbWetDry(reverb_mix))?;
         } else {
             // Log an error to the TUI, but don't crash
             let log_msg = format!("ERROR: IR file not found: {}", path.display());

@@ -655,17 +655,20 @@ fn spawn_audio_processing_thread<P>(
                     }
                     AppMessage::NoteOff(note, stop_name) => {
                         // Find the stop_index from the stop_name
+                        log::debug!("[AudioThread] NoteOff received for note {} on stop {}", note, stop_name);
                         if let Some(stop_index) = stop_name_to_index_map.get(&stop_name) {
                             let mut stopped_note_opt: Option<ActiveNote> = None;
-                            
+                            log::debug!("[AudioThread] Mapped stop '{}' to index {}", stop_name, stop_index);
                             // Check if the note is active at all
                             if let Some(note_list) = active_notes.get_mut(&note) {
+                                log::debug!("[AudioThread] Found active note {} on stop {}", note, stop_name);
                                 // Find the index of the specific note to remove
                                 if let Some(pos) = note_list.iter().position(|an| an.stop_index == *stop_index) {
+                                    log::debug!("[AudioThread] removing active note {} on stop {} with index {}", note, stop_name, pos);
                                     // Remove it from the list and take ownership
                                     stopped_note_opt = Some(note_list.remove(pos));
                                 }
-                                
+                                log::debug!("[AudioThread] Active notes for {}: {:?}", stop_name, note_list);
                                 // If list is now empty, remove the note key from the main map
                                 if note_list.is_empty() {
                                     active_notes.remove(&note);
@@ -674,7 +677,8 @@ fn spawn_audio_processing_thread<P>(
 
                             // If we successfully removed a note, trigger its release
                             if let Some(stopped_note) = stopped_note_opt {
-                                 trigger_note_release(
+                                log::debug!("[AudioThread] Triggering release for stopped note {} on stop {}", stopped_note.note, stop_name);
+                                trigger_note_release(
                                     stopped_note,
                                     &organ,
                                     &mut voices,
@@ -683,7 +687,7 @@ fn spawn_audio_processing_thread<P>(
                                 );
                             } else {
                                 // This is common if NoteOff is sent twice, etc.
-                                log::trace!("[AudioThread] NoteOff for stop {} on note {}, but not found.", stop_name, note);
+                                log::debug!("[AudioThread] NoteOff for stop {} on note {}, but not found.", stop_name, note);
                             }
 
                         } else {
