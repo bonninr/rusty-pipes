@@ -45,13 +45,58 @@ Options:
       --log-level <LEVEL>  Set the application log level [default: info] [possible values: error, warn, info, debug, trace]
       --ir-file <IR_FILE>        Optional path to a convolution reverb Impulse Response (IR) file
       --reverb-mix <REVERB_MIX>  Reverb mix level (0.0 = dry, 1.0 = fully wet) [default: 0.5]
+      --original-tuning            Preserve original (de)tuning of recorded samples up to +/- 20 cents to preserve organ character
+      --list-midi-devices          List all available MIDI input devices and exit
+      --midi-device <DEVICE_NAME>  Select a MIDI device by name
   -h, --help               Print help
   -V, --version            Print version
 ```
 
+### Precaching
+
+```--precache``` - Loads all samples into RAM on startup, just like other virtual pipe organ programs. Use this if your disk is too slow or you are not happy with the latency of streaming samples.
+
+### 16 bit conversion
+
+```--convert-to-16bit``` - Creates 16-bit versions of all samples and stores them in the same directories as the original samples. This may be useful for slower PCs to reduce overall workload
+
+### Convolution Reverb
+
+```--ir-file``` - Lets you pass a .wav file containing the impulse response of the desired room/church.
+```--reverb-mix``` - This parameter defines how much reverb vs the original sample is used. 0.0 = no reverb, 1.0 = oops it's all reverb
+
+### Original tuning
+
+```--original-tuning``` - Some sample sets provide tuning information that is just *perfect*, as the required tuning was measured after sampling. However, this is not how the organ sounds in real life. This parameter ignores all tuning information as long as the pitch shift is not greater than +/- 20 cents. Any tuning greater than 20 cents is applied as normal, since this is often done for reusing samples of a different key.
+
 ### Control via MIDI input
 
 ```rusty_pipes /path/to/name.organ```
+
+### Select MIDI device via command line parameter
+
+Instead of having to manually choose the MIDI input device from a list everytime the program starts, you can pass the desired input device via the command line. To do this, first use ```--list-midi-devices``` to display a list, and then pass it as parameter with ```--midi-device``` like so:
+
+```bash
+$ rusty-pipes --list-midi-devices
+Available MIDI Input Devices:
+  0: Midi Through:Midi Through Port-0 14:0
+  1: Scarlett 2i4 USB:Scarlett 2i4 USB MIDI 1 24:0
+  2: LUMI Keys Block 80FR:LUMI Keys Block 80FR Bluetooth 129:0
+
+$ rusty-pipes --midi-device "LUMI Keys Block 80FR:LUMI Keys Block 80FR Bluetooth 129:0" Organs/Friesach/Friesach.organ
+Loading organ definition...
+Loading organ from: "/home/toumal/Documents/Organs/Friesach/Friesach.organ"
+Found 335 sections in INI.
+Parsing complete. Stops found: 158. Stops filtered (noise/empty): 114. Stops added: 44.
+Successfully loaded organ: Friesach
+Found 44 stops.
+Starting audio engine...
+
+```
+
+> [!NOTE]
+> Don't use "2: LUMI...", only use the part after "2: "
 
 ### Play MIDI file
 

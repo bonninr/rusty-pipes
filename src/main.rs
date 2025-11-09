@@ -33,7 +33,7 @@ enum LogLevel {
 struct Args {
     /// Path to the pipe organ definition file (e.g., organs/friesach/friesach.organ)
     #[arg(value_name = "ORGAN_DEFINITION")]
-    organ_file: PathBuf,
+    organ_file: Option<PathBuf>,
 
     /// Optional path to a MIDI file to play
     #[arg(value_name = "MIDI_FILE")]
@@ -58,16 +58,50 @@ struct Args {
     #[arg(long, value_name = "REVERB_MIX", default_value_t = 0.5)]
     reverb_mix: f32,
 
-    /// Preserve original (de)tuning of recorded samples up to +/- 20 cents
-    /// With some sample sets this can restore some of the original character of the organ.
+    /// Preserve original (de)tuning of recorded samples up to +/- 20 cents to preserve organ character
     #[arg(long)] // Creates '--preserve-tuning'
     original_tuning: bool,
+
+    /// List all available MIDI input devices and exit
+    #[arg(long)]
+    list_midi_devices: bool,
+
+    /// Select a MIDI device by name
+    #[arg(long, value_name = "DEVICE_NAME")]
+    midi_device: Option<String>,
 
 }
 
 fn main() -> Result<()> {
+    println!("\nRusty Pipes - Virtual Pipe Organ Simulator v{}\n", env!("CARGO_PKG_VERSION"));
+
     let args = Args::parse();
    
+    // This runs before any other setup and exits.
+    if args.list_midi_devices {
+        println!("Available MIDI Input Devices:");
+        match midi::get_midi_device_names() {
+            Ok(names) => {
+                if names.is_empty() {
+                    println!("  No MIDI devices found.");
+                } else {
+                    for (i, name) in names.iter().enumerate() {
+                        println!("  {}: {}", i, name);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error fetching MIDI devices: {}", e);
+            }
+        }
+        return Ok(()); // Exit after listing
+    }
+
+    let organ_path = match args.organ_file {
+        Some(path) => path,
+        None => return Err(anyhow::anyhow!("The ORGAN_DEFINITION argument is required when not using --list-midi-devices.")),
+    };
+
     let log_level = match args.log_level {
         LogLevel::Error => LevelFilter::Error,
         LogLevel::Warn => LevelFilter::Warn,
@@ -81,13 +115,13 @@ fn main() -> Result<()> {
         Config::default(),
         File::create("rusty-pipes.log")?
     )?;
-    let organ_path = args.organ_file;
     let convert_to_16_bit = args.convert_to_16bit;
     let precache = args.precache;
     let midi_file_path = args.midi_file;
     let ir_file_path = args.ir_file;
     let reverb_mix = args.reverb_mix;
     let original_tuning = args.original_tuning;
+    let preselected_midi_device = args.midi_device;
     if !organ_path.exists() {
         return Err(anyhow::anyhow!("File not found: {}", organ_path.display()));
     }
@@ -149,6 +183,7 @@ fn main() -> Result<()> {
         ir_file_path,
         reverb_mix,
         is_file_playback,
+        preselected_midi_device,
     )?;
 
     // --- Shutdown ---

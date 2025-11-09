@@ -34,6 +34,7 @@ enum AppMode {
     MainApp,
 }
 
+/// Loads the MIDI channel mapping preset bank for the specified organ from the JSON file.
 fn load_presets(organ_name: &str) -> PresetBank {
     File::open(PRESET_FILE_PATH)
         .map_err(anyhow::Error::from) // Convert std::io::Error
@@ -47,6 +48,27 @@ fn load_presets(organ_name: &str) -> PresetBank {
             config.get(organ_name).cloned()
         })
         .unwrap_or_else(Default::default) // Return an empty bank [None; 12] if not found
+}
+
+/// Creates a MIDI connection using the specified input and port.
+/// This function consumes the `MidiInput` to create the connection.
+fn connect_to_midi(
+    midi_input: MidiInput, // Takes ownership
+    port: &MidiInputPort,
+    port_name: &str,
+    tui_tx: &Sender<TuiMessage>,
+) -> Result<MidiInputConnection<()>> {
+    let tui_tx_clone = tui_tx.clone();
+    let conn = midi_input.connect(
+        port, 
+        port_name, 
+        move |_timestamp, message, _| {
+            midi::midi_callback(message, &tui_tx_clone);
+        }, 
+        ()
+    ).map_err(|e| anyhow::anyhow!("Failed to connect to MIDI device {}: {}", port_name, e))?;
+    
+    Ok(conn)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -401,16 +423,49 @@ impl TuiState {
 pub fn run_tui_loop(
     audio_tx: Sender<AppMessage>,
     tui_rx: Receiver<TuiMessage>,
-    tui_tx: Sender<TuiMessage>, // NEW: To create the callback
+    tui_tx: Sender<TuiMessage>,
     organ: Arc<Organ>,
     ir_file_path: Option<PathBuf>,
     reverb_mix: f32,
-    is_file_playback: bool, // NEW: To set initial mode
+    is_file_playback: bool,
+    preselected_device_name: Option<String>,
 ) -> Result<()> {
     let mut terminal = setup_terminal()?;
     let organ_name = organ.name.clone();
     let mut _midi_connection: Option<MidiInputConnection<()>> = None;
     let mut app_state = TuiState::new(organ, load_presets(&organ_name), is_file_playback)?;
+
+    // Handle preselected MIDI device if provided
+    if !is_file_playback {
+        if let Some(device_name) = preselected_device_name {
+            // Try to find the port by name from the state
+            let found_port = app_state.available_ports.iter()
+                .find(|(_, name)| *name == device_name)
+                .map(|(port, _)| port.clone());
+
+            if let Some(port) = found_port {
+                // Found it! Now connect.
+                if let Some(midi_input) = app_state.midi_input.take() {
+                    let conn = connect_to_midi(
+                        midi_input,
+                        &port,
+                        &device_name,
+                        &tui_tx,
+                    )?;
+                    _midi_connection = Some(conn);
+                    app_state.mode = AppMode::MainApp; // Switch mode
+                    app_state.add_midi_log(format!("Connected to: {}", device_name));
+                    app_state.available_ports.clear(); // Clean up
+                }
+            } else {
+                // Error: Device name not found
+                let err_msg = format!("ERROR: MIDI device not found: '{}'", device_name);
+                // Set the error message. The TUI will start in selection mode
+                // and display this error, allowing the user to pick from the list.
+                app_state.error_msg = Some(err_msg);
+            }
+        }
+    }
 
     if let Some(path) = ir_file_path {
         if path.exists() {
@@ -515,24 +570,22 @@ pub fn run_tui_loop(
                                 KeyCode::Enter => {
                                     // --- CONNECT TO MIDI DEVICE ---
                                     if let Some(selected_idx) = app_state.port_list_state.selected() {
+
                                         let (port_to_connect, port_name) = 
                                             match app_state.available_ports.get(selected_idx) {
                                                 Some((port, name)) => (port.clone(), name.clone()),
-                                                None => continue, // Should not happen
+                                                None => continue,
                                             };
 
-                                        // 2. Now we can mutably borrow app_state (E0502 fix)
                                         app_state.add_midi_log(format!("Connecting to: {}", port_name));
                                         
-                                        // 3. Take the midi_input, consuming it (E0382 fix)
                                         if let Some(midi_input) = app_state.midi_input.take() {
                                             
                                             let tui_tx_clone = tui_tx.clone();
                                             let conn = midi_input.connect(
-                                                &port_to_connect, // Use the copy
-                                                &port_name,       // Use the clone
+                                                &port_to_connect,
+                                                &port_name,
                                                 move |_timestamp, message, _| {
-                                                    // Use the callback from midi.rs
                                                     midi::midi_callback(message, &tui_tx_clone);
                                                 }, 
                                                 ()
@@ -547,14 +600,13 @@ pub fn run_tui_loop(
                                             // Free this memory as we don't need it anymore
                                             app_state.available_ports.clear(); 
                                         }
-                                        // --- END OF MODIFIED BLOCK ---
                                     }
                                 }
                                 _ => {}
                             }
                         }
                         AppMode::MainApp => {
-                            // --- Handle Main App Input (Existing Logic) ---
+                            // --- Handle Main App Input ---
                             let channel_to_toggle = match key.code {
                                 KeyCode::Char('1') => Some(0),
                                 KeyCode::Char('2') => Some(1),

@@ -5,9 +5,20 @@ use std::fs;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use midly::{Smf, TrackEventKind, MidiMessage as MidlyMidiMessage, MetaMessage};
+use midir::MidiInput;
 use std::time::Instant;
 
 use crate::app::TuiMessage;
+
+/// Returns a list of all available MIDI input device names.
+pub fn get_midi_device_names() -> Result<Vec<String>> {
+    let midi_in = MidiInput::new("rusty-pipes-lister")?;
+    let mut names = Vec::new();
+    for port in midi_in.ports() {
+        names.push(midi_in.port_name(&port)?);
+    }
+    Ok(names)
+}
 
 /// Converts a MIDI note number to its name (e.g., 60 -> "C4").
 fn midi_note_to_name(note: u8) -> String {
