@@ -675,20 +675,23 @@ pub fn run_tui_loop(
     Ok(())
 }
 
-const LOGO: &str = r"
-██████╗ ██╗   ██╗███████╗████████╗██╗   ██╗
-██╔══██╗██║   ██║██╔════╝╚══██╔══╝╚██╗ ██╔╝
-██████╔╝██║   ██║███████╗   ██║    ╚████╔╝ 
-██╔══██╗██║   ██║╚════██║   ██║     ╚██╔╝  
-██║  ██║╚██████╔╝███████║   ██║      ██║   
-╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝      ╚═╝   
-                                           
-    ██████╗ ██╗██████╗ ███████╗███████╗    
-    ██╔══██╗██║██╔══██╗██╔════╝██╔════╝    
-    ██████╔╝██║██████╔╝█████╗  ███████╗    
-    ██╔═══╝ ██║██╔═══╝ ██╔══╝  ╚════██║    
-    ██║     ██║██║     ███████╗███████║    
-    ╚═╝     ╚═╝╚═╝     ╚══════╝╚══════╝    
+const PIPES: &str = r"          ███          
+      ▐█▋ ███ ▐█▋      
+  ▐█▋ ▐█▋ ███ ▐█▋ ▐█▋  
+  ▐█▋ ▐█▋ ███ ▐█▋ ▐█▋  
+  ▐█▋ ▐█▋ ███ ▐█▋ ▐█▋  
+  ▐▅▋ ▐▄▋ ▐▄▋ ▐▄▋ ▐▄▋  
+    ▀   ▀   █   ▀   ▀   
+█████████████████████
+          ▀▀▀▀▀         
+";
+
+const LOGO: &str = r"██████╗ ██╗   ██╗███████╗████████╗██╗   ██╗    ██████╗ ██╗██████╗ ███████╗███████╗
+██╔══██╗██║   ██║██╔════╝╚══██╔══╝╚██╗ ██╔╝    ██╔══██╗██║██╔══██╗██╔════╝██╔════╝
+██████╔╝██║   ██║███████╗   ██║    ╚████╔╝     ██████╔╝██║██████╔╝█████╗  ███████╗
+██╔══██╗██║   ██║╚════██║   ██║     ╚██╔╝      ██╔═══╝ ██║██╔═══╝ ██╔══╝  ╚════██║
+██║  ██║╚██████╔╝███████║   ██║      ██║       ██║     ██║██║     ███████╗███████║
+╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝      ╚═╝       ╚═╝     ╚═╝╚═╝     ╚══════╝╚══════╝
 ";
 
 // MIDI Selection UI function
@@ -704,10 +707,36 @@ fn draw_midi_selection_ui(frame: &mut Frame, state: &mut TuiState) {
     // --- Logo and Version ---
     let version = env!("CARGO_PKG_VERSION");
     let description_text = env!("CARGO_PKG_DESCRIPTION");
-    let logo_text = format!("{}\n{}\nVersion {}", LOGO, description_text, version);
-    let logo_widget = Paragraph::new(logo_text)
+    let orange_style = Style::default().fg(Color::Rgb(255, 165, 0));
+    let white_style = Style::default().fg(Color::White);
+    let gray_style = Style::default().fg(Color::Gray);
+    // Create a vector of Lines for the logo, one for each line in the ASCII art
+    let mut logo_lines: Vec<Line> = PIPES.lines() // This splits the string by newlines
+        .map(|line| Line::from(Span::styled(line, gray_style)))
+        .collect();
+    // Append lines from the LOGO constant
+    for line in LOGO.lines() {
+        logo_lines.push(Line::from(Span::styled(line, orange_style)));
+    }
+
+
+    logo_lines.push(Line::from(Span::styled("Indicia MMXXV", orange_style)));
+    logo_lines.push(Line::from(""));
+    logo_lines.push(Line::from(Span::styled(
+        description_text,
+        white_style,
+    )));
+    logo_lines.push(Line::from(Span::styled(
+        format!("Version {}", version),
+        white_style,
+    )));
+
+    // Pass the Vec<Line> to the Paragraph
+    let logo_widget = Paragraph::new(logo_lines)
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::NONE));
+
+
     frame.render_widget(logo_widget, layout[0]);
 
     // --- MIDI Device List ---
