@@ -63,6 +63,7 @@ Options:
 ### Convolution Reverb
 
 ```--ir-file``` - Lets you pass a .wav file containing the impulse response of the desired room/church.
+
 ```--reverb-mix``` - This parameter defines how much reverb vs the original sample is used. 0.0 = no reverb, 1.0 = oops it's all reverb
 
 ### Original tuning
