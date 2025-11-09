@@ -22,7 +22,6 @@ use crate::wav::{parse_wav_metadata, WavSampleReader, parse_smpl_chunk};
 use crate::wav_converter::SampleMetadata;
 
 const AUDIO_SAMPLE_RATE: u32 = 48000;
-const BUFFER_SIZE_MS: u32 = 10; 
 const CHANNEL_COUNT: usize = 2; // Stereo
 const VOICE_BUFFER_FRAMES: usize = 14400; 
 const GAIN_FACTOR: f32 = 0.5; // Prevent clipping when multiple voices mix
@@ -941,7 +940,7 @@ fn spawn_audio_processing_thread<P>(
                 );
             }
 
-            thread::sleep(Duration::from_millis((BUFFER_SIZE_MS / 3) as u64));
+            thread::sleep(Duration::from_millis(1));
 
         }
     });
@@ -976,10 +975,15 @@ fn handle_note_off(
 }
 
 /// Sets up the cpal audio stream and spawns the processing thread.
-pub fn start_audio_playback(rx: mpsc::Receiver<AppMessage>, organ: Arc<Organ>) -> Result<Stream> {
+pub fn start_audio_playback(rx: mpsc::Receiver<AppMessage>, organ: Arc<Organ>, audio_buffer_ms: u32) -> Result<Stream> {
+    let available_hosts = cpal::available_hosts();
+    log::info!("[Cpal] Available audio hosts:");
+    for host_id in &available_hosts {
+        log::info!("  - {}", host_id.name());
+    }
     let host = cpal::available_hosts()
         .into_iter()
-        .find(|id| id.name() == "Jack")
+        .find(|id| id.name().to_lowercase().contains("jack"))
         .and_then(|id| cpal::host_from_id(id).ok())
         .unwrap_or_else(|| {
             // If JACK isn't found or fails to initialize, fall back to the default host.
@@ -1027,7 +1031,7 @@ pub fn start_audio_playback(rx: mpsc::Receiver<AppMessage>, organ: Arc<Organ>) -
 
     // Calculate buffer size in frames
     // THIS IS CRITICAL: it must match the block_size for the convolver
-    let buffer_size_frames = (sample_rate * BUFFER_SIZE_MS / 1000) as usize;
+    let buffer_size_frames = (sample_rate * audio_buffer_ms / 1000) as usize;
 
     // Create the ring buffer
     let ring_buf_capacity = buffer_size_frames * channels * 10;
