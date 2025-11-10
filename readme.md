@@ -24,7 +24,7 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 
 ## Missing features / Limitations / Known Issues
 
-* Will not work well on HDDs or slow SSDs (little can be done about that)
+* Streaming mode will not work well on HDDs or slow SSDs (use precaching in such cases)
 * Support for different manuals and switches
 * Does not work as a plugin in DAWs
 
