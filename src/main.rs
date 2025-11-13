@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::path::PathBuf;
 use simplelog::{Config, LevelFilter, WriteLogger};
 use std::fs::File;
-use std::thread::JoinHandle;
+use std::thread::{self, JoinHandle};
+use std::sync::Mutex;
 
 mod app;
 mod audio;
@@ -16,10 +17,11 @@ mod organ;
 mod tui;
 mod wav;
 mod wav_converter;
-mod app_state; // <-- ADD THIS
-mod gui;       // <-- ADD THIS
+mod app_state;
+mod gui;
 
 use app::{AppMessage, TuiMessage};
+use app_state::AppState;
 use organ::Organ;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
@@ -139,6 +141,8 @@ fn main() -> Result<()> {
     let original_tuning = args.original_tuning;
     let preselected_midi_device = args.midi_device;
     let audio_buffer_frames = args.audio_buffer_frames;
+    let is_file_playback = midi_file_path.is_some();
+
     if !organ_path.exists() {
         return Err(anyhow::anyhow!("File not found: {}", organ_path.display()));
     }
@@ -159,6 +163,27 @@ fn main() -> Result<()> {
     if args.tui { println!("Starting audio engine..."); }
     let _stream = audio::start_audio_playback(audio_rx, Arc::clone(&organ), audio_buffer_frames)?;
     if args.tui { println!("Audio engine running."); }
+
+    // --- Create thread-safe AppState ---
+    let app_state = Arc::new(Mutex::new(AppState::new(organ.clone(), is_file_playback)?));
+
+    // --- Spawn the dedicated MIDI logic thread ---
+    let logic_app_state = Arc::clone(&app_state);
+    let logic_audio_tx = audio_tx.clone();
+    let _logic_thread = thread::spawn(move || {
+        log::info!("MIDI logic thread started.");
+        // This is a blocking loop, it waits for messages from either the MIDI callback or the file player.
+        while let Ok(msg) = tui_rx.recv() {
+            // Lock the state, handle the message, then unlock.
+            let mut app_state_locked = logic_app_state.lock().unwrap();
+            if let Err(e) = app_state_locked.handle_tui_message(msg, &logic_audio_tx) {
+                let err_msg = format!("Error handling TUI message: {}", e);
+                log::error!("{}", err_msg);
+                app_state_locked.add_midi_log(err_msg);
+            }
+        }
+        log::info!("MIDI logic thread shutting down.");
+    });
 
     // --- Start MIDI input ---
     let _midi_file_thread: Option<JoinHandle<()>>;
@@ -188,9 +213,8 @@ fn main() -> Result<()> {
         if args.tui { println!("Starting TUI... Press 'q' to quit."); }
         tui::run_tui_loop(
             audio_tx,
-            tui_rx,
             tui_tx,
-            organ,
+            Arc::clone(&app_state),
             ir_file_path,
             reverb_mix,
             is_file_playback,
@@ -201,7 +225,7 @@ fn main() -> Result<()> {
         log::info!("Starting GUI..."); // Log to file
         gui::run_gui_loop(
             audio_tx,
-            tui_rx,
+            Arc::clone(&app_state),
             tui_tx,
             organ,
             ir_file_path,

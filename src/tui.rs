@@ -13,14 +13,12 @@ use ratatui::{
 use std::{
     io::{stdout, Stdout},
     path::PathBuf,
-    sync::{mpsc::{Sender, Receiver}, Arc},
+    sync::{mpsc::Sender, Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use midir::MidiInputConnection;
 use crate::app::{AppMessage, TuiMessage};
-use crate::organ::Organ;
-// Import the new shared state and connection function
 use crate::app_state::{AppState, connect_to_midi};
 
 const NUM_COLUMNS: usize = 3; // Number of columns for the stop list
@@ -35,7 +33,7 @@ enum AppMode {
 /// Holds the state specific to the TUI.
 struct TuiState {
     mode: AppMode,
-    shared_state: AppState, // The shared logic is now encapsulated here
+    app_state: Arc<Mutex<AppState>>,
     list_state: ListState, // TUI-specific selection state
     port_list_state: ListState, // TUI-specific selection state
     items_per_column: usize,
@@ -43,11 +41,12 @@ struct TuiState {
 }
 
 impl TuiState {
-    fn new(organ: Arc<Organ>, is_file_playback: bool) -> Result<Self> {
-        let shared_state = AppState::new(organ, is_file_playback)?;
+    fn new(app_state: Arc<Mutex<AppState>>, is_file_playback: bool) -> Result<Self> {
+        // Get lock on app_state
+        let app_state_locked = app_state.lock().unwrap();
 
         let mut port_list_state = ListState::default();
-        if !shared_state.available_ports.is_empty() {
+        if !app_state_locked.available_ports.is_empty() {
             port_list_state.select(Some(0));
         }
 
@@ -58,15 +57,17 @@ impl TuiState {
         };
 
         let mut list_state = ListState::default();
-        let stops_count = shared_state.organ.stops.len();
+        let stops_count = app_state_locked.organ.stops.len();
         if stops_count > 0 {
             list_state.select(Some(0)); // Select the first item
         }
         let items_per_column = (stops_count + NUM_COLUMNS - 1) / NUM_COLUMNS;
 
+        drop(app_state_locked); // Explicitly drop the lock
+
         Ok(Self {
             mode,
-            shared_state,
+            app_state,
             list_state,
             port_list_state,
             items_per_column,
@@ -77,20 +78,22 @@ impl TuiState {
     // --- TUI-specific navigation ---
 
     fn next_midi_port(&mut self) {
-        if self.shared_state.available_ports.is_empty() { return; }
+        let app_state = self.app_state.lock().unwrap();
+        if app_state.available_ports.is_empty() { return; }
         let i = match self.port_list_state.selected() {
-            Some(i) => (i + 1) % self.shared_state.available_ports.len(),
+            Some(i) => (i + 1) % app_state.available_ports.len(),
             None => 0,
         };
         self.port_list_state.select(Some(i));
     }
 
     fn prev_midi_port(&mut self) {
-        if self.shared_state.available_ports.is_empty() { return; }
+        let app_state = self.app_state.lock().unwrap();
+        if app_state.available_ports.is_empty() { return; }
         let i = match self.port_list_state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.shared_state.available_ports.len() - 1
+                    app_state.available_ports.len() - 1
                 } else {
                     i - 1
                 }
@@ -145,7 +148,7 @@ impl TuiState {
     /// Toggles a specific channel (0-9) for the currently selected stop.
     fn toggle_stop_channel(&mut self, channel: u8, audio_tx: &Sender<AppMessage>) -> Result<()> {
         if let Some(selected_index) = self.list_state.selected() {
-            self.shared_state.toggle_stop_channel(selected_index, channel, audio_tx)?;
+            self.app_state.lock().unwrap().toggle_stop_channel(selected_index, channel, audio_tx)?;
         }
         Ok(())
     }
@@ -153,14 +156,14 @@ impl TuiState {
     /// Activates all channels (0-9) for the selected stop.
     fn select_all_channels_for_stop(&mut self) {
         if let Some(selected_index) = self.list_state.selected() {
-            self.shared_state.select_all_channels_for_stop(selected_index);
+            self.app_state.lock().unwrap().select_all_channels_for_stop(selected_index);
         }
     }
 
     /// Deactivates all channels (0-9) for the selected stop.
     fn select_none_channels_for_stop(&mut self, audio_tx: &Sender<AppMessage>) -> Result<()> {
         if let Some(selected_index) = self.list_state.selected() {
-            self.shared_state.select_none_channels_for_stop(selected_index, audio_tx)?;
+            self.app_state.lock().unwrap().select_none_channels_for_stop(selected_index, audio_tx)?;
         }
         Ok(())
     }
@@ -169,9 +172,8 @@ impl TuiState {
 /// Runs the main TUI loop, blocking the main thread.
 pub fn run_tui_loop(
     audio_tx: Sender<AppMessage>,
-    tui_rx: Receiver<TuiMessage>,
     tui_tx: Sender<TuiMessage>,
-    organ: Arc<Organ>,
+    app_state: Arc<Mutex<AppState>>,
     ir_file_path: Option<PathBuf>,
     reverb_mix: f32,
     is_file_playback: bool,
@@ -179,74 +181,71 @@ pub fn run_tui_loop(
 ) -> Result<()> {
     let mut terminal = setup_terminal()?;
     let mut _midi_connection: Option<MidiInputConnection<()>> = None;
-    let mut app_state = TuiState::new(organ, is_file_playback)?;
+    let mut tui_state = TuiState::new(app_state, is_file_playback)?;
 
-    // Handle preselected MIDI device if provided
-    if !is_file_playback {
-        if let Some(device_name) = preselected_device_name {
-            // Try to find the port by name from the state
-            let found_port = app_state.shared_state.available_ports.iter()
-                .find(|(_, name)| *name == device_name)
-                .map(|(port, _)| port.clone());
+    {
+        let mut app_state_locked = tui_state.app_state.lock().unwrap();
 
-            if let Some(port) = found_port {
-                // Found it! Now connect.
-                if let Some(midi_input) = app_state.shared_state.midi_input.take() {
-                    let conn = connect_to_midi(
-                        midi_input,
-                        &port,
-                        &device_name,
-                        &tui_tx,
-                    )?;
-                    _midi_connection = Some(conn);
-                    app_state.mode = AppMode::MainApp; // Switch mode
-                    app_state.shared_state.add_midi_log(format!("Connected to: {}", device_name));
-                    app_state.shared_state.available_ports.clear(); // Clean up
+        // Handle preselected MIDI device if provided
+        if !is_file_playback {
+            if let Some(device_name) = preselected_device_name {
+                // Try to find the port by name from the state
+                let found_port = app_state_locked.available_ports.iter()
+                    .find(|(_, name)| *name == device_name)
+                    .map(|(port, _)| port.clone());
+
+                if let Some(port) = found_port {
+                    // Found it! Now connect.
+                    if let Some(midi_input) = app_state_locked.midi_input.take() {
+                        let conn = connect_to_midi(
+                            midi_input,
+                            &port,
+                            &device_name,
+                            &tui_tx,
+                        )?;
+                        _midi_connection = Some(conn);
+                        tui_state.mode = AppMode::MainApp; // Switch mode
+                        app_state_locked.add_midi_log(format!("Connected to: {}", device_name));
+                        app_state_locked.available_ports.clear(); // Clean up
+                    }
+                } else {
+                    // Error: Device name not found
+                    let err_msg = format!("ERROR: MIDI device not found: '{}'", device_name);
+                    app_state_locked.error_msg = Some(err_msg);
                 }
+            }
+        }
+
+        if let Some(path) = ir_file_path {
+            if path.exists() {
+                let log_msg = format!("Loading IR file: {:?}", path.file_name().unwrap());
+                app_state_locked.add_midi_log(log_msg);
+                // Send the message to the audio thread
+                audio_tx.send(AppMessage::SetReverbIr(path))?;
+                audio_tx.send(AppMessage::SetReverbWetDry(reverb_mix))?;
             } else {
-                // Error: Device name not found
-                let err_msg = format!("ERROR: MIDI device not found: '{}'", device_name);
-                app_state.shared_state.error_msg = Some(err_msg);
+                // Log an error to the TUI, but don't crash
+                let log_msg = format!("ERROR: IR file not found: {}", path.display());
+                app_state_locked.add_midi_log(log_msg);
             }
         }
     }
 
-    if let Some(path) = ir_file_path {
-        if path.exists() {
-            let log_msg = format!("Loading IR file: {:?}", path.file_name().unwrap());
-            app_state.shared_state.add_midi_log(log_msg);
-            // Send the message to the audio thread
-            audio_tx.send(AppMessage::SetReverbIr(path))?;
-            audio_tx.send(AppMessage::SetReverbWetDry(reverb_mix))?;
-        } else {
-            // Log an error to the TUI, but don't crash
-            let log_msg = format!("ERROR: IR file not found: {}", path.display());
-            app_state.shared_state.add_midi_log(log_msg);
-        }
-    }
     loop {
         // Update piano roll state before drawing (only if in main app mode)
-        if matches!(app_state.mode, AppMode::MainApp) {
-            app_state.shared_state.update_piano_roll_state();
+        if matches!(tui_state.mode, AppMode::MainApp) {
+            tui_state.app_state.lock().unwrap().update_piano_roll_state();
         }
 
         // Draw UI (which now dispatches based on mode)
-        terminal.draw(|f| ui(f, &mut app_state))?;
-
-        // Handle cross-thread messages (non-blocking)
-        // This now uses the shared message handler
-        while let Ok(msg) = tui_rx.try_recv() {
-            if let Err(e) = app_state.shared_state.handle_tui_message(msg, &audio_tx) {
-                app_state.shared_state.add_midi_log(format!("Error: {}", e));
-            }
-        }
+        terminal.draw(|f| ui(f, &mut tui_state))?;
 
         // Handle input
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                 
-                    match app_state.mode {
+                    match tui_state.mode.clone() {
                         AppMode::MidiSelection => {
                             // --- Handle MIDI Selection Input ---
                             match key.code {
@@ -255,40 +254,56 @@ pub fn run_tui_loop(
                                     break; // Exit TUI loop
                                 }
                                 KeyCode::Down | KeyCode::Char('j') => {
-                                    app_state.next_midi_port();
+                                    tui_state.next_midi_port();
                                 }
                                 KeyCode::Up | KeyCode::Char('k') => {
-                                    app_state.prev_midi_port();
+                                    tui_state.prev_midi_port();
                                 }
                                 KeyCode::Enter => {
-                                    // --- CONNECT TO MIDI DEVICE ---
-                                    if let Some(selected_idx) = app_state.port_list_state.selected() {
+                                    if let Some(selected_idx) = tui_state.port_list_state.selected() {
+                                        // First, get the port and name (immutable borrow)
+                                        let (port_to_connect, port_name) = {
+                                            let app_state_locked = tui_state.app_state.lock().unwrap();
+                                            if let Some((p, n)) = app_state_locked.available_ports.get(selected_idx) {
+                                                (p.clone(), n.clone())
+                                            } else {
+                                                continue;
+                                            }
+                                        }; // immutable borrow ends here
 
-                                        let (port_to_connect, port_name) = 
-                                            match app_state.shared_state.available_ports.get(selected_idx) {
-                                                Some((port, name)) => (port.clone(), name.clone()),
-                                                None => continue,
-                                            };
+                                        // Now, take midi_input (mutable borrow)
+                                        let midi_input = {
+                                            let mut app_state_locked = tui_state.app_state.lock().unwrap();
+                                            app_state_locked.midi_input.take()
+                                        };
 
-                                        app_state.shared_state.add_midi_log(format!("Connecting to: {}", port_name));
-                                        
-                                        if let Some(midi_input) = app_state.shared_state.midi_input.take() {
-                                            
-                                            let conn = connect_to_midi(
+                                        // 2. Check if we got midi_input
+                                        if let Some(midi_input) = midi_input {
+                                            // Call connect_to_midi *without* holding the lock.
+                                            let connection_result = connect_to_midi(
                                                 midi_input,
                                                 &port_to_connect,
                                                 &port_name,
                                                 &tui_tx,
-                                            )?;
-                                        
-                                            // Store the connection to keep it alive
-                                            _midi_connection = Some(conn);
-                                            
-                                            // Transition to the main app
-                                            app_state.mode = AppMode::MainApp;
-                                            
-                                            // Free this memory as we don't need it anymore
-                                            app_state.shared_state.available_ports.clear(); 
+                                            );
+
+                                            // Lock again to *update* the state with the result.
+                                            let mut app_state_locked = tui_state.app_state.lock().unwrap();
+                                            match connection_result {
+                                                Ok(conn) => {
+                                                    _midi_connection = Some(conn);
+                                                    tui_state.mode = AppMode::MainApp;
+                                                    app_state_locked.add_midi_log(format!("Connected to: {}", port_name));
+                                                    app_state_locked.available_ports.clear();
+                                                }
+                                                Err(e) => {
+                                                    app_state_locked.error_msg = Some(format!("Failed to connect: {}", e));
+                                                }
+                                            }
+                                        } else {
+                                            // This means midi_input was already None
+                                            let mut app_state_locked = tui_state.app_state.lock().unwrap();
+                                            app_state_locked.error_msg = Some("MIDI input already taken or not found.".to_string());
                                         }
                                     }
                                 }
@@ -311,7 +326,7 @@ pub fn run_tui_loop(
                                 _ => None,
                             };
                             if let Some(channel) = channel_to_toggle {
-                                app_state.toggle_stop_channel(channel, &audio_tx)?;
+                                tui_state.toggle_stop_channel(channel, &audio_tx)?;
                             } else {
                                 // Handle other keys if no channel key was pressed
                                 match key.code {
@@ -320,40 +335,38 @@ pub fn run_tui_loop(
                                         break; // Exit TUI loop
                                     }
                                     KeyCode::Down | KeyCode::Char('j') => {
-                                        app_state.next_item();
+                                        tui_state.next_item();
                                     }
                                     KeyCode::Up | KeyCode::Char('k') => {
-                                        app_state.prev_item();
+                                        tui_state.prev_item();
                                     }
-                                    KeyCode::Char('l') | KeyCode::Right => app_state.next_col(),
-                                    KeyCode::Char('h') | KeyCode::Left => app_state.prev_col(),
+                                    KeyCode::Char('l') | KeyCode::Right => tui_state.next_col(),
+                                    KeyCode::Char('h') | KeyCode::Left => tui_state.prev_col(),
                                     KeyCode::Char('p') => {
                                         audio_tx.send(AppMessage::AllNotesOff)?;
                                     }
                                     KeyCode::Char('a') => {
-                                        app_state.select_all_channels_for_stop();
+                                        tui_state.select_all_channels_for_stop();
                                     }
                                     KeyCode::Char('n') => {
-                                        app_state.select_none_channels_for_stop(&audio_tx)?;
+                                        tui_state.select_none_channels_for_stop(&audio_tx)?;
                                     }
                                     KeyCode::F(n) if (1..=12).contains(&n) && key.modifiers.contains(KeyModifiers::SHIFT) => {
                                         let slot = (n - 1) as usize;
-                                        // Get existing name or create default
-                                        let current_name = app_state.shared_state.presets[slot]
+                                        let current_name = tui_state.app_state.lock().unwrap().presets[slot]
                                             .as_ref()
                                             .map_or_else(
                                                 || format!("Preset F{}", slot + 1),
                                                 |p| p.name.clone()
                                             );
-                                        // Switch mode to ask for name
-                                        app_state.mode = AppMode::PresetSaveName(slot, current_name);
+                                        tui_state.mode = AppMode::PresetSaveName(slot, current_name);
                                     }
-                                    // Recall (F1-F12, no modifier)
                                     KeyCode::F(n) if (1..=12).contains(&n) && key.modifiers.is_empty() => {
-                                        if let Err(e) = app_state.shared_state.recall_preset((n - 1) as usize, &audio_tx) {
-                                            app_state.shared_state.add_midi_log(format!("ERROR recalling preset: {}", e));
+                                        if let Err(e) = tui_state.app_state.lock().unwrap().recall_preset((n - 1) as usize, &audio_tx) {
+                                            tui_state.app_state.lock().unwrap().add_midi_log(format!("ERROR recalling preset: {}", e));
                                         }
-                                    }                                    _ => {}
+                                    }
+                                _ => {}
                                 }
                             }
                         },
@@ -362,10 +375,10 @@ pub fn run_tui_loop(
                                 KeyCode::Enter => {
                                     // Save the preset
                                     if !name_buffer.is_empty() {
-                                        app_state.shared_state.save_preset(slot, name_buffer.clone());
+                                        tui_state.app_state.lock().unwrap().save_preset(slot, name_buffer.clone());
                                     }
                                     // Return to main app
-                                    app_state.mode = AppMode::MainApp;
+                                    tui_state.mode = AppMode::MainApp;
                                 }
                                 KeyCode::Char(c) => {
                                     // Add char to buffer
@@ -377,7 +390,7 @@ pub fn run_tui_loop(
                                 }
                                 KeyCode::Esc => {
                                     // Cancel
-                                    app_state.mode = AppMode::MainApp;
+                                    tui_state.mode = AppMode::MainApp;
                                 }
                                 _ => {} // Ignore other keys
                             }
@@ -392,8 +405,7 @@ pub fn run_tui_loop(
     Ok(())
 }
 
-// ... (LOGO, PIPES constants remain the same) ...
-const PIPES: &str = r"        ███         
+const PIPES: &str = r"          ███          
       ▐█▋ ███ ▐█▋      
   ▐█▋ ▐█▋ ███ ▐█▋ ▐█▋   
   ▐█▋ ▐█▋ ███ ▐█▋ ▐█▋   
@@ -413,7 +425,7 @@ const LOGO: &str = r"██████╗ ██╗   ██╗█████�
 ";
 
 // MIDI Selection UI function
-fn draw_midi_selection_ui(frame: &mut Frame, state: &mut TuiState) {
+fn draw_midi_selection_ui(frame: &mut Frame, app_state: &AppState, port_list_state: &mut ListState) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -458,8 +470,7 @@ fn draw_midi_selection_ui(frame: &mut Frame, state: &mut TuiState) {
     frame.render_widget(logo_widget, layout[0]);
 
     // --- MIDI Device List ---
-    // Data now comes from shared_state
-    let items: Vec<ListItem> = state.shared_state.available_ports.iter()
+    let items: Vec<ListItem> = app_state.available_ports.iter()
         .map(|(_, name)| {
             ListItem::new(name.clone())
         })
@@ -476,11 +487,15 @@ fn draw_midi_selection_ui(frame: &mut Frame, state: &mut TuiState) {
         .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan))
         .highlight_symbol("» ");
 
-    frame.render_stateful_widget(list_widget, layout[1], &mut state.port_list_state);
+    frame.render_stateful_widget(list_widget, layout[1], port_list_state);
 }
 
 // Main App UI function
-fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
+fn draw_main_app_ui(
+    frame: &mut Frame, 
+    app_state: &mut AppState,
+    list_state: &mut ListState,
+) {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -492,7 +507,7 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
 
     // --- Footer Help Text / Error ---
     // Data now comes from shared_state
-    let footer_widget = if let Some(err) = &state.shared_state.error_msg {
+    let footer_widget = if let Some(err) = &app_state.error_msg {
         Paragraph::new(err.as_str())
             .style(Style::default().fg(Color::White).bg(Color::Red))
     } else {
@@ -516,20 +531,20 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
         .split(stops_area);
     
     // Use TUI-specific state for selection
-    let selected_index = state.list_state.selected().unwrap_or(0);
+    let selected_index = list_state.selected().unwrap_or(0);
     // Use shared_state for data
-    let stops_count = state.shared_state.organ.stops.len();
+    let stops_count = app_state.organ.stops.len();
     if stops_count == 0 {
         // Handle no stops
         let no_stops_msg = Paragraph::new("No stops loaded.")
             .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).title(state.shared_state.organ.name.as_str()));
+            .block(Block::default().borders(Borders::ALL).title(app_state.organ.name.as_str()));
         frame.render_widget(no_stops_msg, stops_area);
     } else {
         // Calculate items per column
         let items_per_column = (stops_count + NUM_COLUMNS - 1) / NUM_COLUMNS;
         
-        let all_stops: Vec<_> = state.shared_state.organ.stops.iter().enumerate().collect();
+        let all_stops: Vec<_> = app_state.organ.stops.iter().enumerate().collect();
         
         // Create a list for each column
         for (col_idx, rect) in column_layout.iter().enumerate() {
@@ -543,8 +558,7 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
             let column_items: Vec<ListItem> = all_stops[start_idx..end_idx].iter()
                 .map(|(global_idx, stop)| {
                     // Get the set of active channels for this stop (from shared_state)
-                    let active_channels = state
-                        .shared_state
+                    let active_channels = app_state
                         .stop_channels
                         .get(global_idx)
                         .cloned()
@@ -589,7 +603,7 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
                 })
                 .collect();
             
-            let title = if col_idx == 0 { state.shared_state.organ.name.as_str() } else { "" };
+            let title = if col_idx == 0 { app_state.organ.name.as_str() } else { "" };
             let list_widget = List::new(column_items)
                 .block(Block::default().borders(Borders::ALL).title(title));
             frame.render_widget(list_widget, *rect);
@@ -608,7 +622,7 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
 
     // --- MIDI Log (in bottom_chunks[0]) ---
     // Data from shared_state
-    let log_items: Vec<ListItem> = state.shared_state.midi_log.iter()
+    let log_items: Vec<ListItem> = app_state.midi_log.iter()
         .map(|msg| ListItem::new(Line::from(msg.clone())))
         .collect();
 
@@ -624,7 +638,7 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
     const BLACK_KEY_MODS: [u8; 5] = [1, 3, 6, 8, 10]; // C#, D#, F#, G#, A#
 
     let now = Instant::now();
-    let display_start_time = now.checked_sub(state.shared_state.piano_roll_display_duration)
+    let display_start_time = now.checked_sub(app_state.piano_roll_display_duration)
         .unwrap_or(Instant::now());
 
     let piano_roll = Canvas::default()
@@ -636,10 +650,10 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
         ])
         .y_bounds([
             0.0,    
-            state.shared_state.piano_roll_display_duration.as_secs_f64()
+            app_state.piano_roll_display_duration.as_secs_f64()
         ])
         .paint(|ctx| {
-            let area_height_coords = state.shared_state.piano_roll_display_duration.as_secs_f64();
+            let area_height_coords = app_state.piano_roll_display_duration.as_secs_f64();
 
             // Draw the static keyboard background
             for note in PIANO_LOW_NOTE..=PIANO_HIGH_NOTE {
@@ -662,7 +676,7 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
             };
 
             // Draw finished notes (from shared_state)
-            for played_note in &state.shared_state.finished_notes_display {
+            for played_note in &app_state.finished_notes_display {
                 let note_x = played_note.note as f64;
                 let start_y = map_time_to_y(played_note.start_time);
                 let end_y = played_note.end_time.map_or_else(
@@ -678,7 +692,7 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
             }
 
             // Draw currently playing notes (from shared_state)
-            for (_, played_note) in &state.shared_state.currently_playing_notes {
+            for (_, played_note) in &app_state.currently_playing_notes {
                 let note_x = played_note.note as f64;
                 let start_y = map_time_to_y(played_note.start_time);
                 let end_y = map_time_to_y(now);    
@@ -695,14 +709,26 @@ fn draw_main_app_ui(frame: &mut Frame, state: &mut TuiState) {
 
 /// Renders the UI frame.
 fn ui(frame: &mut Frame, state: &mut TuiState) {
+    let mut app_state_locked = state.app_state.lock().unwrap();
     let mode = state.mode.clone();
     match mode {
-        AppMode::MidiSelection => draw_midi_selection_ui(frame, state),
-        AppMode::MainApp => draw_main_app_ui(frame, state),
-        // Draw modal on top
+        AppMode::MidiSelection => draw_midi_selection_ui(
+            frame, 
+            &mut app_state_locked, 
+            &mut state.port_list_state
+        ),
+        AppMode::MainApp => draw_main_app_ui(
+            frame, 
+            &mut app_state_locked, 
+            &mut state.list_state, 
+        ),
         AppMode::PresetSaveName(slot, name_buffer) => {
             // Draw the main app in the background
-            draw_main_app_ui(frame, state);
+            draw_main_app_ui(
+                frame, 
+                &mut app_state_locked, 
+                &mut state.list_state, 
+            );
             // Draw the modal on top
             draw_preset_save_modal(frame, slot, &name_buffer);
         }

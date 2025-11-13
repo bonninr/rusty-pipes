@@ -5,8 +5,8 @@ use midir::MidiInputConnection;
 use std::{
     path::PathBuf,
     sync::{
-        mpsc::{Receiver, Sender},
-        Arc,
+        mpsc::Sender,
+        Arc, Mutex
     },
     time::{Duration, Instant},
 };
@@ -23,9 +23,8 @@ enum GuiMode {
 }
 
 pub struct EguiApp {
-    shared_state: AppState,
+    app_state: Arc<Mutex<AppState>>,
     audio_tx: Sender<AppMessage>,
-    tui_rx: Receiver<TuiMessage>, // Receives messages from MIDI
     tui_tx: Sender<TuiMessage>,
     mode: GuiMode,
 
@@ -45,7 +44,7 @@ pub struct EguiApp {
 /// Runs the main GUI loop.
 pub fn run_gui_loop(
     audio_tx: Sender<AppMessage>,
-    tui_rx: Receiver<TuiMessage>,
+    app_state: Arc<Mutex<AppState>>,
     tui_tx: Sender<TuiMessage>,
     organ: Arc<Organ>,
     ir_file_path: Option<PathBuf>,
@@ -53,62 +52,64 @@ pub fn run_gui_loop(
     is_file_playback: bool,
     preselected_device_name: Option<String>,
 ) -> Result<()> {
-    let mut app_state = AppState::new(organ.clone(), is_file_playback)?;
 
     let mut gui_mode = GuiMode::MidiSelection;
     let mut connection: Option<MidiInputConnection<()>> = None;
     let mut selected_midi_port_index: Option<usize> = None;
 
-    // Handle preselected MIDI device (same logic as TUI)
-    if !is_file_playback {
-        if let Some(device_name) = preselected_device_name {
-            let found_port = app_state
-                .available_ports
-                .iter()
-                .find(|(_, name)| *name == device_name)
-                .map(|(port, _)| port.clone());
+    // Scope to limit the lock duration
+    {
+        let mut app_state_locked = app_state.lock().unwrap();
+        // Handle preselected MIDI device (same logic as TUI)
+        if !is_file_playback {
+            if let Some(device_name) = preselected_device_name {
+                let found_port = app_state_locked
+                    .available_ports
+                    .iter()
+                    .find(|(_, name)| *name == device_name)
+                    .map(|(port, _)| port.clone());
 
-            if let Some(port) = found_port {
-                if let Some(midi_input) = app_state.midi_input.take() {
-                    let conn = connect_to_midi(midi_input, &port, &device_name, &tui_tx)?;
-                    connection = Some(conn);
-                    gui_mode = GuiMode::MainApp;
-                    app_state.add_midi_log(format!("Connected to: {}", device_name));
-                    app_state.available_ports.clear();
+                if let Some(port) = found_port {
+                    if let Some(midi_input) = app_state_locked.midi_input.take() {
+                        let conn = connect_to_midi(midi_input, &port, &device_name, &tui_tx)?;
+                        connection = Some(conn);
+                        gui_mode = GuiMode::MainApp;
+                        app_state_locked.add_midi_log(format!("Connected to: {}", device_name));
+                        app_state_locked.available_ports.clear();
+                    }
+                } else {
+                    app_state_locked.error_msg =
+                        Some(format!("ERROR: MIDI device not found: '{}'", device_name));
                 }
+            }
+            
+            if !app_state_locked.available_ports.is_empty() {
+                selected_midi_port_index = Some(0);
+            }
+
+        } else {
+            gui_mode = GuiMode::MainApp; // Skip selection if playing file
+        }
+
+        // Handle IR file (same logic as TUI)
+        if let Some(path) = ir_file_path {
+            if path.exists() {
+                let log_msg = format!("Loading IR file: {:?}", path.file_name().unwrap());
+                app_state_locked.add_midi_log(log_msg);
+                audio_tx.send(AppMessage::SetReverbIr(path))?;
+                audio_tx.send(AppMessage::SetReverbWetDry(reverb_mix))?;
             } else {
-                app_state.error_msg =
-                    Some(format!("ERROR: MIDI device not found: '{}'", device_name));
+                let log_msg = format!("ERROR: IR file not found: {}", path.display());
+                app_state_locked.add_midi_log(log_msg);
             }
         }
-        
-        if !app_state.available_ports.is_empty() {
-             selected_midi_port_index = Some(0);
-        }
+    } // Scope ends, unlock app_state
 
-    } else {
-        gui_mode = GuiMode::MainApp; // Skip selection if playing file
-    }
-
-    // Handle IR file (same logic as TUI)
-    if let Some(path) = ir_file_path {
-        if path.exists() {
-            let log_msg = format!("Loading IR file: {:?}", path.file_name().unwrap());
-            app_state.add_midi_log(log_msg);
-            audio_tx.send(AppMessage::SetReverbIr(path))?;
-            audio_tx.send(AppMessage::SetReverbWetDry(reverb_mix))?;
-        } else {
-            let log_msg = format!("ERROR: IR file not found: {}", path.display());
-            app_state.add_midi_log(log_msg);
-        }
-    }
-    
     let selected_stop_index = if !organ.stops.is_empty() { Some(0) } else { None };
 
     let egui_app = EguiApp {
-        shared_state: app_state,
+        app_state,
         audio_tx,
-        tui_rx,
         tui_tx,
         mode: gui_mode,
         midi_connection: connection,
@@ -139,13 +140,6 @@ pub fn run_gui_loop(
 
 impl App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
-        // Process all pending TuiMessages
-        while let Ok(msg) = self.tui_rx.try_recv() {
-            if let Err(e) = self.shared_state.handle_tui_message(msg, &self.audio_tx) {
-                self.shared_state
-                    .add_midi_log(format!("Error handling message: {}", e));
-            }
-        }
 
         if !self.show_preset_save_modal { // Don't process keys if modal is open
         let input = ctx.input(|i| i.clone()); // Get a snapshot of the input state
@@ -160,7 +154,7 @@ impl App for EguiApp {
                     if input.modifiers.shift {
                         self.preset_save_slot = i;
                         // Pre-fill name if it exists, otherwise "Preset F{}"
-                        self.preset_save_name = self.shared_state.presets[i]
+                        self.preset_save_name = self.app_state.lock().unwrap().presets[i]
                             .as_ref()
                             .map_or_else(
                                 || format!("Preset F{}", i + 1), // Default name
@@ -168,9 +162,10 @@ impl App for EguiApp {
                             );
                         self.show_preset_save_modal = true;
                     } else {
+                        let mut app_state = self.app_state.lock().unwrap();
                         // Recall logic
-                        if let Err(e) = self.shared_state.recall_preset(i, &self.audio_tx) {
-                            self.shared_state.add_midi_log(format!("ERROR recalling preset: {}", e));
+                        if let Err(e) = app_state.recall_preset(i, &self.audio_tx) {
+                            app_state.add_midi_log(format!("ERROR recalling preset: {}", e));
                         }
                     }
                 }
@@ -184,7 +179,7 @@ impl App for EguiApp {
 
         // Update internal state (e.g., piano roll)
         if matches!(self.mode, GuiMode::MainApp) {
-            self.shared_state.update_piano_roll_state();
+            self.app_state.lock().unwrap().update_piano_roll_state();
             // Request continuous repaints for the piano roll
             ctx.request_repaint_after(Duration::from_millis(30));
         }
@@ -225,65 +220,68 @@ impl EguiApp {
                 ui.label(env!("CARGO_PKG_DESCRIPTION"));
                 ui.add_space(30.0);
 
-                if let Some(err) = &self.shared_state.error_msg {
-                    ui.label(egui::RichText::new(err).color(egui::Color32::RED));
-                }
+                // --- Lock Scope for reading state ---
+                {
+                    let mut app_state = self.app_state.lock().unwrap();
+                    if let Some(err) = &app_state.error_msg {
+                        ui.label(egui::RichText::new(err).color(egui::Color32::RED));
+                    }
 
-                if self.shared_state.available_ports.is_empty() {
-                    ui.label("No MIDI Input Devices Found!");
-                } else {
-                    ui.label("Select a MIDI Input Device:");
-                }
+                    if app_state.available_ports.is_empty() {
+                        ui.label("No MIDI Input Devices Found!");
+                    } else {
+                        ui.label("Select a MIDI Input Device:");
+                    }
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.group(|ui| {
-                        for (i, (_, name)) in self.shared_state.available_ports.iter().enumerate() {
-                            if ui.selectable_label(self.selected_midi_port_index == Some(i), name).clicked() {
-                                self.selected_midi_port_index = Some(i);
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.group(|ui| {
+                            for (i, (_, name)) in app_state.available_ports.iter().enumerate() {
+                                if ui.selectable_label(self.selected_midi_port_index == Some(i), name).clicked() {
+                                    self.selected_midi_port_index = Some(i);
+                                }
                             }
-                        }
+                        });
                     });
-                });
-                
-                ui.add_space(10.0);
+                    
+                    ui.add_space(10.0);
 
-                let connect_clicked = ui.button("Connect").clicked();
+                    let connect_clicked = ui.button("Connect").clicked();
 
-                if connect_clicked {
-                    if let Some(selected_idx) = self.selected_midi_port_index {
-                        if let Some((port_to_connect, port_name)) = self
-                            .shared_state
-                            .available_ports
-                            .get(selected_idx)
-                            .map(|(p, n)| (p.clone(), n.clone()))
-                        {
-                            self.shared_state
-                                .add_midi_log(format!("Connecting to: {}", port_name));
+                    if connect_clicked {
+                        if let Some(selected_idx) = self.selected_midi_port_index {
+                            if let Some((port_to_connect, port_name)) = app_state
+                                .available_ports
+                                .get(selected_idx)
+                                .map(|(p, n)| (p.clone(), n.clone()))
+                            {
+                                app_state
+                                    .add_midi_log(format!("Connecting to: {}", port_name));
 
-                            if let Some(midi_input) = self.shared_state.midi_input.take() {
-                                match connect_to_midi(
-                                    midi_input,
-                                    &port_to_connect,
-                                    &port_name,
-                                    &self.tui_tx,
-                                ) {
-                                    Ok(conn) => {
-                                        self.midi_connection = Some(conn);
-                                        self.mode = GuiMode::MainApp;
-                                        self.shared_state.available_ports.clear();
-                                    }
-                                    Err(e) => {
-                                        self.shared_state.error_msg = Some(format!("Failed to connect: {}", e));
-                                        // Put the midi_input back if it failed
-                                        // Note: This is tricky as midir::Input consumes itself.
-                                        // A better way would be to re-initialize it.
-                                        // For now, we'll just show the error.
+                                if let Some(midi_input) = app_state.midi_input.take() {
+                                    match connect_to_midi(
+                                        midi_input,
+                                        &port_to_connect,
+                                        &port_name,
+                                        &self.tui_tx,
+                                    ) {
+                                        Ok(conn) => {
+                                            self.midi_connection = Some(conn);
+                                            self.mode = GuiMode::MainApp;
+                                            app_state.available_ports.clear();
+                                        }
+                                        Err(e) => {
+                                            app_state.error_msg = Some(format!("Failed to connect: {}", e));
+                                            // Put the midi_input back if it failed
+                                            // Note: This is tricky as midir::Input consumes itself.
+                                            // A better way would be to re-initialize it.
+                                            // For now, we'll just show the error.
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
+                } // End lock scope
             });
         });
     }
@@ -296,7 +294,8 @@ impl EguiApp {
         let panel_frame = egui::Frame::default().fill(egui::Color32::TRANSPARENT);
 
         egui::CentralPanel::default().frame(panel_frame).show(ctx, |ui| {
-            ui.heading(&self.shared_state.organ.name);
+            let organ_name = self.app_state.lock().unwrap().organ.name.clone();
+            ui.heading(organ_name);
             ui.separator();
             
             self.draw_stop_controls(ui);
@@ -315,26 +314,30 @@ impl EguiApp {
     }
 
     fn draw_footer(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("footer")
-            .show(ctx, |ui| {
-                 if let Some(err) = &self.shared_state.error_msg {
-                    ui.label(egui::RichText::new(err).color(egui::Color32::RED));
-                } else {
-                    ui.label("Tip: Use Ctrl+Scroll to zoom piano roll. (Not implemented, just a placeholder)");
-                }
-            });
+        egui::TopBottomPanel::bottom("footer").show(ctx, |ui| {
+            let mut app_state = self.app_state.lock().unwrap();
+            if let Some(err) = &app_state.error_msg {
+                ui.label(egui::RichText::new(err).color(egui::Color32::RED));
+            } else {
+                ui.label("Tip: F1-F12 to Recall, Shift+F1-F12 to Save, 'P' for Panic");
+            }
+            // Clear error after showing it
+            app_state.error_msg = None;
+        });
     }
 
     fn draw_preset_panel(&mut self, ctx: &egui::Context) {
         egui::SidePanel::right("preset_panel").show(ctx, |ui| {
             ui.heading("Presets");
+
+            let mut app_state = self.app_state.lock().unwrap();
             
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.label("Recall (F1-F12):");
                 egui::Grid::new("preset_recall_grid").num_columns(2).show(ui, |ui| {
                     for i in 0..12 {
                         // Get name and state from Preset struct
-                        let (text, is_loaded) = self.shared_state.presets[i]
+                        let (text, is_loaded) = app_state.presets[i]
                             .as_ref()
                             .map_or_else(
                                 || (format!("F{}", i + 1), false), // No preset
@@ -342,8 +345,8 @@ impl EguiApp {
                             );
 
                         if ui.add_enabled(is_loaded, egui::Button::new(text)).clicked() {
-                            if let Err(e) = self.shared_state.recall_preset(i, &self.audio_tx) {
-                                self.shared_state.add_midi_log(format!("ERROR recalling preset: {}", e));
+                            if let Err(e) = app_state.recall_preset(i, &self.audio_tx) {
+                                app_state.add_midi_log(format!("ERROR recalling preset: {}", e));
                             }
                         }
                         if (i + 1) % 2 == 0 { ui.end_row(); }
@@ -358,7 +361,7 @@ impl EguiApp {
                         let text = format!("F{}", i + 1);
                         if ui.button(text).clicked() {
                             self.preset_save_slot = i;
-                            self.preset_save_name = self.shared_state.presets[i]
+                            self.preset_save_name = app_state.presets[i]
                                 .as_ref()
                                 .map_or_else(
                                     || format!("Preset F{}", i + 1), // Default name
@@ -376,16 +379,17 @@ impl EguiApp {
     fn draw_stop_controls(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Selected Stop:");
+            let mut app_state = self.app_state.lock().unwrap();
             if let Some(idx) = self.selected_stop_index {
-                let stop = &self.shared_state.organ.stops[idx];
+                let stop = &app_state.organ.stops[idx];
                 ui.label(egui::RichText::new(&stop.name).strong());
 
                 if ui.button("All Channels").clicked() {
-                    self.shared_state.select_all_channels_for_stop(idx);
+                    app_state.select_all_channels_for_stop(idx);
                 }
                 if ui.button("No Channels").clicked() {
-                    if let Err(e) = self.shared_state.select_none_channels_for_stop(idx, &self.audio_tx) {
-                        self.shared_state.add_midi_log(format!("ERROR: {}", e));
+                    if let Err(e) = app_state.select_none_channels_for_stop(idx, &self.audio_tx) {
+                        app_state.add_midi_log(format!("ERROR: {}", e));
                     }
                 }
             } else {
@@ -396,17 +400,18 @@ impl EguiApp {
             
             if ui.button("PANIC (All Notes Off)").on_hover_text("Stops all sounding notes").clicked() {
                 if let Err(e) = self.audio_tx.send(AppMessage::AllNotesOff) {
-                     self.shared_state.add_midi_log(format!("ERROR: {}", e));
+                     app_state.add_midi_log(format!("ERROR: {}", e));
                 }
             }
         });
     }
 
     fn draw_stop_list_columns(&mut self, ui: &mut egui::Ui) {
+        let mut app_state = self.app_state.lock().unwrap();
         let num_cols = 3;
-        let stops: Vec<_> = self.shared_state.organ.stops.clone();
+        let stops: Vec<_> = app_state.organ.stops.clone();
         let stops_count = stops.len();
-        let stop_channels = self.shared_state.stop_channels.clone();
+        let stop_channels = app_state.stop_channels.clone();
         if stops_count == 0 {
             ui.label("No stops loaded.");
             return;
@@ -458,8 +463,8 @@ impl EguiApp {
                                     let display_char = if chan == 9 { '0' } else { (b'1' + chan) as char };
                                     
                                     if ui.selectable_label(is_on, display_char.to_string()).clicked() {
-                                        if let Err(e) = self.shared_state.toggle_stop_channel(i, chan, &self.audio_tx) {
-                                            self.shared_state.add_midi_log(format!("ERROR: {}", e));
+                                        if let Err(e) = app_state.toggle_stop_channel(i, chan, &self.audio_tx) {
+                                            app_state.add_midi_log(format!("ERROR: {}", e));
                                         }
                                     }
                                 }
@@ -499,8 +504,8 @@ impl EguiApp {
                 egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
                     // 4. (Optional but recommended) Tell labels to wrap
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap); 
-                    
-                    for msg in &self.shared_state.midi_log {
+                    let app_state = self.app_state.lock().unwrap();
+                    for msg in &app_state.midi_log {
                         ui.label(msg); // This will now wrap
                     }
                 });
@@ -517,6 +522,8 @@ impl EguiApp {
     }
 
     fn draw_piano_roll(&self, ui: &mut egui::Ui) {
+        let app_state = self.app_state.lock().unwrap();
+
         const PIANO_LOW_NOTE: u8 = 21;  // A0
         const PIANO_HIGH_NOTE: u8 = 108; // C8
         const BLACK_KEY_MODS: [u8; 5] = [1, 3, 6, 8, 10]; // C#, D#, F#, G#, A#
@@ -530,9 +537,9 @@ impl EguiApp {
         let rect = response.rect;
 
         let now = Instant::now();
-        let display_start_time = now.checked_sub(self.shared_state.piano_roll_display_duration)
+        let display_start_time = now.checked_sub(app_state.piano_roll_display_duration)
             .unwrap_or(Instant::now());
-        let total_duration_f64 = self.shared_state.piano_roll_display_duration.as_secs_f64();
+        let total_duration_f64 = app_state.piano_roll_display_duration.as_secs_f64();
 
         // Draw Background (Keyboard)
         let note_range = (PIANO_HIGH_NOTE - PIANO_LOW_NOTE + 1) as f32;
@@ -583,7 +590,7 @@ impl EguiApp {
         };
         
         // Draw Finished Notes
-        for note in &self.shared_state.finished_notes_display {
+        for note in &app_state.finished_notes_display {
             let (x1, x2) = map_note_to_x_range(note.note);
             let y1 = map_time_to_y(note.start_time);
             let y2 = map_time_to_y(note.end_time.unwrap_or(now));
@@ -598,7 +605,7 @@ impl EguiApp {
         }
         
         // Draw Active Notes
-        for note in self.shared_state.currently_playing_notes.values() {
+        for note in app_state.currently_playing_notes.values() {
             let (x1, x2) = map_note_to_x_range(note.note);
             let y1 = map_time_to_y(note.start_time);
             let y2 = map_time_to_y(now); // End at the "now" line
@@ -653,7 +660,7 @@ impl EguiApp {
 
                         if save_triggered {
                             if !self.preset_save_name.is_empty() {
-                                self.shared_state.save_preset(
+                                self.app_state.lock().unwrap().save_preset(
                                     self.preset_save_slot, 
                                     self.preset_save_name.clone()
                                 );
