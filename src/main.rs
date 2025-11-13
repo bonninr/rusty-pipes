@@ -174,6 +174,8 @@ fn main() -> Result<()> {
         log::info!("MIDI logic thread started.");
         // This is a blocking loop, it waits for messages from either the MIDI callback or the file player.
         while let Ok(msg) = tui_rx.recv() {
+            // Yield
+            thread::yield_now();
             // Lock the state, handle the message, then unlock.
             let mut app_state_locked = logic_app_state.lock().unwrap();
             if let Err(e) = app_state_locked.handle_tui_message(msg, &logic_audio_tx) {
