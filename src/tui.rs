@@ -11,6 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, canvas::{Canvas, Line as CanvasLine}, Clear, List, ListItem, ListState, Paragraph},
 };
 use std::{
+    thread,
     io::{stdout, Stdout},
     path::PathBuf,
     sync::{mpsc::Sender, Arc, Mutex},
@@ -232,6 +233,7 @@ pub fn run_tui_loop(
     }
 
     loop {
+        thread::sleep(Duration::from_millis(10));
         // Update piano roll state before drawing (only if in main app mode)
         if matches!(tui_state.mode, AppMode::MainApp) {
             tui_state.app_state.lock().unwrap().update_piano_roll_state();

@@ -9,11 +9,12 @@ use std::{
         Arc, Mutex
     },
     time::{Duration, Instant},
+    collections::{VecDeque, HashMap, BTreeSet},
 };
 
 use crate::{
-    app::{AppMessage, TuiMessage, PIPES, LOGO},
-    app_state::{connect_to_midi, AppState},
+    app::{AppMessage, TuiMessage, LOGO, PIPES},
+    app_state::{connect_to_midi, AppState, Preset},
     organ::Organ,
 };
 
@@ -141,8 +142,29 @@ pub fn run_gui_loop(
 impl App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
 
+        let (
+            organ,
+            stop_channels,
+            midi_log,
+            presets,
+            active_notes,
+            finished_notes,
+            piano_roll_duration,
+        ) = {
+            let app_state = self.app_state.lock().unwrap();
+            (
+                app_state.organ.clone(),
+                app_state.stop_channels.clone(), // Clone the map
+                app_state.midi_log.clone(),      // Clone the deque
+                app_state.presets.clone(),
+                app_state.currently_playing_notes.clone(),
+                app_state.finished_notes_display.clone(),
+                app_state.piano_roll_display_duration,
+            )
+        };
+
         if !self.show_preset_save_modal { // Don't process keys if modal is open
-        let input = ctx.input(|i| i.clone()); // Get a snapshot of the input state
+            let input = ctx.input(|i| i.clone()); // Get a snapshot of the input state
 
             let function_keys = [
                 egui::Key::F1, egui::Key::F2, egui::Key::F3, egui::Key::F4,
@@ -154,7 +176,7 @@ impl App for EguiApp {
                     if input.modifiers.shift {
                         self.preset_save_slot = i;
                         // Pre-fill name if it exists, otherwise "Preset F{}"
-                        self.preset_save_name = self.app_state.lock().unwrap().presets[i]
+                        self.preset_save_name = presets[i]
                             .as_ref()
                             .map_or_else(
                                 || format!("Preset F{}", i + 1), // Default name
@@ -179,9 +201,8 @@ impl App for EguiApp {
 
         // Update internal state (e.g., piano roll)
         if matches!(self.mode, GuiMode::MainApp) {
-            self.app_state.lock().unwrap().update_piano_roll_state();
             // Request continuous repaints for the piano roll
-            ctx.request_repaint_after(Duration::from_millis(30));
+            ctx.request_repaint_after(Duration::from_millis(100));
         }
 
         // Draw the UI based on mode
@@ -190,7 +211,16 @@ impl App for EguiApp {
                 self.draw_midi_selection_ui(ctx);
             }
             GuiMode::MainApp => {
-                self.draw_main_app_ui(ctx);
+                self.draw_main_app_ui(
+                    ctx,
+                    &midi_log,
+                    &active_notes,
+                    &finished_notes,
+                    piano_roll_duration,
+                    organ.clone(),
+                    stop_channels.clone(),
+                    &presets
+                );
             }
         }
 
@@ -295,7 +325,7 @@ impl EguiApp {
                                             app_state.available_ports.clear();
                                         }
                                         Err(e) => {
-                                            app_state.error_msg = Some(format!("Failed to connect: {}", e));
+                                                app_state.error_msg = Some(format!("Failed to connect: {}", e));
                                             // Put the midi_input back if it failed
                                             // Note: This is tricky as midir::Input consumes itself.
                                             // A better way would be to re-initialize it.
@@ -311,10 +341,20 @@ impl EguiApp {
         });
     }
 
-    fn draw_main_app_ui(&mut self, ctx: &egui::Context) {
+    fn draw_main_app_ui(
+        &mut self, 
+        ctx: &egui::Context, 
+        midi_log: &VecDeque<std::string::String>, 
+        active_notes: &std::collections::HashMap<u8, crate::app_state::PlayedNote>, 
+        finished_notes: &std::collections::VecDeque<crate::app_state::PlayedNote>, 
+        piano_roll_duration: Duration, 
+        organ: Arc<Organ>,
+        stop_channels: HashMap<usize, BTreeSet<u8>>,
+        presets: &[std::option::Option<Preset>; 12],
+    ) {
         self.draw_footer(ctx);
-        self.draw_preset_panel(ctx);
-        self.draw_log_and_piano_roll_panel(ctx);
+        self.draw_preset_panel(ctx, presets);
+        self.draw_log_and_piano_roll_panel(ctx, midi_log, &active_notes, &finished_notes, piano_roll_duration);
 
         let panel_frame = egui::Frame {
             fill: egui::Color32::from_rgb(30, 30, 30),
@@ -322,11 +362,10 @@ impl EguiApp {
         };
 
         egui::CentralPanel::default().frame(panel_frame).show(ctx, |ui| {
-            let organ_name = self.app_state.lock().unwrap().organ.name.clone();
-            ui.heading(organ_name);
+            ui.heading(organ.name.clone());
             ui.separator();
             
-            self.draw_stop_controls(ui);
+            self.draw_stop_controls(ui, organ.clone());
 
             ui.separator();
             
@@ -335,7 +374,7 @@ impl EguiApp {
                 .vertical_scroll_offset(self.stop_list_scroll_offset);
                 
             let scroll_out = scroll.show(ui, |ui| {
-                self.draw_stop_list_columns(ui);
+                self.draw_stop_list_columns(ui, organ.clone(), stop_channels.clone());
             });
             self.stop_list_scroll_offset = scroll_out.state.offset.y;
         });
@@ -343,29 +382,20 @@ impl EguiApp {
 
     fn draw_footer(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("footer").show(ctx, |ui| {
-            let mut app_state = self.app_state.lock().unwrap();
-            if let Some(err) = &app_state.error_msg {
-                ui.label(egui::RichText::new(err).color(egui::Color32::RED));
-            } else {
-                ui.label("Tip: F1-F12 to Recall, Shift+F1-F12 to Save, 'P' for Panic");
-            }
-            // Clear error after showing it
-            app_state.error_msg = None;
+            ui.label("Tip: F1-F12 to Recall, Shift+F1-F12 to Save, 'P' for Panic");
         });
     }
 
-    fn draw_preset_panel(&mut self, ctx: &egui::Context) {
+    fn draw_preset_panel(&mut self, ctx: &egui::Context, presets: &[std::option::Option<Preset>; 12]) {
         egui::SidePanel::right("preset_panel").show(ctx, |ui| {
             ui.heading("Presets");
 
-            let mut app_state = self.app_state.lock().unwrap();
-            
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.label("Recall (F1-F12):");
                 egui::Grid::new("preset_recall_grid").num_columns(2).show(ui, |ui| {
                     for i in 0..12 {
                         // Get name and state from Preset struct
-                        let (text, is_loaded) = app_state.presets[i]
+                        let (text, is_loaded) = presets[i]
                             .as_ref()
                             .map_or_else(
                                 || (format!("F{}", i + 1), false), // No preset
@@ -373,6 +403,7 @@ impl EguiApp {
                             );
 
                         if ui.add_enabled(is_loaded, egui::Button::new(text)).clicked() {
+                            let mut app_state = self.app_state.lock().unwrap();
                             if let Err(e) = app_state.recall_preset(i, &self.audio_tx) {
                                 app_state.add_midi_log(format!("ERROR recalling preset: {}", e));
                             }
@@ -389,7 +420,7 @@ impl EguiApp {
                         let text = format!("F{}", i + 1);
                         if ui.button(text).clicked() {
                             self.preset_save_slot = i;
-                            self.preset_save_name = app_state.presets[i]
+                            self.preset_save_name = presets[i]
                                 .as_ref()
                                 .map_or_else(
                                     || format!("Preset F{}", i + 1), // Default name
@@ -404,18 +435,19 @@ impl EguiApp {
         });
     }
 
-    fn draw_stop_controls(&mut self, ui: &mut egui::Ui) {
+    fn draw_stop_controls(&mut self, ui: &mut egui::Ui, organ: Arc<Organ>, ) {
         ui.horizontal(|ui| {
             ui.label("Selected Stop:");
-            let mut app_state = self.app_state.lock().unwrap();
             if let Some(idx) = self.selected_stop_index {
-                let stop = &app_state.organ.stops[idx];
+                let stop = &organ.stops[idx];
                 ui.label(egui::RichText::new(&stop.name).strong());
 
                 if ui.button("All Channels").clicked() {
+                    let mut app_state = self.app_state.lock().unwrap();
                     app_state.select_all_channels_for_stop(idx);
                 }
                 if ui.button("No Channels").clicked() {
+                    let mut app_state = self.app_state.lock().unwrap();
                     if let Err(e) = app_state.select_none_channels_for_stop(idx, &self.audio_tx) {
                         app_state.add_midi_log(format!("ERROR: {}", e));
                     }
@@ -427,6 +459,7 @@ impl EguiApp {
             ui.separator();
             
             if ui.button("PANIC (All Notes Off)").on_hover_text("Stops all sounding notes").clicked() {
+                let mut app_state = self.app_state.lock().unwrap();
                 if let Err(e) = self.audio_tx.send(AppMessage::AllNotesOff) {
                      app_state.add_midi_log(format!("ERROR: {}", e));
                 }
@@ -434,12 +467,10 @@ impl EguiApp {
         });
     }
 
-    fn draw_stop_list_columns(&mut self, ui: &mut egui::Ui) {
-        let mut app_state = self.app_state.lock().unwrap();
+    fn draw_stop_list_columns(&mut self, ui: &mut egui::Ui, organ: Arc<Organ>, stop_channels: HashMap<usize, BTreeSet<u8>>) {
         let num_cols = 3;
-        let stops: Vec<_> = app_state.organ.stops.clone();
+        let stops: Vec<_> = organ.stops.clone();
         let stops_count = stops.len();
-        let stop_channels = app_state.stop_channels.clone();
         if stops_count == 0 {
             ui.label("No stops loaded.");
             return;
@@ -491,6 +522,7 @@ impl EguiApp {
                                     let display_char = if chan == 9 { '0' } else { (b'1' + chan) as char };
                                     
                                     if ui.selectable_label(is_on, display_char.to_string()).clicked() {
+                                        let mut app_state = self.app_state.lock().unwrap();
                                         if let Err(e) = app_state.toggle_stop_channel(i, chan, &self.audio_tx) {
                                             app_state.add_midi_log(format!("ERROR: {}", e));
                                         }
@@ -507,7 +539,14 @@ impl EguiApp {
     }
 
 
-    fn draw_log_and_piano_roll_panel(&mut self, ctx: &egui::Context) {
+    fn draw_log_and_piano_roll_panel(
+        &mut self,
+        ctx: &egui::Context,
+        midi_log: &std::collections::VecDeque<String>,
+        active_notes: &std::collections::HashMap<u8, crate::app_state::PlayedNote>,
+        finished_notes: &std::collections::VecDeque<crate::app_state::PlayedNote>,
+        piano_roll_duration: Duration,
+    ){ 
         const LOG_WIDTH: f32 = 300.0;
 
         egui::TopBottomPanel::bottom("bottom_panel")
@@ -532,8 +571,7 @@ impl EguiApp {
                 egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
                     // 4. (Optional but recommended) Tell labels to wrap
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap); 
-                    let app_state = self.app_state.lock().unwrap();
-                    for msg in &app_state.midi_log {
+                    for msg in midi_log {
                         ui.label(msg); // This will now wrap
                     }
                 });
@@ -543,14 +581,24 @@ impl EguiApp {
             ui.scope_builder( UiBuilder{ max_rect: Some(piano_rect), layout: Some(egui::Layout::top_down(egui::Align::LEFT)), ..Default::default()}, |ui| {
                 ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
                     ui.heading("Piano Roll");
-                    self.draw_piano_roll(ui);
+                    self.draw_piano_roll(
+                        ui,
+                        active_notes,
+                        finished_notes,
+                        piano_roll_duration,
+                    );
                 });
             });
         });
     }
 
-    fn draw_piano_roll(&self, ui: &mut egui::Ui) {
-        let app_state = self.app_state.lock().unwrap();
+    fn draw_piano_roll(
+        &self,
+        ui: &mut egui::Ui,
+        active_notes: &std::collections::HashMap<u8, crate::app_state::PlayedNote>,
+        finished_notes: &std::collections::VecDeque<crate::app_state::PlayedNote>,
+        piano_roll_duration: Duration,
+    ) {
 
         const PIANO_LOW_NOTE: u8 = 21;  // A0
         const PIANO_HIGH_NOTE: u8 = 108; // C8
@@ -565,9 +613,9 @@ impl EguiApp {
         let rect = response.rect;
 
         let now = Instant::now();
-        let display_start_time = now.checked_sub(app_state.piano_roll_display_duration)
+        let display_start_time = now.checked_sub(piano_roll_duration)
             .unwrap_or(Instant::now());
-        let total_duration_f64 = app_state.piano_roll_display_duration.as_secs_f64();
+        let total_duration_f64 = piano_roll_duration.as_secs_f64();
 
         // Draw Background (Keyboard)
         let note_range = (PIANO_HIGH_NOTE - PIANO_LOW_NOTE + 1) as f32;
@@ -618,7 +666,7 @@ impl EguiApp {
         };
         
         // Draw Finished Notes
-        for note in &app_state.finished_notes_display {
+        for note in finished_notes {
             let (x1, x2) = map_note_to_x_range(note.note);
             let y1 = map_time_to_y(note.start_time);
             let y2 = map_time_to_y(note.end_time.unwrap_or(now));
@@ -633,7 +681,7 @@ impl EguiApp {
         }
         
         // Draw Active Notes
-        for note in app_state.currently_playing_notes.values() {
+        for note in active_notes.values() {
             let (x1, x2) = map_note_to_x_range(note.note);
             let y1 = map_time_to_y(note.start_time);
             let y2 = map_time_to_y(now); // End at the "now" line
