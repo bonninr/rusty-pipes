@@ -142,9 +142,17 @@ This example loads the Hauptwerk sample set "GreenPositiv", using convolutional 
 > [!NOTE]
 > Some Hauptwerk organs are mixed completely dry on purpose and may require the use of the convolutional reverb setting to be used.
 
-## User Interface
+## Configuration UI
+
+All settings can also be configured in a user interface. That UI is shown when no command line parameters are given.
+
+<img width="1008" height="310" alt="image" src="https://github.com/user-attachments/assets/2b495ed5-a110-435c-a7a0-505271ca4c64" />
+
+## Main User Interface
 
 RustyPipes defaults to a graphical user interface, but it also supports a text-based console user interface.
+Both work the same: You assign MIDI channels to individual stops, and you can store those in one of 10 presets and recall them at any time.
+When you start the program for the first time, no stop will have any MIDI channel assigned so no sound will be heard until this is done.
 
 <img width="1693" height="879" alt="image" src="https://github.com/user-attachments/assets/e9a0ec69-5645-4033-a47b-a01f9d25348b" />
 
