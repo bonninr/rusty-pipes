@@ -85,6 +85,7 @@ struct Args {
     tui: bool,
 }
 
+#[cfg_attr(feature = "hotpath", hotpath::main(percentiles = [99]))]
 fn main() -> Result<()> {
     let args = Args::parse();
 

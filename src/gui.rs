@@ -140,6 +140,7 @@ pub fn run_gui_loop(
 }
 
 impl App for EguiApp {
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
 
         let (
@@ -240,6 +241,7 @@ impl App for EguiApp {
 // --- UI Drawing Implementations ---
 
 impl EguiApp {
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_midi_selection_ui(&mut self, ctx: &egui::Context) {
         let panel_frame = egui::Frame::default();
         egui::CentralPanel::default().frame(panel_frame).show(ctx, |ui| {
@@ -341,6 +343,7 @@ impl EguiApp {
         });
     }
 
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_main_app_ui(
         &mut self, 
         ctx: &egui::Context, 
@@ -380,12 +383,14 @@ impl EguiApp {
         });
     }
 
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_footer(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("footer").show(ctx, |ui| {
             ui.label("Tip: F1-F12 to Recall, Shift+F1-F12 to Save, 'P' for Panic");
         });
     }
 
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_preset_panel(&mut self, ctx: &egui::Context, presets: &[std::option::Option<Preset>; 12]) {
         egui::SidePanel::right("preset_panel").show(ctx, |ui| {
             ui.heading("Presets");
@@ -435,6 +440,7 @@ impl EguiApp {
         });
     }
 
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_stop_controls(&mut self, ui: &mut egui::Ui, organ: Arc<Organ>, ) {
         ui.horizontal(|ui| {
             ui.label("Selected Stop:");
@@ -467,6 +473,7 @@ impl EguiApp {
         });
     }
 
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_stop_list_columns(&mut self, ui: &mut egui::Ui, organ: Arc<Organ>, stop_channels: HashMap<usize, BTreeSet<u8>>) {
         let num_cols = 3;
         let stops: Vec<_> = organ.stops.clone();
@@ -538,7 +545,7 @@ impl EguiApp {
         });
     }
 
-
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_log_and_piano_roll_panel(
         &mut self,
         ctx: &egui::Context,
@@ -592,6 +599,7 @@ impl EguiApp {
         });
     }
 
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_piano_roll(
         &self,
         ui: &mut egui::Ui,

@@ -52,7 +52,7 @@ struct Voice {
 }
 
 impl Voice {
-    // ... (impl Voice is unchanged) ...
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn new(path: &Path, organ: Arc<Organ>, sample_rate: u32, gain_db: f32, start_fading_in: bool, is_attack_sample: bool, note_on_time: Instant) -> Result<Self> {
         
         let amplitude_ratio: AmplitudeRatio<f64> = DecibelRatio(gain_db as f64).into();
@@ -454,6 +454,7 @@ impl StereoConvolver {
     }
 
     /// Processes a block of stereo audio.
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn process(&mut self, dry_l: &[f32], dry_r: &[f32], wet_l: &mut [f32], wet_r: &mut [f32]) {
         if !self.is_loaded {
             // If no IR is loaded, fill output with silence
@@ -473,6 +474,7 @@ impl StereoConvolver {
 /// Helper function to stop one specific ActiveNote (one pipe)
 /// and trigger its corresponding release sample, linking them
 /// for a safe crossfade.
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn trigger_note_release(
     stopped_note: ActiveNote,
     organ: &Arc<Organ>,

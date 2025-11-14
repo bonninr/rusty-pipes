@@ -32,6 +32,14 @@ serde_json = "1.0"
 quick-xml = { version = "0.38", features = ["serde", "serialize"] }
 eframe = "0.33"
 egui = "0.33"
+hotpath = { version = "0.5", optional = true }
+
+[features]
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
+hotpath-alloc-bytes-total = ["hotpath/hotpath-alloc-bytes-total"]
+hotpath-alloc-count-total = ["hotpath/hotpath-alloc-count-total"]
+hotpath-alloc-self = ["hotpath/hotpath-alloc-self"]
+hotpath-off = ["hotpath/hotpath-off"]
 
 [profile.release]
 lto = true

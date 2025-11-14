@@ -474,6 +474,7 @@ fn draw_midi_selection_ui(frame: &mut Frame, app_state: &AppState, port_list_sta
 }
 
 // Main App UI function
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn draw_main_app_ui(
     frame: &mut Frame, 
     app_state: &mut AppState,
