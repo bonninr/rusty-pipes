@@ -775,7 +775,7 @@ fn centered_rect(r: Rect, percent_x: u16, percent_y: u16) -> Rect {
 }
 
 /// Helper to set up the terminal for TUI mode.
-fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
+pub fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
     let mut stdout = stdout();
     enable_raw_mode()?;
     execute!(stdout, EnterAlternateScreen)?;
@@ -783,7 +783,7 @@ fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
 }
 
 /// Helper to clean up the terminal.
-fn cleanup_terminal() -> Result<()> {
+pub fn cleanup_terminal() -> Result<()> {
     disable_raw_mode()?;
     execute!(stdout(), LeaveAlternateScreen)?;
     Ok(())

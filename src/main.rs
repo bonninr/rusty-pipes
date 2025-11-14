@@ -19,10 +19,14 @@ mod wav;
 mod wav_converter;
 mod app_state;
 mod gui;
+mod tui_filepicker;
+mod gui_filepicker;
 
 use app::{AppMessage, TuiMessage};
 use app_state::AppState;
 use organ::Organ;
+use tui_filepicker::run_tui_file_picker_loop;
+use gui_filepicker::run_gui_file_picker_loop;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 #[value(rename_all = "lower")]
@@ -35,20 +39,21 @@ enum LogLevel {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None, arg_required_else_help = true)]
+#[command(author, version, about, long_about = None)]
 struct Args {
     /// Path to organ definition file (e.g., friesach/friesach.organ or friesach/OrganDefinitions/Friesach.Organ_Hauptwerk_xml)
     #[arg(value_name = "ORGAN_DEFINITION")]
     organ_file: Option<PathBuf>,
 
     /// Optional path to a MIDI file to play
-    #[arg(value_name = "MIDI_FILE")]
+    #[arg(long = "midi-file", value_name = "MIDI_FILE")]
     midi_file: Option<PathBuf>,
 
     /// Pre-cache all samples on startup (uses more memory, reduces latency)
     #[arg(long)]
     precache: bool,
 
+    /// Convert all samples to 16-bit PCM on load (saves memory, may reduce quality)
     #[arg(long)]
     convert_to_16bit: bool,
 
@@ -81,7 +86,7 @@ struct Args {
     audio_buffer_frames: usize,
     
     /// Run in terminal UI (TUI) mode as a fallback
-    #[arg(long)] // <-- ADD THIS
+    #[arg(long)]
     tui: bool,
 }
 
@@ -125,13 +130,49 @@ fn main() -> Result<()> {
     
     // --- Print version info only if not listing devices ---
     // (And not in GUI mode, as stdout is not visible)
-    if args.tui {
+    if args.tui && args.organ_file.is_some() {
         println!("\nRusty Pipes - Virtual Pipe Organ Simulator v{}\n", env!("CARGO_PKG_VERSION"));
     }
 
-    let organ_path = match args.organ_file {
-        Some(path) => path,
-        None => return Err(anyhow::anyhow!("The ORGAN_DEFINITION argument is required when not using --list-midi-devices.")),
+let organ_path: PathBuf = match args.organ_file {
+        Some(path) => {
+            if !path.exists() {
+                return Err(anyhow::anyhow!("File not found: {}", path.display()));
+            }
+            log::info!("Organ file provided via argument: {}", path.display());
+            path
+        },
+        None => {
+            // No path provided, launch the appropriate file picker
+            if args.tui {
+                log::info!("No organ file provided. Starting TUI file picker.");
+                match run_tui_file_picker_loop() {
+                    Ok(Some(path)) => path,
+                    Ok(None) => {
+                        println!("No file selected. Exiting.");
+                        return Ok(()); // User quit the picker
+                    }
+                    Err(e) => {
+                        // TUI cleanup should have happened, but print error
+                        eprintln!("Error in TUI file picker: {}", e);
+                        return Err(e);
+                    }
+                }
+            } else {
+                log::info!("No organ file provided. Starting GUI file picker.");
+                match run_gui_file_picker_loop() {
+                    Ok(Some(path)) => path,
+                    Ok(None) => {
+                        log::info!("No file selected. Exiting.");
+                        return Ok(()); // User quit the picker
+                    }
+                    Err(e) => {
+                        log::error!("Error in GUI file picker: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
     };
 
     let convert_to_16_bit = args.convert_to_16bit;
