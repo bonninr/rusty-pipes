@@ -31,6 +31,7 @@ pub struct EguiApp {
     // --- GUI-specific state ---
     selected_stop_index: Option<usize>,
     stop_list_scroll_offset: f32,
+    selection_changed_by_key: bool,
 
     show_preset_save_modal: bool,
     preset_save_slot: usize,
@@ -55,6 +56,7 @@ pub fn run_gui_loop(
         _midi_connection: midi_connection, // Store the connection
         selected_stop_index,
         stop_list_scroll_offset: 0.0,
+        selection_changed_by_key: false,
         show_preset_save_modal: false,
         preset_save_slot: 0,
         preset_save_name: String::new(),
@@ -133,6 +135,62 @@ impl App for EguiApp {
                     log::error!("ERROR sending AllNotesOff: {}", e);
                 });
             }
+            
+            // Arrow key navigation
+            if !organ.stops.is_empty() {
+                let num_stops = organ.stops.len();
+                // Default to 0 if nothing is selected, to allow keys to "start" selection
+                let mut current_idx = self.selected_stop_index.unwrap_or(0);
+                let mut changed = false;
+
+                let num_cols = 3;
+                let items_per_column = (num_stops + num_cols - 1) / num_cols;
+
+                if input.key_pressed(egui::Key::ArrowDown) {
+                    current_idx = (current_idx + 1) % num_stops;
+                    changed = true;
+                } else if input.key_pressed(egui::Key::ArrowUp) {
+                    current_idx = (current_idx + num_stops - 1) % num_stops;
+                    changed = true;
+                } else if input.key_pressed(egui::Key::ArrowLeft) {
+                    current_idx = current_idx.saturating_sub(items_per_column);
+                    changed = true;
+                } else if input.key_pressed(egui::Key::ArrowRight) {
+                    // Move to the next column (clamps to last item)
+                    let new_idx = current_idx + items_per_column;
+                    current_idx = new_idx.min(num_stops - 1);
+                    changed = true;
+                }
+                
+                if changed {
+                    self.selected_stop_index = Some(current_idx);
+                    self.selection_changed_by_key = true; // Flag for scroll view
+                }
+            }
+            
+            // Number key toggling (for selected stop)
+            if let Some(stop_idx) = self.selected_stop_index {
+                let mut channel_to_toggle: Option<u8> = None;
+
+                if input.key_pressed(egui::Key::Num1) || input.key_pressed(egui::Key::Num1) { channel_to_toggle = Some(0); }
+                if input.key_pressed(egui::Key::Num2) || input.key_pressed(egui::Key::Num2) { channel_to_toggle = Some(1); }
+                if input.key_pressed(egui::Key::Num3) || input.key_pressed(egui::Key::Num3) { channel_to_toggle = Some(2); }
+                if input.key_pressed(egui::Key::Num4) || input.key_pressed(egui::Key::Num4) { channel_to_toggle = Some(3); }
+                if input.key_pressed(egui::Key::Num5) || input.key_pressed(egui::Key::Num5) { channel_to_toggle = Some(4); }
+                if input.key_pressed(egui::Key::Num6) || input.key_pressed(egui::Key::Num6) { channel_to_toggle = Some(5); }
+                if input.key_pressed(egui::Key::Num7) || input.key_pressed(egui::Key::Num7) { channel_to_toggle = Some(6); }
+                if input.key_pressed(egui::Key::Num8) || input.key_pressed(egui::Key::Num8) { channel_to_toggle = Some(7); }
+                if input.key_pressed(egui::Key::Num9) || input.key_pressed(egui::Key::Num9) { channel_to_toggle = Some(8); }
+                if input.key_pressed(egui::Key::Num0) || input.key_pressed(egui::Key::Num0) { channel_to_toggle = Some(9); }
+                if let Some(channel) = channel_to_toggle {
+                    // Replicate the toggle logic from the button click
+                    let mut app_state = self.app_state.lock().unwrap();
+                    if let Err(e) = app_state.toggle_stop_channel(stop_idx, channel, &self.audio_tx) {
+                        app_state.add_midi_log(format!("ERROR: {}", e));
+                    }
+                }
+            }
+            
         }
 
         // Request continuous repaints for the piano roll
@@ -209,7 +267,7 @@ impl EguiApp {
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_footer(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("footer").show(ctx, |ui| {
-            ui.label("Tip: F1-F12 to Recall, Shift+F1-F12 to Save, 'P' for Panic");
+            ui.label("Tip: F1-F12 to Recall, Shift+F1-F12 to Save, 'P' for Panic, Arrows to Navigate, 1-0 to Toggle");
         });
     }
 
@@ -282,7 +340,7 @@ impl EguiApp {
                     }
                 }
             } else {
-                 ui.label(egui::RichText::new("None").italics());
+                ui.label(egui::RichText::new("None").italics());
             }
             
             ui.separator();
@@ -290,7 +348,7 @@ impl EguiApp {
             if ui.button("PANIC (All Notes Off)").on_hover_text("Stops all sounding notes").clicked() {
                 let mut app_state = self.app_state.lock().unwrap();
                 if let Err(e) = self.audio_tx.send(AppMessage::AllNotesOff) {
-                     app_state.add_midi_log(format!("ERROR: {}", e));
+                    app_state.add_midi_log(format!("ERROR: {}", e));
                 }
             }
         });
@@ -331,7 +389,9 @@ impl EguiApp {
                     ui.vertical(|ui| { 
                             
                         // Stop Name (on top)
-                        let label_text = egui::RichText::new(&stop.name);
+                        let label_text = egui::RichText::new(&stop.name)
+                            .size(18.0); 
+                            
                         let label_text = if is_active {
                             label_text.color(egui::Color32::from_rgb(100, 255, 100))
                         } else {
@@ -339,8 +399,16 @@ impl EguiApp {
                         };
 
                         // The .selectable_label will wrap text automatically
-                        if ui.selectable_label(is_selected, label_text).clicked() {
+                        let response = ui.selectable_label(is_selected, label_text);
+                        if response.clicked() {
                             self.selected_stop_index = Some(i);
+                            // User clicked, don't auto-scroll
+                            self.selection_changed_by_key = false; 
+                        }
+                        
+                        // Auto-scroll if selection changed by key
+                        if is_selected && self.selection_changed_by_key {
+                            response.scroll_to_me(Some(egui::Align::Center));
                         }
                         
                         // Toggles (below)
@@ -351,7 +419,10 @@ impl EguiApp {
                                     let is_on = active_channels.contains(&chan);
                                     let display_char = if chan == 9 { '0' } else { (b'1' + chan) as char };
                                     
-                                    if ui.selectable_label(is_on, display_char.to_string()).clicked() {
+                                    let toggle_text = egui::RichText::new(display_char.to_string())
+                                        .size(18.0);
+                                    
+                                    if ui.selectable_label(is_on, toggle_text).clicked() {
                                         let mut app_state = self.app_state.lock().unwrap();
                                         if let Err(e) = app_state.toggle_stop_channel(i, chan, &self.audio_tx) {
                                             app_state.add_midi_log(format!("ERROR: {}", e));
@@ -366,6 +437,9 @@ impl EguiApp {
                 }
             }
         });
+        
+        // Reset the key-scroll flag after drawing
+        self.selection_changed_by_key = false;
     }
 
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
@@ -562,7 +636,7 @@ impl EguiApp {
                         
                         // Check for 'Enter' key or button click
                         let save_triggered = ui.button("Save").clicked() || 
-                                         (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                                    (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
 
                         if save_triggered {
                             if !self.preset_save_name.is_empty() {
@@ -577,7 +651,7 @@ impl EguiApp {
 
                     // If 'Enter' was pressed, close the modal
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                         self.show_preset_save_modal = false;
+                        self.show_preset_save_modal = false;
                     }
 
                 });

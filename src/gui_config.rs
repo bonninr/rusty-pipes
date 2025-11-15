@@ -6,6 +6,7 @@ use crate::config::{AppSettings, ConfigState, RuntimeConfig};
 use crate::gui_filepicker;
 use crate::app::{PIPES, LOGO};
 
+#[allow(dead_code)]
 struct ConfigApp {
     state: ConfigState,
     midi_input_arc: Arc<Mutex<Option<MidiInput>>>, 
