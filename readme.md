@@ -50,6 +50,14 @@ By default, RustyPipes will stream samples from disk in real time. This works gr
 
 Note: RustyPipes will create pitch-corrected samples of all pipes that have a pitch factor configured on startup. It will not overwrite the original files, but create new files with the pitch shift in the filename. This step is done automatically and only done the first time a particular organ is loaded.
 
+## Starting on Apple OSX
+
+Apple's OS prevents users from running unsigned programs. To bypass this mechanism you have to perform the following steps:
+
+1. Attempt to Open the App: Double-click the RustyPipes app. You will see a warning message.
+2. Access System Settings: Go to Apple menu > System Settings > Privacy & Security.
+3. Allow the App: Scroll down to find RustyPipes and click "Open Anyway." You may need to enter your password to confirm.
+
 ## Configuration Options
 
 The configuration dialog is shown on startup in both text and graphical mode, the settings are the same for both.
