@@ -167,13 +167,15 @@ fn main() -> Result<()> {
     
     // --- Save Final Settings (excluding runtime options) ---
     let settings_to_save = AppSettings {
-        organ_file: Some(config.organ_file.clone()), // Now required
+        organ_file: Some(config.organ_file.clone()),
         ir_file: config.ir_file.clone(),
         reverb_mix: config.reverb_mix,
         audio_buffer_frames: config.audio_buffer_frames,
         precache: config.precache,
         convert_to_16bit: config.convert_to_16bit,
         original_tuning: config.original_tuning,
+        midi_device_name: config.midi_port_name.clone(),
+        tui_mode,
     };
     if let Err(e) = config::save_settings(&settings_to_save) {
         log::warn!("Failed to save settings: {}", e);

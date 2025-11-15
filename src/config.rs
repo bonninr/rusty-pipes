@@ -14,6 +14,8 @@ pub struct AppSettings {
     pub precache: bool,
     pub convert_to_16bit: bool,
     pub original_tuning: bool,
+    pub tui_mode: bool,
+    pub midi_device_name: Option<String>,
 }
 
 /// Default settings for a new installation.
@@ -27,6 +29,8 @@ impl Default for AppSettings {
             precache: false,
             convert_to_16bit: false,
             original_tuning: false,
+            tui_mode: false, // Default to GUI
+            midi_device_name: None,
         }
     }
 }
@@ -74,34 +78,38 @@ pub struct ConfigState {
 }
 
 impl ConfigState {
-    pub fn new(settings: AppSettings, _midi_input_arc: &Arc<Mutex<Option<MidiInput>>>) -> Result<Self> {
-        let mut _midi_input = None;
+    pub fn new(settings: AppSettings, midi_input_arc: &Arc<Mutex<Option<MidiInput>>>) -> Result<Self> {
         let mut available_ports = Vec::new();
         let mut error_msg = None;
+        let mut selected_midi_port = None;
 
-        match MidiInput::new("Rusty Pipes MIDI Input") {
-            Ok(midi_in) => {
-                let ports = midi_in.ports();
-                if ports.is_empty() {
-                    error_msg = Some("No MIDI devices found.".to_string());
-                } else {
-                    for port in ports.iter() {
-                        if let Ok(name) = midi_in.port_name(port) {
-                            available_ports.push((port.clone(), name));
-                        }
+        if let Some(midi_in) = midi_input_arc.lock().unwrap().as_ref() {
+            let ports = midi_in.ports();
+            if ports.is_empty() {
+                error_msg = Some("No MIDI devices found.".to_string());
+            } else {
+                for port in ports.iter() {
+                    if let Ok(name) = midi_in.port_name(port) {
+                        available_ports.push((port.clone(), name));
                     }
                 }
-                _midi_input = Some(midi_in);
             }
-            Err(e) => {
-                error_msg = Some(format!("Failed to initialize MIDI: {}", e));
+
+            // After populating available_ports, check against saved settings
+            if let Some(saved_name) = &settings.midi_device_name {
+                if let Some(found_port) = available_ports.iter().find(|(_, name)| name == saved_name) {
+                    selected_midi_port = Some(found_port.clone());
+                }
             }
+
+        } else {
+            error_msg = Some("Failed to initialize MIDI.".to_string());
         }
 
         Ok(Self {
             settings,
             midi_file: None,
-            selected_midi_port: None,
+            selected_midi_port, // <-- Set here
             available_ports,
             error_msg,
         })

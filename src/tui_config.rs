@@ -63,17 +63,25 @@ pub fn run_config_ui(
     midi_input_arc: Arc<Mutex<Option<MidiInput>>>
 ) -> Result<Option<RuntimeConfig>> {
     let mut terminal = setup_terminal()?;
+
+    let config_state = ConfigState::new(settings, &midi_input_arc)?;
+
+    let initial_midi_index = config_state.selected_midi_port.as_ref()
+        .and_then(|(selected_port, _)| {
+            config_state.available_ports.iter().position(|(port, _)| port == selected_port)
+        });
+    
+    let mut midi_list_state = ListState::default();
+    midi_list_state.select(initial_midi_index); // Select the found index (or None)
+
     let mut state = TuiConfigState {
-        config_state: ConfigState::new(settings, &midi_input_arc)?,
+        config_state,
         _midi_input_arc: midi_input_arc, // Store the arc
         list_state: ListState::default(),
         midi_list_state: ListState::default(),
         mode: ConfigMode::Main,
     };
     state.list_state.select(Some(0));
-    if !state.config_state.available_ports.is_empty() {
-        state.midi_list_state.select(Some(0));
-    }
 
     let mut final_config: Option<RuntimeConfig> = None;
 
