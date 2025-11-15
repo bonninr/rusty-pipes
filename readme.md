@@ -38,11 +38,95 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 
 Downloads are available here: [https://github.com/dividebysandwich/rusty-pipes/releases](https://github.com/dividebysandwich/rusty-pipes/releases)
 
-On Arch linux, just run ```yay -S rusty-pipes``` or ```paru -S rusty-pipes```
+On Arch linux, just run ```yay -S rusty-pipes``` or ```paru -S rusty-pipes``` to install from the AUR.
 
 ## Starting
 
+RustyPipes starts up with a configuration dialog when started without any parameters. This UI allows for the changing of all available options. All settings except for the Midi file option are saved to disk. Press "Start Rusty Pipes" to begin playing with the options you've configured.
+
+There's two main modes of operation: MIDI control, and MIDI file playback. If you select a MIDI file to play back, MIDI control is not available.
+
+By default, RustyPipes will stream samples from disk in real time. This works great with modern SSDs.  See the configuration options below for alternatives for PCs with traditional hard disks.
+
 Note: RustyPipes will create pitch-corrected samples of all pipes that have a pitch factor configured on startup. It will not overwrite the original files, but create new files with the pitch shift in the filename. This step is done automatically and only done the first time a particular organ is loaded.
+
+## Configuration Options
+
+The configuration dialog is shown on startup in both text and graphical mode, the settings are the same for both.
+
+<img width="1008" height="310" alt="image" src="https://github.com/user-attachments/assets/2b495ed5-a110-435c-a7a0-505271ca4c64" />
+
+### Organ file
+
+This setting needs to point to a GrandOrgue ".organ" or Hauptwerk ".Organ_Hauptwerk_xml" file that is part of an organ sample set. The configuration dialog allows the user to browse for the organ they want to load.
+
+> [!NOTE]
+> Hauptwerk support is experimental and known to still have pitch issues with some sample sets
+> Some Hauptwerk organs are mixed completely dry on purpose and may require the use of the convolutional reverb setting to be used.
+
+### MIDI file
+
+This option allows for the selection of a MIDI file to play back. When this is used, MIDI control with input devices is not available.
+
+Command line example: ```rusty-pipes /path/to/name.organ /path/to/file.mid```
+
+### MIDI device
+
+When not selecting a MIDI file, it is assumed that some form of MIDI input device shall be used. This is the main mode of operation for RustyPipes, and you can either select a midi device from the list that's shown, or specify one as a command line parameter.
+
+#### Selecting a MIDI device via command line parameter
+
+Instead of having to manually choose the MIDI input device from a list everytime the program starts, you can pass the desired input device via the command line. To do this, first use ```--list-midi-devices``` to display a list, and then pass it as parameter with ```--midi-device``` like so:
+
+```bash
+$ rusty-pipes --list-midi-devices
+Available MIDI Input Devices:
+  0: Midi Through:Midi Through Port-0 14:0
+  1: Scarlett 2i4 USB:Scarlett 2i4 USB MIDI 1 24:0
+  2: LUMI Keys Block 80FR:LUMI Keys Block 80FR Bluetooth 129:0
+
+$ rusty-pipes --midi-device "LUMI Keys Block 80FR:LUMI Keys Block 80FR Bluetooth 129:0" Organs/Friesach/Friesach.organ
+Loading organ definition...
+Loading organ from: "/home/user/Organs/Friesach/Friesach.organ"
+Found 335 sections in INI.
+Parsing complete. Stops found: 158. Stops filtered (noise/empty): 114. Stops added: 44.
+Successfully loaded organ: Friesach
+Found 44 stops.
+Starting audio engine...
+
+```
+
+> [!NOTE]
+> Don't use "2: LUMI...", only use the part after "2: "
+
+### Convolution Reverb
+
+Lets you pass a .wav file containing the impulse response of the desired room/church.
+
+### Reverb mix
+
+This parameter defines how much reverb vs the original sample is used. 0.0 = no reverb, 1.0 = oops it's all reverb
+
+### Audio Buffer
+
+The number of frames used in the internal audio buffer. Higher numbers work on slower computers, but introduce more latency. Fast PCs can use lower values like 256. If you get distorted or choppy audio, raise that number.
+When using reverb, it is recommended to use a value that is a power of 2, like 256, 512 or 1024.
+
+### Precaching
+
+Loads all samples into RAM on startup, just like other virtual pipe organ programs. Use this if your disk is too slow or you are not happy with the latency of streaming samples.
+
+### Convert to 16 bit
+
+Creates 16-bit versions of all samples and stores them in the same directories as the original samples. This may be useful for slower PCs to reduce overall workload
+
+### Original tuning
+
+Some sample sets provide tuning information that is just *perfect*, as the required tuning was measured after sampling. However, this is not how the organ sounds in real life. This parameter ignores all tuning information as long as the pitch shift is not greater than +/- 20 cents. Any tuning greater than 20 cents is applied as normal, since this is often done for reusing samples of a different key.
+
+### Command Line Parameters
+
+All options can also be set via command line parameters:
 
 ```bash
 Usage: rusty-pipes [OPTIONS] [ORGAN_DEFINITION]
@@ -79,74 +163,11 @@ Options:
           Print version
 ```
 
-### Precaching
-
-```--precache``` - Loads all samples into RAM on startup, just like other virtual pipe organ programs. Use this if your disk is too slow or you are not happy with the latency of streaming samples.
-
-### 16 bit conversion
-
-```--convert-to-16bit``` - Creates 16-bit versions of all samples and stores them in the same directories as the original samples. This may be useful for slower PCs to reduce overall workload
-
-### Convolution Reverb
-
-```--ir-file``` - Lets you pass a .wav file containing the impulse response of the desired room/church.
-
-```--reverb-mix``` - This parameter defines how much reverb vs the original sample is used. 0.0 = no reverb, 1.0 = oops it's all reverb
-
-### Original tuning
-
-```--original-tuning``` - Some sample sets provide tuning information that is just *perfect*, as the required tuning was measured after sampling. However, this is not how the organ sounds in real life. This parameter ignores all tuning information as long as the pitch shift is not greater than +/- 20 cents. Any tuning greater than 20 cents is applied as normal, since this is often done for reusing samples of a different key.
-
-### Control via MIDI input
-
-```rusty-pipes /path/to/name.organ```
-
-### Select MIDI device via command line parameter
-
-Instead of having to manually choose the MIDI input device from a list everytime the program starts, you can pass the desired input device via the command line. To do this, first use ```--list-midi-devices``` to display a list, and then pass it as parameter with ```--midi-device``` like so:
-
-```bash
-$ rusty-pipes --list-midi-devices
-Available MIDI Input Devices:
-  0: Midi Through:Midi Through Port-0 14:0
-  1: Scarlett 2i4 USB:Scarlett 2i4 USB MIDI 1 24:0
-  2: LUMI Keys Block 80FR:LUMI Keys Block 80FR Bluetooth 129:0
-
-$ rusty-pipes --midi-device "LUMI Keys Block 80FR:LUMI Keys Block 80FR Bluetooth 129:0" Organs/Friesach/Friesach.organ
-Loading organ definition...
-Loading organ from: "/home/user/Organs/Friesach/Friesach.organ"
-Found 335 sections in INI.
-Parsing complete. Stops found: 158. Stops filtered (noise/empty): 114. Stops added: 44.
-Successfully loaded organ: Friesach
-Found 44 stops.
-Starting audio engine...
-
-```
-
-> [!NOTE]
-> Don't use "2: LUMI...", only use the part after "2: "
-
-### Play MIDI file
-
-```rusty-pipes /path/to/name.organ /path/to/file.mid```
-
-### Loading Hauptwerk organs
-
-> [!NOTE]
-> Hauptwerk support is experimental and known to still have pitch issues with some sample sets
+### Command line example with reverb:
 
 This example loads the Hauptwerk sample set "GreenPositiv", using convolutional reverb at a 70% wet, 30% dry mix, and using an impulse response file from [Lars Virtual Pipe Organ Site](https://familjenpalo.se/vpo/ir-recordings/)
 
 ```rusty-pipes --ir-file BureaChurchRev1at24-48.wav --reverb-mix 0.7 /home/user/Hauptwerk/Organs/GreenPositiv/OrganDefinitions/GreenPositiv.Organ_Hauptwerk_xml```
-
-> [!NOTE]
-> Some Hauptwerk organs are mixed completely dry on purpose and may require the use of the convolutional reverb setting to be used.
-
-## Configuration UI
-
-All settings can also be configured in a user interface. That UI is shown when no command line parameters are given.
-
-<img width="1008" height="310" alt="image" src="https://github.com/user-attachments/assets/2b495ed5-a110-435c-a7a0-505271ca4c64" />
 
 ## Main User Interface
 
