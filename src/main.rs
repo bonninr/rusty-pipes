@@ -7,6 +7,7 @@ use simplelog::{Config, LevelFilter, WriteLogger};
 use std::fs::{self, File};
 use std::thread::{self, JoinHandle};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use midir::{MidiInput, MidiInputConnection};
 
 mod app;
@@ -23,6 +24,7 @@ mod tui_filepicker;
 mod config;
 mod tui_config;
 mod gui_config;
+mod loading_ui;
 
 use app::{AppMessage, TuiMessage};
 use app_state::{AppState, connect_to_midi};
@@ -208,14 +210,92 @@ fn main() -> Result<()> {
         println!("\nRusty Pipes - Virtual Pipe Organ Simulator v{}\n", env!("CARGO_PKG_VERSION"));
     }
 
-    // --- Parse the organ definition ---
-    if tui_mode { println!("Loading organ definition..."); }
-    let organ = Arc::new(Organ::load(
-        &config.organ_file, 
-        config.convert_to_16bit, 
-        config.precache, 
-        config.original_tuning
-    )?);
+    let organ: Arc<Organ>; // Define organ variable
+
+    if config.precache && !tui_mode {
+        // --- GUI Pre-caching with Progress Window ---
+        log::info!("Starting GUI pre-caching...");
+
+        // Channels for progress
+        let (progress_tx, progress_rx) = mpsc::channel::<(f32, String)>();
+        let is_finished = Arc::new(AtomicBool::new(false));
+
+        // We need to move the config and is_finished Arc into the loading thread
+        let load_config = config.clone(); // Clone RuntimeConfig
+        let is_finished_clone = Arc::clone(&is_finished);
+
+        // This Arc<Mutex<...>> will hold the result from the loading thread
+        let organ_result_arc = Arc::new(Mutex::new(None));
+        let organ_result_clone = Arc::clone(&organ_result_arc);
+
+        // --- Spawn the Loading Thread ---
+        thread::spawn(move || {
+            log::info!("[LoadingThread] Started.");
+            
+            // Call Organ::load, passing the progress transmitter
+            let load_result = Organ::load(
+                &load_config.organ_file,
+                load_config.convert_to_16bit,
+                load_config.precache,
+                load_config.original_tuning,
+                Some(progress_tx), // Pass the transmitter
+            );
+
+            log::info!("[LoadingThread] Finished.");
+            
+            // Store the result
+            *organ_result_clone.lock().unwrap() = Some(load_result);
+            
+            // Signal the UI thread that we are done
+            is_finished_clone.store(true, Ordering::SeqCst);
+        });
+
+        // --- Run the Loading UI on the Main Thread ---
+        // This will block until the loading thread sets `is_finished` to true
+        // and the eframe window closes itself.
+        if let Err(e) = loading_ui::run_loading_ui(progress_rx, is_finished) {
+            log::error!("Failed to run loading UI: {}", e);
+            // We might still be able to recover, but it's safer to exit
+            return Err(anyhow::anyhow!("Loading UI failed: {}", e));
+        }
+
+        // --- Retrieve the loaded organ ---
+        let organ_result = organ_result_arc.lock().unwrap().take()
+            .ok_or_else(|| anyhow::anyhow!("Loading thread did not produce an organ"))?;
+        
+        organ = Arc::new(organ_result?); // Handle the Result<> from Organ::load
+
+    } else {
+        // --- Original TUI or Non-Precache Loading ---
+        if tui_mode { println!("Loading organ definition..."); }
+        
+        // Create a dummy transmitter for TUI progress
+        let (tui_progress_tx, tui_progress_rx) = mpsc::channel::<(f32, String)>();
+        
+        // TUI progress-printing thread
+        let _tui_progress_thread = if config.precache && tui_mode {
+            Some(thread::spawn(move || {
+                while let Ok((progress, file_name)) = tui_progress_rx.recv() {
+                    // Simple TUI progress
+                    use std::io::Write;
+                    print!("\rLoading Samples: [{:3.0}%] {}...      ", progress * 100.0, file_name);
+                    std::io::stdout().flush().unwrap();
+                }
+                println!("\rLoading Samples: [100%] Complete.              ");
+            }))
+        } else {
+            None
+        };
+
+        organ = Arc::new(Organ::load(
+            &config.organ_file, 
+            config.convert_to_16bit, 
+            config.precache, 
+            config.original_tuning,
+            if config.precache && tui_mode { Some(tui_progress_tx) } else { None }
+        )?);
+    }
+    
     if tui_mode {
         println!("Successfully loaded organ: {}", organ.name);
         println!("Found {} stops.", organ.stops.len());
