@@ -119,6 +119,10 @@ Lets you pass a .wav file containing the impulse response of the desired room/ch
 
 This parameter defines how much reverb vs the original sample is used. 0.0 = no reverb, 1.0 = oops it's all reverb
 
+### Gain
+
+The overall output gain. This is a value between 0.0 and 1.0 which is used to scale the organ sample amplitude. 0.4 is a relatively safe value, excessive gain can lead to distortion with a lot of stops playing.
+
 ### Audio Buffer
 
 The number of frames used in the internal audio buffer. Higher numbers work on slower computers, but introduce more latency. Fast PCs can use lower values like 256. If you get distorted or choppy audio, raise that number.
