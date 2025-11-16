@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, SampleRate, Stream, StreamConfig};
+use cpal::{Device, SampleFormat, SampleRate, Stream, StreamConfig};
 use decibel::{AmplitudeRatio, DecibelRatio};
 use ringbuf::traits::{Observer, Consumer, Producer, Split};
 use fft_convolver::FFTConvolver;
@@ -26,6 +26,46 @@ const CHANNEL_COUNT: usize = 2; // Stereo
 const VOICE_BUFFER_FRAMES: usize = 14400; 
 const GAIN_FACTOR: f32 = 0.5; // Prevent clipping when multiple voices mix
 const CROSSFADE_TIME: f32 = 0.20; // How long to crossfade from attack to release samples, in seconds
+
+/// Helper to get the cpal host, preferring JACK if available.
+fn get_cpal_host() -> cpal::Host {
+    let available_hosts = cpal::available_hosts();
+    log::info!("[Cpal] Available audio hosts:");
+    for host_id in &available_hosts {
+        log::info!("  - {}", host_id.name());
+    }
+    cpal::available_hosts()
+        .into_iter()
+        .find(|id| id.name().to_lowercase().contains("jack"))
+        .and_then(|id| cpal::host_from_id(id).ok())
+        .unwrap_or_else(|| {
+            log::info!("JACK host not found or failed to initialize. Falling back to default host.");
+            cpal::default_host()
+        })
+}
+
+/// Returns a list of available audio output device names.
+pub fn get_audio_device_names() -> Result<Vec<String>> {
+    let host = get_cpal_host();
+    let devices = host.output_devices()?;
+    let mut names = Vec::new();
+    for device in devices {
+        match device.name() {
+            Ok(name) => names.push(name),
+            Err(e) => log::warn!("[Cpal] Failed to get name for a device: {}", e),
+        }
+    }
+    Ok(names)
+}
+
+/// Returns the name of the default audio output device, if available.
+pub fn get_default_audio_device_name() -> Result<Option<String>> {
+    let host = get_cpal_host();
+    match host.default_output_device() {
+        Some(device) => Ok(Some(device.name()?)),
+        None => Ok(None),
+    }
+}
 
 /// Represents one playing sample, either attack or release.
 struct Voice {
@@ -58,11 +98,11 @@ impl Voice {
         let amplitude_ratio: AmplitudeRatio<f64> = DecibelRatio(gain_db as f64).into();
         let gain = amplitude_ratio.amplitude_value() as f32;
 
-        // --- Create the Ring Buffer ---
+        // Create the Ring Buffer
         let ring_buf = HeapRb::<f32>::new(VOICE_BUFFER_FRAMES * CHANNEL_COUNT);
         let (mut producer, consumer) = ring_buf.split(); // consumer is HeapCons<f32>
 
-        // --- Create communication atomics ---
+        // Create communication atomics
         let is_finished = Arc::new(AtomicBool::new(false));
         let is_cancelled = Arc::new(AtomicBool::new(false));
         let is_attack_sample_clone = is_attack_sample;
@@ -80,7 +120,7 @@ impl Voice {
             let path_str_clone = path_str.clone();
             log::trace!("[LoaderThread] START: {:?}", path_str);
             
-            // --- Use catch_unwind to handle ALL panics ---
+            // Use catch_unwind to handle ALL panics
             let panic_result = std::panic::catch_unwind(move || {
 
                 let mut loader_loop_counter = 0u64;
@@ -977,27 +1017,39 @@ fn handle_note_off(
 }
 
 /// Sets up the cpal audio stream and spawns the processing thread.
-pub fn start_audio_playback(rx: mpsc::Receiver<AppMessage>, organ: Arc<Organ>, buffer_size_frames: usize) -> Result<Stream> {
+pub fn start_audio_playback(
+    rx: mpsc::Receiver<AppMessage>,
+    organ: Arc<Organ>,
+    buffer_size_frames: usize,
+    audio_device_name: Option<String>
+) -> Result<Stream> {
     let available_hosts = cpal::available_hosts();
     log::info!("[Cpal] Available audio hosts:");
     for host_id in &available_hosts {
         log::info!("  - {}", host_id.name());
     }
-    let host = cpal::available_hosts()
-        .into_iter()
-        .find(|id| id.name().to_lowercase().contains("jack"))
-        .and_then(|id| cpal::host_from_id(id).ok())
-        .unwrap_or_else(|| {
-            // If JACK isn't found or fails to initialize, fall back to the default host.
-            log::info!("JACK host not found or failed to initialize. Falling back to default host.");
-            cpal::default_host()
-        });
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| anyhow!("No default output device available"))?;
+    let host = get_cpal_host();
+
+    let device: Device = {
+        if let Some(name) = audio_device_name {
+            log::info!("[Cpal] Attempting to find device by name: {}", name);
+            host.output_devices()?
+                .find(|d| d.name().map_or(false, |n| n == name))
+                .ok_or_else(|| anyhow!("Audio device not found: {}. Falling back to default.", name))
+                // Fallback to default if not found
+                .or_else(|e| {
+                    log::warn!("{}", e);
+                    host.default_output_device().ok_or_else(|| anyhow!("No default output device available"))
+                })?
+        } else {
+            log::info!("[Cpal] Using default output device.");
+            host.default_output_device()
+                .ok_or_else(|| anyhow!("No default output device available"))?
+        }
+    };
 
     log::info!(
-        "[Cpal] Default output device: {}",
+        "[Cpal] Using output device: {}",
         device.name().unwrap_or_else(|_| "Unknown".to_string())
     );
 

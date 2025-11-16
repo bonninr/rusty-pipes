@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use crate::audio::{get_audio_device_names, get_default_audio_device_name};
+
 /// Settings that are saved to the configuration file.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -17,6 +19,7 @@ pub struct AppSettings {
     pub tui_mode: bool,
     pub midi_device_name: Option<String>,
     pub gain: f32,
+    pub audio_device_name: Option<String>,
 }
 
 /// Default settings for a new installation.
@@ -33,6 +36,7 @@ impl Default for AppSettings {
             tui_mode: false, // Default to GUI
             midi_device_name: None,
             gain: 0.4, // Conservative default gain
+            audio_device_name: None,
         }
     }
 }
@@ -53,8 +57,9 @@ pub struct RuntimeConfig {
 
     // --- Runtime-Only Settings ---
     pub midi_file: Option<PathBuf>,
-    pub midi_port: Option<MidiInputPort>, // The port to connect to
+    pub midi_port: Option<MidiInputPort>,
     pub midi_port_name: Option<String>,
+    pub audio_device_name: Option<String>,
 }
 
 /// Loads settings from disk.
@@ -78,6 +83,10 @@ pub struct ConfigState {
     // MIDI-related fields
     pub available_ports: Vec<(MidiInputPort, String)>,
     pub error_msg: Option<String>,
+
+    // Audio-related fields
+    pub available_audio_devices: Vec<String>,
+    pub selected_audio_device_name: Option<String>,
 }
 
 impl ConfigState {
@@ -109,12 +118,48 @@ impl ConfigState {
             error_msg = Some("Failed to initialize MIDI.".to_string());
         }
 
+        let mut available_audio_devices = Vec::new();
+        let mut selected_audio_device_name = None;
+
+        match get_audio_device_names() {
+            Ok(names) => {
+                if names.is_empty() {
+                    let msg = "No audio output devices found.".to_string();
+                    error_msg = Some(error_msg.map_or(msg.clone(), |e| format!("{} {}", e, msg)));
+                }
+                available_audio_devices = names;
+            }
+            Err(e) => {
+                let msg = format!("Error finding audio devices: {}", e);
+                error_msg = Some(error_msg.map_or(msg.clone(), |err| format!("{} {}", err, msg)));
+            }
+        }
+
+        // Try to select the saved audio device
+        if let Some(saved_name) = &settings.audio_device_name {
+            if available_audio_devices.contains(saved_name) {
+                selected_audio_device_name = Some(saved_name.clone());
+            }
+        }
+
+        // If no saved device, try to select the system default
+        if selected_audio_device_name.is_none() {
+            if let Ok(Some(default_name)) = get_default_audio_device_name() {
+                if available_audio_devices.contains(&default_name) {
+                    selected_audio_device_name = Some(default_name);
+                }
+            }
+        }
+        // If still None, it will just be "Default" in the UI (which is None)
+
         Ok(Self {
             settings,
             midi_file: None,
             selected_midi_port, // <-- Set here
             available_ports,
             error_msg,
+            available_audio_devices,
+            selected_audio_device_name,
         })
     }
 }

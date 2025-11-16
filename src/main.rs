@@ -79,8 +79,12 @@ struct Args {
     list_midi_devices: bool,
 
     /// Select a MIDI device by name
-    #[arg(long, value_name = "DEVICE_NAME")]
+    #[arg(long, value_name = "MIDI_DEVICE")]
     midi_device: Option<String>,
+
+    /// Select an audio device by name
+    #[arg(long, value_name = "AUDIO_DEVICE")]
+    audio_device: Option<String>,
 
     /// Audio buffer size in frames (lower values reduce latency but may cause glitches)
     #[arg(long, value_name = "NUM_FRAMES")]
@@ -139,6 +143,7 @@ fn main() -> Result<()> {
     if let Some(p) = args.precache { settings.precache = p; }
     if let Some(c) = args.convert_to_16bit { settings.convert_to_16bit = c; }
     if let Some(o) = args.original_tuning { settings.original_tuning = o; }
+    if let Some(d) = args.audio_device { settings.audio_device_name = Some(d); }
 
     // --- Run Configuration UI ---
     let config_result = if tui_mode {
@@ -176,7 +181,8 @@ fn main() -> Result<()> {
         original_tuning: config.original_tuning,
         midi_device_name: config.midi_port_name.clone(),
         gain: config.gain,
-        tui_mode,
+        audio_device_name: config.audio_device_name.clone(),
+        tui_mode,       
     };
     if let Err(e) = config::save_settings(&settings_to_save) {
         log::warn!("Failed to save settings: {}", e);
@@ -210,7 +216,8 @@ fn main() -> Result<()> {
     let _stream = audio::start_audio_playback(
         audio_rx, 
         Arc::clone(&organ), 
-        config.audio_buffer_frames
+        config.audio_buffer_frames,
+        config.audio_device_name,
     )?;
     if tui_mode { println!("Audio engine running."); }
     

@@ -13,6 +13,7 @@ struct ConfigApp {
     output: Arc<Mutex<Option<RuntimeConfig>>>, 
     is_finished: Arc<Mutex<bool>>,
     selected_midi_port_index: Option<usize>,
+    selected_audio_device_index: Option<usize>,
 }
 
 impl ConfigApp {
@@ -29,6 +30,12 @@ impl ConfigApp {
             .and_then(|(selected_port, _)| {
                 state.available_ports.iter().position(|(port, _)| port == selected_port)
             });
+        
+        // Find the index of the pre-selected audio device, if any
+        let selected_audio_device_index = state.selected_audio_device_name.as_ref()
+            .and_then(|selected_name| {
+                state.available_audio_devices.iter().position(|name| name == selected_name)
+            });
 
         Self {
             state,
@@ -36,6 +43,7 @@ impl ConfigApp {
             output,
             is_finished,
             selected_midi_port_index,
+            selected_audio_device_index,
         }
     }
 }
@@ -96,6 +104,28 @@ impl App for ConfigApp {
                                 }
                             }
                         });
+                        ui.end_row();
+
+                        // --- Audio Device ---
+                        ui.label("Audio Device:");
+                        let selected_audio_text = self.selected_audio_device_index
+                            .and_then(|idx| self.state.available_audio_devices.get(idx))
+                            .map_or("Default", |name| name.as_str());
+                        
+                        ui.set_min_width(300.0); 
+                        egui::ComboBox::from_id_salt("audio_device_combo")
+                            .selected_text(selected_audio_text)
+                            .show_ui(ui, |ui| {
+                                // "Default" option
+                                if ui.selectable_label(self.selected_audio_device_index.is_none(), "[ Default ]").clicked() {
+                                    self.selected_audio_device_index = None;
+                                }
+                                for (i, name) in self.state.available_audio_devices.iter().enumerate() {
+                                    if ui.selectable_label(self.selected_audio_device_index == Some(i), name).clicked() {
+                                        self.selected_audio_device_index = Some(i);
+                                    }
+                                }
+                            });
                         ui.end_row();
 
                         // --- MIDI Device ---
@@ -226,6 +256,10 @@ impl App for ConfigApp {
                             .and_then(|idx| self.state.available_ports.get(idx))
                             .map_or((None, None), |(p, n)| (Some(p.clone()), Some(n.clone())));
 
+                        let audio_device_name = self.selected_audio_device_index
+                            .and_then(|idx| self.state.available_audio_devices.get(idx))
+                            .cloned();
+
                         let runtime_config = RuntimeConfig {
                             organ_file: self.state.settings.organ_file.clone().unwrap(),
                             ir_file: self.state.settings.ir_file.clone(),
@@ -238,6 +272,7 @@ impl App for ConfigApp {
                             midi_port: port,
                             midi_port_name: name,
                             gain: self.state.settings.gain,
+                            audio_device_name,
                         };
                         
                         *self.output.lock().unwrap() = Some(runtime_config); 
