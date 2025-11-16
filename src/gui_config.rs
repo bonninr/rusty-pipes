@@ -237,18 +237,28 @@ impl App for ConfigApp {
 
                 // --- Start / Quit ---
                 ui.horizontal(|ui| {
-                    if ui.button("Quit").clicked() {
+
+                    let quit_button_text = egui::RichText::new("Quit")
+                        .color(egui::Color32::RED)
+                        .text_style(egui::TextStyle::Heading); 
+                        
+                    let quit_button = ui.add_enabled(
+                        self.state.settings.organ_file.is_some(),
+                        egui::Button::new(quit_button_text) 
+                    );
+
+                    if quit_button.clicked() {
                         *self.is_finished.lock().unwrap() = true; 
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
-                    
-                    let button_text = egui::RichText::new("Start Rusty Pipes")
+
+                    let start_button_text = egui::RichText::new("Start Rusty Pipes")
                         .color(egui::Color32::GREEN)
                         .text_style(egui::TextStyle::Heading); 
                         
                     let start_button = ui.add_enabled(
                         self.state.settings.organ_file.is_some(),
-                        egui::Button::new(button_text) 
+                        egui::Button::new(start_button_text) 
                     );
                     
                     if start_button.clicked() {
