@@ -123,6 +123,10 @@ This parameter defines how much reverb vs the original sample is used. 0.0 = no 
 
 The overall output gain. This is a value between 0.0 and 1.0 which is used to scale the organ sample amplitude. 0.4 is a relatively safe value, excessive gain can lead to distortion with a lot of stops playing.
 
+### Polyphony
+
+The maximum number of pipes playing. This actually works a bit differently that one might expect: It doesn't prevent notes from being played - but when you release a key, the release of any pipe exceeding that limit will be shortened. This is done in order of keys released, i.e. oldest voices are faded out first, so only the latest configured number of voices has their release play out in full.
+
 ### Audio Buffer
 
 The number of frames used in the internal audio buffer. Higher numbers work on slower computers, but introduce more latency. Fast PCs can use lower values like 256. If you get distorted or choppy audio, raise that number.
