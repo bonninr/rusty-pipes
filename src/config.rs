@@ -19,6 +19,7 @@ pub struct AppSettings {
     pub tui_mode: bool,
     pub midi_device_name: Option<String>,
     pub gain: f32,
+    pub polyphony: usize,
     pub audio_device_name: Option<String>,
 }
 
@@ -36,6 +37,7 @@ impl Default for AppSettings {
             tui_mode: false, // Default to GUI
             midi_device_name: None,
             gain: 0.4, // Conservative default gain
+            polyphony: 128,
             audio_device_name: None,
         }
     }
@@ -54,6 +56,7 @@ pub struct RuntimeConfig {
     pub convert_to_16bit: bool,
     pub original_tuning: bool,
     pub gain: f32,
+    pub polyphony: usize,
 
     // --- Runtime-Only Settings ---
     pub midi_file: Option<PathBuf>,

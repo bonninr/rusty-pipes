@@ -210,6 +210,15 @@ impl App for ConfigApp {
                             .text(""));
                         ui.end_row();
 
+                        // --- Polyphony ---
+                        ui.label("Polyphony:");
+                        // Make slider fill available width
+                        ui.add(egui::Slider::new(&mut self.state.settings.polyphony, 1..=1024)
+                            .show_value(true)
+                            .min_decimals(0)
+                            .text(""));
+                        ui.end_row();
+
                         // --- Audio Buffer ---
                         ui.label("Audio Buffer (frames):");
                         ui.add(egui::DragValue::new(&mut self.state.settings.audio_buffer_frames).speed(32.0).range(32..=4096));
@@ -282,6 +291,7 @@ impl App for ConfigApp {
                             midi_port: port,
                             midi_port_name: name,
                             gain: self.state.settings.gain,
+                            polyphony: self.state.settings.polyphony,
                             audio_device_name,
                         };
                         

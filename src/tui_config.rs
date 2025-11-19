@@ -40,12 +40,13 @@ fn get_item_display(idx: usize, state: &ConfigState) -> String {
         4 => format!("5. IR File:          {}", path_to_str(settings.ir_file.as_deref())),
         5 => format!("6. Reverb Mix:       {:.2}", settings.reverb_mix),
         6 => format!("7. Gain:             {:.2}", settings.gain),
-        7 => format!("8. Audio Buffer:     {} frames", settings.audio_buffer_frames),
-        8 => format!("9. Pre-cache:        {}", bool_to_str(settings.precache)),
-        9 => format!("0. Convert to 16-bit:{}", bool_to_str(settings.convert_to_16bit)),
-        10 => format!("-. Original Tuning:  {}", bool_to_str(settings.original_tuning)),
-        11 => "S. Start Rusty Pipes".to_string(),
-        12 => "Q. Quit".to_string(),
+        7 => format!("8. Polyphony:        {}", settings.polyphony),
+        8 => format!("9. Audio Buffer:     {} frames", settings.audio_buffer_frames),
+        9 => format!("0. Pre-cache:        {}", bool_to_str(settings.precache)),
+        10 => format!("-. Convert to 16-bit:{}", bool_to_str(settings.convert_to_16bit)),
+        11 => format!("=. Original Tuning:  {}", bool_to_str(settings.original_tuning)),
+        12 => "S. Start Rusty Pipes".to_string(),
+        13 => "Q. Quit".to_string(),
         _ => unreachable!(),
     }
 }
@@ -116,11 +117,11 @@ pub fn run_config_ui(
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => break 'config_loop,
                         KeyCode::Down | KeyCode::Char('j') => {
-                            let i = state.list_state.selected().map_or(0, |i| (i + 1) % 13);
+                            let i = state.list_state.selected().map_or(0, |i| (i + 1) % 14);
                             state.list_state.select(Some(i));
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
-                            let i = state.list_state.selected().map_or(12, |i| (i + 12) % 13);
+                            let i = state.list_state.selected().map_or(13, |i| (i + 13) % 14);
                             state.list_state.select(Some(i));
                         }
                         KeyCode::Enter => {
@@ -166,14 +167,18 @@ pub fn run_config_ui(
                                         let gain = state.config_state.settings.gain.to_string();
                                         state.mode = ConfigMode::TextInput(idx, gain);
                                     }
-                                    7 => { // Audio Buffer
+                                    7 => { // Polyphony
+                                        let polyphony = state.config_state.settings.polyphony.to_string();
+                                        state.mode = ConfigMode::TextInput(idx, polyphony);
+                                    }
+                                    8 => { // Audio Buffer
                                         let buffer = state.config_state.settings.audio_buffer_frames.to_string();
                                         state.mode = ConfigMode::TextInput(idx, buffer);
                                     }
-                                    8 => state.config_state.settings.precache = !state.config_state.settings.precache,
-                                    9 => state.config_state.settings.convert_to_16bit = !state.config_state.settings.convert_to_16bit,
-                                    10 => state.config_state.settings.original_tuning = !state.config_state.settings.original_tuning,
-                                    11 => { // Start
+                                    9 => state.config_state.settings.precache = !state.config_state.settings.precache,
+                                    10 => state.config_state.settings.convert_to_16bit = !state.config_state.settings.convert_to_16bit,
+                                    11 => state.config_state.settings.original_tuning = !state.config_state.settings.original_tuning,
+                                    12 => { // Start
                                         if state.config_state.settings.organ_file.is_none() {
                                             state.config_state.error_msg = Some("Please select an Organ File to start.".to_string());
                                         } else {
@@ -190,12 +195,13 @@ pub fn run_config_ui(
                                                 midi_port: state.config_state.selected_midi_port.as_ref().map(|(p, _)| p.clone()),
                                                 midi_port_name: state.config_state.selected_midi_port.as_ref().map(|(_, n)| n.clone()),
                                                 gain: s.gain,
+                                                polyphony: s.polyphony,
                                                 audio_device_name: state.config_state.selected_audio_device_name.clone(),
                                             });
                                             break 'config_loop;
                                         }
                                     }
-                                    12 => break 'config_loop, // Quit
+                                    13 => break 'config_loop, // Quit
                                     _ => {}
                                 }
                             }
@@ -276,7 +282,12 @@ pub fn run_config_ui(
                                         state.config_state.settings.gain = val.clamp(0.0, 1.0);
                                     }
                                 }
-                                7 => { // Audio Buffer
+                                7 => { // Polyphony
+                                    if let Ok(val) = buffer.parse::<usize>() {
+                                        state.config_state.settings.polyphony = val.clamp(1, 1024);
+                                    }
+                                }
+                                8 => { // Audio Buffer
                                     if let Ok(val) = buffer.parse::<usize>() {
                                         state.config_state.settings.audio_buffer_frames = val;
                                     }
@@ -342,7 +353,7 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
 
 
     // Build config items
-    let num_config_items = 13;
+    let num_config_items = 14;
     let items: Vec<ListItem> = (0..num_config_items)
         .map(|i| {
             let text = get_item_display(i, &state.config_state);
@@ -404,7 +415,8 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
             let title = match *idx {
                 5 => "Enter Reverb Mix (0.0 - 1.0)",
                 6 => "Enter Gain (0.0 - 1.0)",
-                7 => "Enter Audio Buffer Size",
+                7 => "Enter Polyphony (1 - 1024)",
+                8 => "Enter Audio Buffer Size",
                 _ => "Enter Value",
             };
             draw_text_input_modal(frame, title, buffer, 40, 3);

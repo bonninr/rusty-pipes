@@ -24,8 +24,8 @@ use crate::wav_converter::SampleMetadata;
 const AUDIO_SAMPLE_RATE: u32 = 48000;
 const CHANNEL_COUNT: usize = 2; // Stereo
 const VOICE_BUFFER_FRAMES: usize = 14400; 
-const GAIN_FACTOR: f32 = 0.5; // Prevent clipping when multiple voices mix
 const CROSSFADE_TIME: f32 = 0.20; // How long to crossfade from attack to release samples, in seconds
+const VOICE_STEALING_FADE_TIME: f32 = 1.00; // Fade out stolen release samples over 1s
 
 /// Helper to get the cpal host, preferring JACK if available.
 fn get_cpal_host() -> cpal::Host {
@@ -89,12 +89,16 @@ struct Voice {
     note_on_time: Instant,
     has_reported_latency: bool,
     is_attack_sample: bool,
+    fade_increment: f32,
 }
 
 impl Voice {
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn new(path: &Path, organ: Arc<Organ>, sample_rate: u32, gain_db: f32, start_fading_in: bool, is_attack_sample: bool, note_on_time: Instant) -> Result<Self> {
         
+        let fade_frames = (sample_rate as f32 * CROSSFADE_TIME) as usize;
+        let fade_increment = if fade_frames > 0 { 1.0 / fade_frames as f32 } else { 1.0 };
+
         let amplitude_ratio: AmplitudeRatio<f64> = DecibelRatio(gain_db as f64).into();
         let gain = amplitude_ratio.amplitude_value() as f32;
 
@@ -383,6 +387,7 @@ impl Voice {
             note_on_time,
             has_reported_latency: false,
             is_attack_sample,
+            fade_increment,
         })
     }
 }
@@ -510,6 +515,63 @@ impl StereoConvolver {
     }
 }
 
+
+/// If voice limit is exceeded, this finds the oldest *release* samples 
+/// and forces them to fade out quickly.
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn enforce_voice_limit(voices: &mut HashMap<u64, Voice>, sample_rate: u32, polyphony: usize) {
+    // Only count voices that are NOT already fading out.
+    // If a voice is fading, we have already "dealt with it" and shouldn't 
+    // punish the remaining voices while waiting for the dead one to exit.
+    let active_musical_voices = voices.values()
+        .filter(|v| !v.is_fading_out)
+        .count();
+
+    if active_musical_voices <= polyphony {
+        return;
+    }
+
+    let voices_to_steal = active_musical_voices - polyphony;
+
+    // Identify candidates: 
+    //    - Must not be an attack sample (we only steal release tails)
+    //    - Must not already be fading out (don't double-steal)
+    //    - OPTIONAL: Give them a grace period. Don't steal a release voice 
+    //      that is less than 50ms old, or it sounds like a glitch.
+    let min_age = Duration::from_millis(50);
+    
+    let mut candidates: Vec<(u64, Instant)> = voices.iter()
+        .filter(|(_, v)| {
+            !v.is_attack_sample 
+            && !v.is_fading_out 
+            && v.note_on_time.elapsed() > min_age
+        })
+        .map(|(id, v)| (*id, v.note_on_time))
+        .collect();
+
+    // Sort by oldest time first (ascending Instant)
+    candidates.sort_by_key(|(_, time)| *time);
+
+    // Steal the oldest ones
+    for (voice_id, _) in candidates.iter().take(voices_to_steal) {
+        if let Some(voice) = voices.get_mut(voice_id) {
+            log::warn!("[AudioThread] Voice Limit Exceeded ({}/{}). Stealing Release Voice ID {}", active_musical_voices, polyphony, voice_id);
+            
+            // Force into fade-out mode
+            voice.is_fading_out = true;
+            voice.is_fading_in = false; // Cancel any fade-in if it was happening
+            
+            // This overrides the default CROSSFADE_TIME speed with the faster stealing speed
+            let steal_fade_frames = (sample_rate as f32 * VOICE_STEALING_FADE_TIME) as usize;
+            voice.fade_increment = if steal_fade_frames > 0 { 
+                1.0 / steal_fade_frames as f32 
+            } else { 
+                1.0 
+            };
+        }
+    }
+}
+
 /// Helper function to stop one specific ActiveNote (one pipe)
 /// and trigger its corresponding release sample, linking them
 /// for a safe crossfade.
@@ -596,6 +658,8 @@ fn spawn_audio_processing_thread<P>(
     organ: Arc<Organ>,
     sample_rate: u32,
     buffer_size_frames: usize,
+    system_gain: f32,
+    polyphony: usize,
 ) where
     P: Producer<Item = f32> + Send + 'static,
 {
@@ -651,10 +715,6 @@ fn spawn_audio_processing_thread<P>(
             buffer_duration_micros as f32 / 1000.0,
             sleep_duration
         );
-
-        // Pre-calculate fade increment
-        let fade_frames = (sample_rate as f32 * CROSSFADE_TIME) as usize; 
-        let fade_increment = if fade_frames > 0 { 1.0 / fade_frames as f32 } else { 1.0 };
 
         loop {
             // --- Handle incoming messages ---
@@ -799,6 +859,9 @@ fn spawn_audio_processing_thread<P>(
                 ch_buf.fill(0.0);
             }
 
+            // Check voice limits and steal if necessary
+            enforce_voice_limit(&mut voices, sample_rate, polyphony);
+
             // --- Crossfade management logic ---
             // Find voices that are ready to start crossfading.
             let mut crossfades_to_start: Vec<(u64, u64)> = Vec::with_capacity(16);
@@ -837,6 +900,13 @@ fn spawn_audio_processing_thread<P>(
 
             // --- Voice Processing Loop ---
             for (voice_id, voice) in voices.iter_mut() {
+
+                // Check if the voice is fully faded out and should be removed
+                if voice.is_fading_out && voice.fade_level <= 0.0001 {
+                    voices_to_remove.push(*voice_id);
+                    continue;
+                }
+
                 let is_loader_finished = voice.is_finished.load(Ordering::Relaxed);
                 
                 let samples_to_read = buffer_size_frames * CHANNEL_COUNT;
@@ -872,13 +942,13 @@ fn spawn_audio_processing_thread<P>(
                 let mut final_fade_level = initial_fade_level;
 
                 if voice.is_fading_in {
-                    final_fade_level += fade_increment * (frames_read as f32);
+                    final_fade_level += voice.fade_increment * (frames_read as f32);
                     if final_fade_level >= 1.0 {
                         final_fade_level = 1.0;
-                        voice.is_fading_in = false; // State change for next block
+                        voice.is_fading_in = false;
                     }
                 } else if voice.is_fading_out {
-                    final_fade_level -= fade_increment * (frames_read as f32);
+                    final_fade_level -= voice.fade_increment * (frames_read as f32);
                     if final_fade_level <= 0.0 {
                         final_fade_level = 0.0;
                     }
@@ -887,8 +957,8 @@ fn spawn_audio_processing_thread<P>(
                 // Store the final fade level. This is now the state for the *next* block.
                 voice.fade_level = final_fade_level;
 
-                let start_gain = voice.gain * initial_fade_level * GAIN_FACTOR;
-                let end_gain = voice.gain * final_fade_level * GAIN_FACTOR;
+                let start_gain = voice.gain * initial_fade_level * system_gain;
+                let end_gain = voice.gain * final_fade_level * system_gain;
 
                 // --- Mixing Loop ---
                 if (start_gain - end_gain).abs() < 1e-8 { // Check for float equality
@@ -1052,6 +1122,8 @@ pub fn start_audio_playback(
     rx: mpsc::Receiver<AppMessage>,
     organ: Arc<Organ>,
     buffer_size_frames: usize,
+    gain: f32,
+    polyphony: usize,
     audio_device_name: Option<String>
 ) -> Result<Stream> {
     let available_hosts = cpal::available_hosts();
@@ -1137,7 +1209,7 @@ pub fn start_audio_playback(
     let (producer, mut consumer) = ring_buf.split();
 
     // Spawn the audio processing thread
-    spawn_audio_processing_thread(rx, producer, organ, sample_rate, buffer_size_frames);
+    spawn_audio_processing_thread(rx, producer, organ, sample_rate, buffer_size_frames, gain, polyphony);
 
     let mut stereo_read_buffer: Vec<f32> = vec![0.0; buffer_size_frames * 2];
 

@@ -197,6 +197,7 @@ fn main() -> Result<()> {
         original_tuning: config.original_tuning,
         midi_device_name: config.midi_port_name.clone(),
         gain: config.gain,
+        polyphony: config.polyphony,
         audio_device_name: config.audio_device_name.clone(),
         tui_mode,       
     };
@@ -312,6 +313,8 @@ fn main() -> Result<()> {
         audio_rx, 
         Arc::clone(&organ), 
         config.audio_buffer_frames,
+        config.gain,
+        config.polyphony,
         config.audio_device_name,
     )?;
     if tui_mode { println!("Audio engine running."); }
