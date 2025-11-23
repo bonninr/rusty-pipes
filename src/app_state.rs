@@ -13,6 +13,7 @@ use crate::{
     app::{AppMessage, TuiMessage},
     midi,
     organ::Organ,
+    config::{load_settings, save_settings},
 };
 
 // --- Shared Constants & Types ---
@@ -78,10 +79,12 @@ pub struct AppState {
     pub channel_active_notes: HashMap<u8, BTreeSet<u8>>,
     /// MIDI channel assignment presets
     pub presets: PresetBank,
+    pub gain: f32,
+    pub polyphony: usize,
 }
 
 impl AppState {
-    pub fn new(organ: Arc<Organ>) -> Result<Self> {
+    pub fn new(organ: Arc<Organ>, initial_gain: f32, initial_polyphony: usize) -> Result<Self> {
 
         let presets = Self::load_presets(&organ.name);
 
@@ -95,9 +98,39 @@ impl AppState {
             piano_roll_display_duration: Duration::from_secs(1), // Show 1 second of history
             channel_active_notes: HashMap::new(),
             presets,
+            gain: initial_gain,
+            polyphony: initial_polyphony,
+            
         })
     }
     
+    pub fn persist_settings(&self) {
+        // Load existing settings to preserve other fields (like devices)
+        let mut settings = load_settings().unwrap_or_default();
+        
+        // Update values
+        settings.gain = self.gain;
+        settings.polyphony = self.polyphony;
+
+        // Save back to disk
+        if let Err(e) = save_settings(&settings) {
+            log::error!("Failed to persist settings: {}", e);
+        }
+    }
+
+    pub fn modify_gain(&mut self, delta: f32, audio_tx: &Sender<AppMessage>) {
+        self.gain = (self.gain + delta).clamp(0.0, 1.0);
+        let _ = audio_tx.send(AppMessage::SetGain(self.gain));
+        self.persist_settings();
+    }
+
+    pub fn modify_polyphony(&mut self, delta: i32, audio_tx: &Sender<AppMessage>) {
+        let new_val = (self.polyphony as i32 + delta).max(1); // Minimum 1 voice
+        self.polyphony = new_val as usize;
+        let _ = audio_tx.send(AppMessage::SetPolyphony(self.polyphony));
+        self.persist_settings();
+    }
+
     /// Loads the MIDI channel mapping preset bank for the specified organ from the JSON file.
     fn load_presets(organ_name: &str) -> PresetBank {
         File::open(PRESET_FILE_PATH)

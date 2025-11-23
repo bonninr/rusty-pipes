@@ -151,6 +151,22 @@ impl App for EguiApp {
                     }
                 }
             }
+            // Gain: + / -
+            if input.key_pressed(egui::Key::Plus) || input.key_pressed(egui::Key::Equals) {
+               self.app_state.lock().unwrap().modify_gain(0.05, &self.audio_tx);
+            }
+            if input.key_pressed(egui::Key::Minus) {
+                self.app_state.lock().unwrap().modify_gain(-0.05, &self.audio_tx);
+            }
+
+            // Polyphony: [ / ]
+            if input.key_pressed(egui::Key::OpenBracket) {
+                self.app_state.lock().unwrap().modify_polyphony(-16, &self.audio_tx);
+            }
+            if input.key_pressed(egui::Key::CloseBracket) {
+                self.app_state.lock().unwrap().modify_polyphony(16, &self.audio_tx);
+            }
+            // Panic key: P
             if input.key_pressed(egui::Key::P) {
                 self.audio_tx.send(AppMessage::AllNotesOff).unwrap_or_else(|e| {
                     log::error!("ERROR sending AllNotesOff: {}", e);
@@ -193,16 +209,16 @@ impl App for EguiApp {
             if let Some(stop_idx) = self.selected_stop_index {
                 let mut channel_to_toggle: Option<u8> = None;
 
-                if input.key_pressed(egui::Key::Num1) || input.key_pressed(egui::Key::Num1) { channel_to_toggle = Some(0); }
-                if input.key_pressed(egui::Key::Num2) || input.key_pressed(egui::Key::Num2) { channel_to_toggle = Some(1); }
-                if input.key_pressed(egui::Key::Num3) || input.key_pressed(egui::Key::Num3) { channel_to_toggle = Some(2); }
-                if input.key_pressed(egui::Key::Num4) || input.key_pressed(egui::Key::Num4) { channel_to_toggle = Some(3); }
-                if input.key_pressed(egui::Key::Num5) || input.key_pressed(egui::Key::Num5) { channel_to_toggle = Some(4); }
-                if input.key_pressed(egui::Key::Num6) || input.key_pressed(egui::Key::Num6) { channel_to_toggle = Some(5); }
-                if input.key_pressed(egui::Key::Num7) || input.key_pressed(egui::Key::Num7) { channel_to_toggle = Some(6); }
-                if input.key_pressed(egui::Key::Num8) || input.key_pressed(egui::Key::Num8) { channel_to_toggle = Some(7); }
-                if input.key_pressed(egui::Key::Num9) || input.key_pressed(egui::Key::Num9) { channel_to_toggle = Some(8); }
-                if input.key_pressed(egui::Key::Num0) || input.key_pressed(egui::Key::Num0) { channel_to_toggle = Some(9); }
+                if input.key_pressed(egui::Key::Num1) { channel_to_toggle = Some(0); }
+                if input.key_pressed(egui::Key::Num2) { channel_to_toggle = Some(1); }
+                if input.key_pressed(egui::Key::Num3) { channel_to_toggle = Some(2); }
+                if input.key_pressed(egui::Key::Num4) { channel_to_toggle = Some(3); }
+                if input.key_pressed(egui::Key::Num5) { channel_to_toggle = Some(4); }
+                if input.key_pressed(egui::Key::Num6) { channel_to_toggle = Some(5); }
+                if input.key_pressed(egui::Key::Num7) { channel_to_toggle = Some(6); }
+                if input.key_pressed(egui::Key::Num8) { channel_to_toggle = Some(7); }
+                if input.key_pressed(egui::Key::Num9) { channel_to_toggle = Some(8); }
+                if input.key_pressed(egui::Key::Num0) { channel_to_toggle = Some(9); }
                 if let Some(channel) = channel_to_toggle {
                     // Replicate the toggle logic from the button click
                     let mut app_state = self.app_state.lock().unwrap();
@@ -336,6 +352,61 @@ impl EguiApp {
                     }
                 });
             });
+
+            ui.separator();
+            ui.heading("Audio Settings");
+            ui.add_space(5.0);
+
+            // Get current values
+            let (mut gain, mut polyphony) = {
+                let state = self.app_state.lock().unwrap();
+                (state.gain, state.polyphony)
+            };
+
+            // --- Gain Control ---
+            ui.label("Master Gain:");
+            ui.horizontal(|ui| {
+                if ui.button("-").clicked() {
+                    self.app_state.lock().unwrap().modify_gain(-0.05, &self.audio_tx);
+                }
+                
+                // Slider for visual feedback and direct drag
+                let gain_slider = egui::Slider::new(&mut gain, 0.0..=2.0)
+                    .text("Vol")
+                    .clamp_to_range(true)
+                    .show_value(true);
+                    
+                if ui.add(gain_slider).changed() {
+                     // Handle slider drag
+                     let mut state = self.app_state.lock().unwrap();
+                     state.gain = gain;
+                     let _ = self.audio_tx.send(AppMessage::SetGain(gain));
+                     state.persist_settings();
+                }
+
+                if ui.button("+").clicked() {
+                    self.app_state.lock().unwrap().modify_gain(0.05, &self.audio_tx);
+                }
+            });
+            ui.label(egui::RichText::new("Keys: +/-").small().weak());
+            
+            ui.add_space(10.0);
+
+            // --- Polyphony Control ---
+            ui.label("Polyphony:");
+            ui.horizontal(|ui| {
+                if ui.button("-16").clicked() {
+                    self.app_state.lock().unwrap().modify_polyphony(-16, &self.audio_tx);
+                }
+                
+                ui.label(egui::RichText::new(format!("{}", polyphony)).strong().size(16.0));
+
+                if ui.button("+16").clicked() {
+                    self.app_state.lock().unwrap().modify_polyphony(16, &self.audio_tx);
+                }
+            });
+            ui.label(egui::RichText::new("Keys: [ / ]").small().weak());
+
         });
     }
 

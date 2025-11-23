@@ -14,6 +14,8 @@ pub enum AppMessage {
     SetReverbIr(PathBuf),
     /// Set the reverb wet/dry mix.
     SetReverbWetDry(f32),
+    SetGain(f32),
+    SetPolyphony(usize),
     /// TUI quit event.
     Quit,
 }

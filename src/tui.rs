@@ -199,6 +199,20 @@ pub fn run_tui_loop(
                                             tui_state.app_state.lock().unwrap().add_midi_log(format!("ERROR recalling preset: {}", e));
                                         }
                                     }
+                                    // Gain
+                                    KeyCode::Char('+') | KeyCode::Char('=') => {
+                                        tui_state.app_state.lock().unwrap().modify_gain(0.05, &audio_tx);
+                                    }
+                                    KeyCode::Char('-') => {
+                                        tui_state.app_state.lock().unwrap().modify_gain(-0.05, &audio_tx);
+                                    }
+                                    // Polyphony
+                                    KeyCode::Char(']') => {
+                                        tui_state.app_state.lock().unwrap().modify_polyphony(16, &audio_tx);
+                                    }
+                                    KeyCode::Char('[') => {
+                                        tui_state.app_state.lock().unwrap().modify_polyphony(-16, &audio_tx);
+                                    }
                                 _ => {}
                                 }
                             }
@@ -254,8 +268,12 @@ fn draw_main_app_ui(
         Paragraph::new(err.as_str())
             .style(Style::default().fg(Color::White).bg(Color::Red))
     } else {
-        let help_text = "Q:Quit | Nav:↑↓←→/jkli | Ch:1-0 | A:All | N:None | P:Panic | F1-12:Recall | Shift+F1-12:Save";
-        Paragraph::new(help_text).alignment(Alignment::Center)
+        let status = format!(
+            "Gain: {:.0}% | Polyphony: {} || [Q]uit | [P]anic | Nav:↑↓←→ | +/-:Gain | [/]:Poly | F1-12:Recall | Shift+F1-12:Save", 
+            app_state.gain * 100.0, 
+            app_state.polyphony
+        );
+        Paragraph::new(status).alignment(Alignment::Center)
     };
     frame.render_widget(footer_widget, main_layout[2]);
 

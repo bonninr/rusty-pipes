@@ -331,7 +331,7 @@ fn main() -> Result<()> {
     }
 
     // --- Create thread-safe AppState ---
-    let app_state = Arc::new(Mutex::new(AppState::new(organ.clone())?));
+    let app_state = Arc::new(Mutex::new(AppState::new(organ.clone(), config.gain, config.polyphony)?));
 
     // --- Spawn the dedicated MIDI logic thread ---
     let logic_app_state = Arc::clone(&app_state);

@@ -658,8 +658,8 @@ fn spawn_audio_processing_thread<P>(
     organ: Arc<Organ>,
     sample_rate: u32,
     buffer_size_frames: usize,
-    system_gain: f32,
-    polyphony: usize,
+    mut system_gain: f32,
+    mut polyphony: usize,
 ) where
     P: Producer<Item = f32> + Send + 'static,
 {
@@ -845,6 +845,14 @@ fn spawn_audio_processing_thread<P>(
                                 log::warn!("[AudioThread] Reverb disabled due to IR load error.");
                             }
                         }
+                    }
+                    AppMessage::SetGain(new_gain) => {
+                        system_gain = new_gain;
+                        log::debug!("[AudioThread] Gain set to {:.2}", system_gain);
+                    }
+                    AppMessage::SetPolyphony(new_poly) => {
+                        polyphony = new_poly;
+                        log::debug!("[AudioThread] Polyphony set to {}", polyphony);
                     }
                     AppMessage::Quit => {
                         drop(reaper_tx);
