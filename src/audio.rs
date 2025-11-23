@@ -966,8 +966,8 @@ fn spawn_audio_processing_thread<P>(
                 // Store the final fade level. This is now the state for the *next* block.
                 voice.fade_level = final_fade_level;
 
-                let start_gain = voice.gain * initial_fade_level * system_gain;
-                let end_gain = voice.gain * final_fade_level * system_gain;
+                let start_gain = voice.gain * initial_fade_level;
+                let end_gain = voice.gain * final_fade_level;
 
                 // --- Mixing Loop ---
                 if (start_gain - end_gain).abs() < 1e-8 { // Check for float equality
@@ -1032,6 +1032,15 @@ fn spawn_audio_processing_thread<P>(
                     }
                 }
                 voices_to_remove.clear();
+            }
+
+            // Apply Master Gain to the Summed Bus
+            if system_gain != 1.0 {
+                for channel in &mut mix_buffer_stereo {
+                    for sample in channel.iter_mut() {
+                        *sample *= system_gain;
+                    }
+                }
             }
 
             // Get mutable, non-overlapping slices *from the array itself*
