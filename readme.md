@@ -33,6 +33,7 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 * Streaming mode will not work well on HDDs or slow SSDs (use precaching in such cases)
 * Support for different manuals and switches
 * Does not work as a plugin in DAWs
+* No support for percussive sound effects
 
 *Contributions are welcome!*
 
@@ -211,20 +212,32 @@ When you start the program for the first time, no stop will have any MIDI channe
 | F1..F10 | Load MIDI mapping of given slot |
 | A | Enable all MIDI channels on selected stop |
 | N | Disable all MIDI channels on selected stop |
+| - + | Decrease/Increase gain |
+| [ ] | Decrease/Increase polyphony |
 | P | Panic (All notes turn off) |
 | Q | Quit |
 
-## Where to get organ samples
+## Compiling
 
-There's plenty of places where you can find sample sets for GrandOrgue. Some are paid, but there's free ones available too. Here's two sources:
+```cargo build --release```
+
+## FAQ
+
+### Q: My audio output crackles or cuts out
+
+A: This can happen either due to a too high gain, or your CPU being overstressed. If a red "Buffer underrun" warning appears, then you need to reduce polyphony with the [-Key (or the controls on the GUI), or select fewer stops. If no warning appears, reduce gain.
+
+### Q: Where can I get organ samples?
+
+A: There's plenty of places where you can find sample sets for GrandOrgue. Some are paid, but there's free ones available too. Here's two sources:
 
 * [Lars Virtual Pipe Organ Site](https://familjenpalo.se/vpo/)
 
 * [Piotr Grabowsky](https://piotrgrabowski.pl/)
 
-## Where to get convolution reverb impulse response files
+### Q: Where can I get convolution reverb impulse response files?
 
-IR files are just .wav files that tell the system how a room reacts to a single, discrete impulse.
+A: IR files are just .wav files that tell the system how a room reacts to a single, discrete impulse. Here are some sources:
 
 * [Lars Virtual Pipe Organ Site](https://familjenpalo.se/vpo/ir-recordings/) has a few recordings. Be sure to take the 24 bit 48kHz mono ones.
 
@@ -232,8 +245,11 @@ IR files are just .wav files that tell the system how a room reacts to a single,
 
 Please be reasonable and ask for permission before popping balloons in churches.
 
-## Compiling
+### Q: I have reduced my polyphony but my PC still cannot handle the amount of stops I want to use, what can I do?
 
-```cargo build --release```
+A: Enable precaching on the config dialog. Precaching takes more RAM but reduces stress on the CPU because it doesn't have to deal with disk IO all the time.
 
+### Q: My latency (time between keypress and sound output) is too high
+
+A: As a first step, reduce the buffer size on the config dialog. If the audio starts to crackle, increase it a bit. 256 should work on most modern systems. Second, enable precaching. On systems with slow SSDs or hard disks this can help a lot, while on fast SSDs the improvement is often not noticeable. Third, use a wired MIDI controller, not Bluetooth. Same for headphones, bluetooth usually adds a lot of delay. Finally, make sure you enable the "Pro Audio" mode on your device, and if you're on Linux don't use native ALSA. Instead use PulseAudio or Jack.
 
