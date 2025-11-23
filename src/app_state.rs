@@ -5,6 +5,7 @@ use std::{
     collections::{BTreeSet, HashMap, VecDeque},
     fs::File,
     io::{BufReader, BufWriter},
+    path::PathBuf,
     sync::mpsc::Sender,
     time::{Duration, Instant},
     sync::Arc,
@@ -18,7 +19,7 @@ use crate::{
 
 // --- Shared Constants & Types ---
 
-pub const PRESET_FILE_PATH: &str = "rusty-pipes.presets.json";
+pub const PRESET_FILE_NAME: &str = "rusty-pipes.presets.json";
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Preset {
     pub name: String,
@@ -86,6 +87,13 @@ pub struct AppState {
     pub cpu_load: f32,
 }
 
+pub fn get_preset_file_path() -> PathBuf {
+    let config_path = confy::get_configuration_file_path("rusty-pipes", "settings")
+        .expect("Could not get configuration file path");
+    let preset_dir = config_path.parent().expect("Could not get preset directory");
+    preset_dir.join(PRESET_FILE_NAME)
+}
+
 impl AppState {
     pub fn new(organ: Arc<Organ>, initial_gain: f32, initial_polyphony: usize) -> Result<Self> {
 
@@ -138,7 +146,8 @@ impl AppState {
 
     /// Loads the MIDI channel mapping preset bank for the specified organ from the JSON file.
     fn load_presets(organ_name: &str) -> PresetBank {
-        File::open(PRESET_FILE_PATH)
+        let preset_path = get_preset_file_path();
+        File::open(preset_path)
             .map_err(anyhow::Error::from) // Convert std::io::Error
             .and_then(|file| {
                 // Read the entire config map
@@ -154,17 +163,18 @@ impl AppState {
 
     /// Saves the entire configuration map back to the JSON file.
     fn save_all_presets_to_file(&self) -> Result<()> {
-        // 1. Load the entire config file (all organs)
-        let mut config: PresetConfig = File::open(PRESET_FILE_PATH)
+        let preset_path = get_preset_file_path();
+        // Load the entire config file (all organs)
+        let mut config: PresetConfig = File::open(preset_path.clone())
             .map_err(anyhow::Error::from)
             .and_then(|file| serde_json::from_reader(BufReader::new(file)).map_err(anyhow::Error::from))
             .unwrap_or_default(); // Create a new map if it doesn't exist
 
-        // 2. Update or insert the preset bank for the current organ
+        // Update or insert the preset bank for the current organ
         config.insert(self.organ.name.clone(), self.presets.clone());
 
-        // 3. Write the entire config file back to disk
-        let file = File::create(PRESET_FILE_PATH)?;
+        // Write the entire config file back to disk
+        let file = File::create(preset_path)?;
         serde_json::to_writer_pretty(BufWriter::new(file), &config)?;
 
         Ok(())
