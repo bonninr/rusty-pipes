@@ -27,7 +27,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ./target
-          key: test-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          key: test-cargo-registry-${{ hashFiles('Cargo.lock') }}
       - name: List
         run: find ./
       - name: Run tests
@@ -58,7 +58,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ./target
-          key: build-cargo-registry-${{ matrix.TARGET }}-${{ hashFiles('**/Cargo.lock') }}
+          key: build-cargo-registry-${{ matrix.TARGET }}-${{ hashFiles('Cargo.lock') }}
       - name: List
         run: find ./
 
@@ -160,7 +160,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ./target
-          key: deb-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          key: deb-cargo-registry-${{ hashFiles('Cargo.lock') }}
       
       - name: Install cargo-deb
         run: cargo install cargo-deb
