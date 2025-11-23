@@ -682,6 +682,7 @@ fn spawn_audio_processing_thread<P>(
     buffer_size_frames: usize,
     mut system_gain: f32,
     mut polyphony: usize,
+    tui_tx: mpsc::Sender<TuiMessage>,
 ) where
     P: Producer<Item = f32> + Send + 'static,
 {
@@ -738,7 +739,18 @@ fn spawn_audio_processing_thread<P>(
             sleep_duration
         );
 
+        // Calculate the maximum time allowed per buffer (CPU budget)
+        let buffer_duration_secs = buffer_size_frames as f32 / sample_rate as f32;
+
+        let mut last_ui_update = Instant::now();
+        let ui_update_interval = Duration::from_millis(250);
+        let mut last_reported_voice_count: usize = usize::MAX;
+        
+        let mut max_load_accumulator = 0.0f32;
+
         loop {
+            let start_time = Instant::now();
+
             // --- Handle incoming messages ---
             while let Ok(msg) = rx.try_recv() {
                 match msg {
@@ -1079,6 +1091,27 @@ fn spawn_audio_processing_thread<P>(
                 wet_r_vec,                 // Wet R (&mut [f32])
             );
 
+
+
+            let processing_duration = start_time.elapsed();
+            let current_load = processing_duration.as_secs_f32() / buffer_duration_secs;
+            
+            // Detect peak CPU load
+            if current_load > max_load_accumulator {
+                max_load_accumulator = current_load;
+            }
+
+            if last_ui_update.elapsed() >= ui_update_interval {
+                let current_voice_count = voices.len();
+                if current_voice_count != last_reported_voice_count {
+                    tui_tx.send(TuiMessage::ActiveVoicesUpdate(current_voice_count)).ok();
+                    last_reported_voice_count = current_voice_count;
+                }
+                tui_tx.send(TuiMessage::CpuLoadUpdate(max_load_accumulator)).ok();
+                max_load_accumulator = 0.0;
+                last_ui_update = Instant::now();
+            }
+
             // --- Interleave, Mix, and push to ring buffer ---
             let dry_level = 1.0 - wet_dry_ratio;
             let wet_level = wet_dry_ratio;
@@ -1249,7 +1282,7 @@ pub fn start_audio_playback(
     let (producer, mut consumer) = ring_buf.split();
 
     // Spawn the audio processing thread
-    spawn_audio_processing_thread(rx, producer, organ, sample_rate, buffer_size_frames, gain, polyphony);
+    spawn_audio_processing_thread(rx, producer, organ, sample_rate, buffer_size_frames, gain, polyphony, tui_tx.clone());
 
     let mut stereo_read_buffer: Vec<f32> = vec![0.0; buffer_size_frames * 2];
 

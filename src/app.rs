@@ -29,11 +29,12 @@ pub enum TuiMessage {
     Error(String),
     /// Triggered whenever a buffer underrun occurs.
     AudioUnderrun,
+    ActiveVoicesUpdate(usize),
+    CpuLoadUpdate(f32),
     /// Messages for Piano Roll
     TuiNoteOn(u8, u8, Instant),
     TuiNoteOff(u8, u8, Instant),
     TuiAllNotesOff,
-
     /// --- Midi events to TUI---
     /// (note, velocity, channel)
     MidiNoteOn(u8, u8, u8),

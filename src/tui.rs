@@ -281,8 +281,11 @@ fn draw_main_app_ui(
             .style(Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD))
     } else {
         let status = format!(
-            "Gain: {:.0}% | Polyphony: {} || [Q]uit | [P]anic | Nav:↑↓←→ | +/-:Gain | [/]:Poly | F1-12:Recall | Shift+F1-12:Save", 
+            "CPU: {:.1}% | Gain: {:.0}% | Polyphony: {} | Voices: {}/{} | [Q]uit | [P]anic | Nav:↑↓←→ | +/-:Gain | [/]:Poly | F1-12:Recall | Shift+F1-12:Save", 
+            app_state.cpu_load * 100.0,
             app_state.gain * 100.0, 
+            app_state.polyphony,
+            app_state.active_voice_count,
             app_state.polyphony
         );
         Paragraph::new(status).alignment(Alignment::Center)

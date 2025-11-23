@@ -408,7 +408,7 @@ impl EguiApp {
             
             ui.add_space(15.0);
 
-            // --- CPU / Underrun Indicator ---
+            // --- Underrun Indicator ---
             let is_underrun = {
                 let state = self.app_state.lock().unwrap();
                 if let Some(last) = state.last_underrun {
@@ -419,6 +419,11 @@ impl EguiApp {
                 }
             };
 
+            let (active_voice_count, polyphony, cpu_load) = {
+                let state = self.app_state.lock().unwrap();
+                (state.active_voice_count, state.polyphony, state.cpu_load)
+            };
+
             if is_underrun {
                 ui.add(egui::Button::new(
                     egui::RichText::new("⚠ AUDIO UNDERRUN ⚠")
@@ -427,11 +432,31 @@ impl EguiApp {
                 ).fill(egui::Color32::RED));
             } else {
                  ui.add(egui::Button::new(
-                    egui::RichText::new("Status: OK")
+                    egui::RichText::new(format!("Voices: {}/{}", active_voice_count, polyphony))
                         .color(egui::Color32::GREEN)
-                        .small()
+                        .strong()
                 ).fill(egui::Color32::from_gray(40)).frame(false));
             }
+
+            ui.add_space(15.0);
+            ui.separator();
+
+            // --- CPU Load Bar ---
+            ui.label(format!("CPU Load: {:.1}%", cpu_load * 100.0));
+            
+            let load_color = if cpu_load < 0.5 {
+                egui::Color32::GREEN
+            } else if cpu_load < 0.9 {
+                egui::Color32::YELLOW
+            } else {
+                egui::Color32::RED
+            };
+
+            ui.add(
+                egui::ProgressBar::new(cpu_load)
+                    .fill(load_color)
+                    .animate(false)
+            );
 
         });
     }

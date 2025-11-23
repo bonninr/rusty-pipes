@@ -82,6 +82,8 @@ pub struct AppState {
     pub gain: f32,
     pub polyphony: usize,
     pub last_underrun: Option<Instant>, // Store when the last buffer underrun occurred
+    pub active_voice_count: usize,
+    pub cpu_load: f32,
 }
 
 impl AppState {
@@ -102,6 +104,8 @@ impl AppState {
             gain: initial_gain,
             polyphony: initial_polyphony,
             last_underrun: None,
+            active_voice_count: 0,
+            cpu_load: 0.0,
         })
     }
     
@@ -218,6 +222,8 @@ impl AppState {
             },
             
             // --- Other TUI messages ---
+            TuiMessage::CpuLoadUpdate(cpu_load) => self.cpu_load = cpu_load,
+            TuiMessage::ActiveVoicesUpdate(count) => self.active_voice_count = count,
             TuiMessage::AudioUnderrun => self.last_underrun = Some(Instant::now()),
             TuiMessage::MidiLog(log) => self.add_midi_log(log),
             TuiMessage::Error(err) => self.error_msg = Some(err),
