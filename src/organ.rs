@@ -249,12 +249,12 @@ impl Organ {
         progress_tx: Option<mpsc::Sender<(f32, String)>>,
     ) -> Result<Self> {
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        
+        let loader_tx = progress_tx.clone();
         // Parse the organ definition and build the struct
         let mut organ = if extension == "organ" {
-            Self::load_grandorgue(path, convert_to_16_bit, false, original_tuning)?
+            Self::load_grandorgue(path, convert_to_16_bit, false, original_tuning, &loader_tx)?
         } else if extension == "Organ_Hauptwerk_xml" {
-            Self::load_hauptwerk(path, convert_to_16_bit, false, original_tuning)?
+            Self::load_hauptwerk(path, convert_to_16_bit, false, original_tuning, &loader_tx)?
         } else {
             return Err(anyhow!("Unsupported organ file format: {:?}", path));
         };
@@ -365,9 +365,13 @@ impl Organ {
         convert_to_16_bit: bool, 
         pre_cache: bool, 
         _original_tuning: bool,
+        progress_tx: &Option<mpsc::Sender<(f32, String)>>,
     ) -> Result<Self> {
         println!("Loading Hauptwerk organ from: {:?}", path);
-        
+        if let Some(tx) = progress_tx {
+            let _ = tx.send((0.0, "Parsing XML...".to_string()));
+        }
+
         let organ_root_path = path.parent()
             .and_then(|p| p.parent())
             .ok_or_else(|| anyhow!("Invalid Hauptwerk file path structure. Expected .../OrganDefinitions/*.Organ_Hauptwerk_xml"))?;
@@ -482,9 +486,18 @@ impl Organ {
 
         log::debug!("Assembling pipes from {} layers...", xml_layers.len());
         let mut pipes_assembled = 0;
+        let total_layers = xml_layers.len();
 
         // Iterate layers (the central object) and build pipes
-        for layer in &xml_layers {
+        for (i, layer) in xml_layers.iter().enumerate() {
+
+            if let Some(tx) = progress_tx {
+                // Throttle slightly if needed, but MPSC is fast.
+                let progress = i as f32 / total_layers as f32;
+                // We'll update the text in the inner "process" calls if possible, or just here.
+                // Let's set a generic status here, and detailed status might be fleeting.
+                let _ = tx.send((progress, "Processing Organ Definitions...".to_string()));
+            }
             // Find the pipe this layer belongs to
             let Some(pipe_info) = pipe_map.get(&layer.pipe_id) else {
                 log::warn!("Layer {} references non-existent PipeID {}", layer.id, layer.pipe_id);
@@ -567,6 +580,10 @@ impl Organ {
             log::debug!("Processing LayerID {}: midi note {}, Attack sample path '{}'", layer.id, target_midi_note, attack_sample_path_relative.display());
 
             if convert_to_16_bit || final_pitch_tuning_cents != 0.0 {
+                if let Some(tx) = progress_tx {
+                     let progress = i as f32 / total_layers as f32;
+                     let _ = tx.send((progress, format!("Processing: {}", attack_sample_info.path)));
+                }
                 attack_sample_path_relative = wav_converter::process_sample_file(
                     &attack_sample_path_relative,
                     &organ.base_path,
@@ -597,6 +614,10 @@ impl Organ {
                     let mut rel_path_relative = PathBuf::from(&rel_path_str);
 
                     if convert_to_16_bit || final_pitch_tuning_cents != 0.0 {
+                        if let Some(tx) = progress_tx {
+                             let progress = i as f32 / total_layers as f32;
+                             let _ = tx.send((progress, format!("Processing: {}", release_sample_info.path)));
+                        }
                         rel_path_relative = wav_converter::process_sample_file(
                             &rel_path_relative,
                             &organ.base_path,
@@ -720,8 +741,13 @@ impl Organ {
         convert_to_16_bit: bool, 
         pre_cache: bool, 
         original_tuning: bool,
+        progress_tx: &Option<mpsc::Sender<(f32, String)>>,
     ) -> Result<Self> {
         println!("Loading GrandOrgue organ from: {:?}", path);
+        if let Some(tx) = progress_tx {
+            let _ = tx.send((0.0, "Parsing GrandOrgue INI...".to_string()));
+        }
+
         let base_path = path.parent().ok_or_else(|| anyhow!("Invalid file path"))?;
         
         // Read file to string
@@ -734,6 +760,7 @@ impl Organ {
 
         // Load the modified string
         let conf = inistr!(&safe_content);
+        let total_sections = conf.len();
 
         println!("Found {} sections in INI.", conf.len());
 
@@ -756,7 +783,15 @@ impl Organ {
         let mut stops_found = 0;
         let mut stops_filtered = 0;
 
-        for (section_name, props) in &conf {
+        for (section_index, (section_name, props)) in conf.iter().enumerate() {
+
+            // We use the outer section loop for the progress percentage.
+            if let Some(tx) = progress_tx {
+                // Throttle: Only update every few sections to save channel traffic, 
+                // or just update every time.
+                let progress = section_index as f32 / total_sections as f32;
+                let _ = tx.send((progress, "Processing Organ Definitions...".to_string()));
+            }
 
             let get_prop = |key_upper: &str, key_lower: &str, default: &str| {
                 props.get(key_upper) // Try uppercase
@@ -845,6 +880,10 @@ impl Organ {
 
                         // Only process if needed (16-bit conversion OR pitch shift)
                             if convert_to_16_bit || pitch_tuning_cents != 0.0 {
+                                if let Some(tx) = progress_tx {
+                                    let progress = section_index as f32 / total_sections as f32;
+                                    let _ = tx.send((progress, format!("Processing: {}", attack_path_str)));
+                                }
                                 attack_sample_path_relative = wav_converter::process_sample_file(
                                     &attack_sample_path_relative,
                                     &organ.base_path,
@@ -874,6 +913,10 @@ impl Organ {
 
                                 // Run converter
                                 if convert_to_16_bit || pitch_tuning_cents != 0.0 {
+                                    if let Some(tx) = progress_tx {
+                                        let progress = section_index as f32 / total_sections as f32;
+                                        let _ = tx.send((progress, format!("Processing: {}", rel_path_str)));
+                                    }
                                     rel_path_relative = wav_converter::process_sample_file(
                                         &rel_path_relative,
                                         &organ.base_path,
