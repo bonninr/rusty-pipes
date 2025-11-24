@@ -63,6 +63,15 @@ pub struct ReleaseSample {
     pub max_key_press_time_ms: i64,
 }
 
+/// Internal struct to track unique conversion jobs for parallel processing
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+struct ConversionTask {
+    relative_path: PathBuf,
+    // We store cents as an integer (x100) to allow hashing/equality checks
+    tuning_cents_int: i32, 
+    to_16bit: bool,
+}
+
 // These structs are defined *only* for XML deserialization.
 // They mirror the Hauptwerk XML file structure.
 
@@ -273,6 +282,46 @@ impl Organ {
 
     }
 
+    /// Helper to execute a set of unique audio conversion tasks in parallel
+    fn process_tasks_parallel(
+        base_path: &Path,
+        tasks: HashSet<ConversionTask>,
+        progress_tx: &Option<mpsc::Sender<(f32, String)>>,
+    ) -> Result<()> {
+        let task_list: Vec<ConversionTask> = tasks.into_iter().collect();
+        let total = task_list.len();
+        if total == 0 { return Ok(()); }
+
+        log::info!("Processing {} unique audio samples in parallel...", total);
+        let completed = AtomicUsize::new(0);
+
+        task_list.par_iter().try_for_each(|task| -> Result<()> {
+            let cents = task.tuning_cents_int as f32 / 100.0;
+            
+            // This function handles the "if exists, skip" check internally,
+            // so if we run this, the files will be ready for the sequential pass.
+            let _ = wav_converter::process_sample_file(
+                &task.relative_path,
+                base_path,
+                cents,
+                task.to_16bit
+            )?;
+
+            // Update UI
+            if let Some(tx) = progress_tx {
+                let current = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                // Only send update every few items to reduce overhead
+                if current % 5 == 0 || current == total {
+                    let progress = current as f32 / total as f32;
+                    let _ = tx.send((progress, format!("Converting: {}/{}", current, total)));
+                }
+            }
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
     /// Collects all unique sample paths from all pipes in the organ.
     fn get_all_unique_sample_paths(&self) -> HashSet<PathBuf> {
         let mut paths = HashSet::new();
@@ -298,11 +347,8 @@ impl Organ {
         }
 
         let loaded_sample_count = AtomicUsize::new(0);
-        let tx_clone = progress_tx.clone(); // Clone sender for parallel use
+        log::info!("[Cache] Loading {} unique samples...", total_samples);
 
-        log::info!("[Cache] Loading {} unique samples using all available CPU cores...", total_samples);
-
-        // Use Rayon to load samples in parallel and collect the results
         let results: Vec<Result<(PathBuf, Arc<Vec<f32>>, Arc<SampleMetadata>)>> = paths_to_load
             .par_iter()
             .map(|path| {
@@ -312,34 +358,26 @@ impl Organ {
 
                 // Report progress atomically
                 let count = loaded_sample_count.fetch_add(1, Ordering::SeqCst) + 1;
-                if let Some(tx) = &tx_clone {
+                if let Some(tx) = &progress_tx {
                     let progress = count as f32 / total_samples as f32;
-                    let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                    let _ = tx.send((progress, file_name)); // Send can fail if UI is closed
+                    // Only update every few files
+                    if count % 10 == 0 || count == total_samples {
+                        let _ = tx.send((progress, "Loading into RAM...".to_string()));
+                    }
                 }
-                
                 Ok((path.clone(), Arc::new(samples), Arc::new(metadata)))
             })
-            .collect(); // Collect all results
+            .collect();
 
-        // Now, serially insert the results back into the main struct's hashmaps
         let sample_cache = self.sample_cache.as_mut().unwrap();
         let metadata_cache = self.metadata_cache.as_mut().unwrap();
 
         for result in results {
-            match result {
-                Ok((path, samples, metadata)) => {
-                    sample_cache.insert(path.clone(), samples);
-                    metadata_cache.insert(path, metadata);
-                }
-                Err(e) => {
-                    // Log the error but continue. One failed sample shouldn't stop the app.
-                    log::error!("[Cache] {}", e);
-                }
+            if let Ok((path, samples, metadata)) = result {
+                sample_cache.insert(path.clone(), samples);
+                metadata_cache.insert(path, metadata);
             }
         }
-        
-        log::info!("Pre-caching complete. Loaded {}/{} samples.", sample_cache.len(), total_samples);
         Ok(())
     }
 
@@ -368,16 +406,11 @@ impl Organ {
         progress_tx: &Option<mpsc::Sender<(f32, String)>>,
     ) -> Result<Self> {
         println!("Loading Hauptwerk organ from: {:?}", path);
-        if let Some(tx) = progress_tx {
-            let _ = tx.send((0.0, "Parsing XML...".to_string()));
-        }
-
-        let organ_root_path = path.parent()
-            .and_then(|p| p.parent())
-            .ok_or_else(|| anyhow!("Invalid Hauptwerk file path structure. Expected .../OrganDefinitions/*.Organ_Hauptwerk_xml"))?;
+        if let Some(tx) = progress_tx { let _ = tx.send((0.0, "Parsing XML...".to_string())); }
         
-        let file_content = std::fs::read_to_string(path)
-            .map_err(|e| anyhow!("Failed to read Hauptwerk XML file {:?}: {}", path, e))?;
+        let organ_root_path = path.parent().and_then(|p| p.parent())
+            .ok_or_else(|| anyhow!("Invalid Hauptwerk file path structure."))?;
+        let file_content = std::fs::read_to_string(path)?;
 
         let mut organ = Organ {
             base_path: organ_root_path.to_path_buf(),
@@ -386,11 +419,6 @@ impl Organ {
             metadata_cache: if pre_cache { Some(HashMap::new()) } else { None },
             ..Default::default()
         };
-
-        if pre_cache {
-            organ.sample_cache = Some(HashMap::new());
-            organ.metadata_cache = Some(HashMap::new());
-        }
 
         // Deserialize the XML
         log::debug!("Parsing XML file...");
@@ -401,7 +429,7 @@ impl Organ {
         // Extract and organize XML objects
         let mut xml_stops = Vec::new();
         let mut xml_ranks = Vec::new();
-        let mut xml_pipes = Vec::new();    
+        let mut xml_pipes = Vec::new();     
         let mut xml_layers = Vec::new();
         let mut xml_attack_samples = Vec::new();
         let mut xml_release_samples = Vec::new();
@@ -423,7 +451,7 @@ impl Organ {
                 _ => {} // Ignore other object types
             }
         }
-        
+
         log::debug!("Collected: {} stops, {} ranks, {} stop-ranks.", xml_stops.len(), xml_ranks.len(), xml_stop_ranks.len());
         log::debug!("Collected: {} pipes, {} layers, {} attacks, {} releases, {} samples.",
             xml_pipes.len(), xml_layers.len(), xml_attack_samples.len(), xml_release_samples.len(), xml_samples.len());
@@ -434,7 +462,7 @@ impl Organ {
                 organ.name = general.name.clone();
             }
         }
-        
+
         // Build StopRank map (StopID -> Vec<RankID>)
         let mut stop_to_ranks_map: HashMap<String, Vec<String>> = HashMap::new();
         for sr in xml_stop_ranks {
@@ -478,27 +506,65 @@ impl Organ {
         
         // Map LayerID -> Vec<ReleaseSamples> (for SampleID)
         let mut release_map: HashMap<String, Vec<&XmlReleaseSample>> = HashMap::new();
-        for rel in &xml_release_samples {
-             release_map.entry(rel.layer_id.clone()).or_default().push(rel);
+        for rel in &xml_release_samples { release_map.entry(rel.layer_id.clone()).or_default().push(rel); }
+
+        // --- Collect unique processing tasks ---
+        let mut conversion_tasks: HashSet<ConversionTask> = HashSet::new();
+
+        for layer in &xml_layers {
+            let Some(pipe_info) = pipe_map.get(&layer.pipe_id) else { continue; };
+            if !ranks_map.contains_key(&pipe_info.rank_id) { continue; }
+
+            let Some(attack_link) = attack_map.get(&layer.id) else { continue; };
+            let Some(attack_sample_info) = sample_map.get(&attack_link.sample_id) else { continue; };
+            
+            // Pitch logic (duplicated for discovery phase)
+            let target_midi_note = pipe_info.midi_note as f32;
+            let original_midi_note = if let Some(pitch_hz) = attack_sample_info.pitch_exact_sample_pitch {
+                 if pitch_hz > 0.0 { 12.0 * (pitch_hz / 440.0).log2() + 69.0 } else { target_midi_note }
+            } else if let Some(midi_note) = attack_sample_info.pitch_normal_midi_note_number {
+                midi_note as f32
+            } else {
+                 Self::try_infer_midi_note_from_filename(&attack_sample_info.path).unwrap_or(target_midi_note)
+            };
+            let tuning = (target_midi_note - original_midi_note) * 100.0;
+            
+            if convert_to_16_bit || tuning != 0.0 {
+                let path_str = format!("OrganInstallationPackages/{:0>6}/{}", attack_sample_info.installation_package_id, attack_sample_info.path.replace('\\', "/"));
+                conversion_tasks.insert(ConversionTask {
+                    relative_path: PathBuf::from(path_str),
+                    tuning_cents_int: (tuning * 100.0) as i32,
+                    to_16bit: convert_to_16_bit,
+                });
+            }
+
+            if let Some(xml_release_links) = release_map.get(&layer.id) {
+                for release_link in xml_release_links {
+                     if let Some(rs) = sample_map.get(&release_link.sample_id) {
+                        if convert_to_16_bit || tuning != 0.0 {
+                             let path_str = format!("OrganInstallationPackages/{:0>6}/{}", rs.installation_package_id, rs.path.replace('\\', "/"));
+                             conversion_tasks.insert(ConversionTask {
+                                relative_path: PathBuf::from(path_str),
+                                tuning_cents_int: (tuning * 100.0) as i32,
+                                to_16bit: convert_to_16_bit,
+                            });
+                        }
+                     }
+                }
+            }
         }
 
-        log::debug!("Built Sample map ({} entries), Attack map ({} entries).", sample_map.len(), attack_map.len());
+        // --- Parallel Execution ---
+        // This will create all necessary files on disk.
+        Self::process_tasks_parallel(&organ.base_path, conversion_tasks, progress_tx)?;
 
-        log::debug!("Assembling pipes from {} layers...", xml_layers.len());
+        // --- Assembly (Standard Sequential Logic) ---
+        // Since files now exist, wav_converter::process_sample_file returns instantly.
+        if let Some(tx) = progress_tx { let _ = tx.send((1.0, "Assembling organ...".to_string())); }
+
         let mut pipes_assembled = 0;
-        let total_layers = xml_layers.len();
-
-        // Iterate layers (the central object) and build pipes
-        for (i, layer) in xml_layers.iter().enumerate() {
-
-            if let Some(tx) = progress_tx {
-                // Throttle slightly if needed, but MPSC is fast.
-                let progress = i as f32 / total_layers as f32;
-                // We'll update the text in the inner "process" calls if possible, or just here.
-                // Let's set a generic status here, and detailed status might be fleeting.
-                let _ = tx.send((progress, "Processing Organ Definitions...".to_string()));
-            }
-            // Find the pipe this layer belongs to
+        for layer in &xml_layers {
+            
             let Some(pipe_info) = pipe_map.get(&layer.pipe_id) else {
                 log::warn!("Layer {} references non-existent PipeID {}", layer.id, layer.pipe_id);
                 continue;
@@ -578,12 +644,8 @@ impl Organ {
             let mut attack_sample_path_relative = PathBuf::from(&attack_path_str);
             
             log::debug!("Processing LayerID {}: midi note {}, Attack sample path '{}'", layer.id, target_midi_note, attack_sample_path_relative.display());
-
+            
             if convert_to_16_bit || final_pitch_tuning_cents != 0.0 {
-                if let Some(tx) = progress_tx {
-                     let progress = i as f32 / total_layers as f32;
-                     let _ = tx.send((progress, format!("Processing: {}", attack_sample_info.path)));
-                }
                 attack_sample_path_relative = wav_converter::process_sample_file(
                     &attack_sample_path_relative,
                     &organ.base_path,
@@ -603,37 +665,26 @@ impl Organ {
             let mut releases = Vec::new();
             if let Some(xml_release_links) = release_map.get(&layer.id) {
                 for release_link in xml_release_links {
-                    // Find the Sample object for this release
-                    let Some(release_sample_info) = sample_map.get(&release_link.sample_id) else {
-                        log::warn!("Release for Layer {} references non-existent SampleID {}", layer.id, release_link.sample_id);
-                        continue;
-                    };
+                    if let Some(release_sample_info) = sample_map.get(&release_link.sample_id) {
+                        let rel_path_str = format!("OrganInstallationPackages/{:0>6}/{}", release_sample_info.installation_package_id, release_sample_info.path.replace('\\', "/"));
 
-                    let rel_path_str = format!("OrganInstallationPackages/{:0>6}/{}", release_sample_info.installation_package_id, release_sample_info.path.replace('\\', "/"));
+                        let mut rel_path_relative = PathBuf::from(&rel_path_str);
 
-                    let mut rel_path_relative = PathBuf::from(&rel_path_str);
-
-                    if convert_to_16_bit || final_pitch_tuning_cents != 0.0 {
-                        if let Some(tx) = progress_tx {
-                             let progress = i as f32 / total_layers as f32;
-                             let _ = tx.send((progress, format!("Processing: {}", release_sample_info.path)));
-                        }
-                        rel_path_relative = wav_converter::process_sample_file(
+                        if convert_to_16_bit || final_pitch_tuning_cents != 0.0 {
+                            rel_path_relative = wav_converter::process_sample_file(
                             &rel_path_relative,
                             &organ.base_path,
                             final_pitch_tuning_cents,
                             convert_to_16_bit,
-                        )?;
+                            )?;
+                        }
+                        releases.push(ReleaseSample {
+                            path: organ.base_path.join(rel_path_relative),
+                            max_key_press_time_ms: release_link.max_key_press_time_ms,
+                        });
                     }
-                    let rel_path = organ.base_path.join(rel_path_relative);
-
-                    releases.push(ReleaseSample {
-                        path: rel_path,
-                        max_key_press_time_ms: release_link.max_key_press_time_ms,
-                    });
                 }
             }
-            
             releases.sort_by_key(|r| if r.max_key_press_time_ms == -1 { i64::MAX } else { r.max_key_press_time_ms });
 
             // Create and insert Pipe into its Rank
@@ -667,8 +718,6 @@ impl Organ {
         // Build Stops Vec
         let mut stops_filtered = 0;
         let mut stops_map: HashMap<String, Stop> = HashMap::new();
-        log::debug!("--- Starting Stop Filtering ---");
-        let xml_stops_len = xml_stops.len();
         for xs in xml_stops {
             // Apply same filter as INI loader
             if xs.name.contains("Key action") || xs.name.contains("noise") || xs.name.is_empty() {
@@ -723,8 +772,6 @@ impl Organ {
         }
         log::debug!("--- Stop Filtering Finished ---");
 
-        println!("Parsing complete. Stops found: {}. Stops filtered (noise/empty/no pipes): {}. Stops added: {}.", xml_stops_len, stops_filtered, stops_map.len());
-
         let mut stops: Vec<Stop> = stops_map.into_values().collect();
         stops.sort_by_key(|s| s.id_str.parse::<u32>().unwrap_or(0));
 
@@ -744,9 +791,7 @@ impl Organ {
         progress_tx: &Option<mpsc::Sender<(f32, String)>>,
     ) -> Result<Self> {
         println!("Loading GrandOrgue organ from: {:?}", path);
-        if let Some(tx) = progress_tx {
-            let _ = tx.send((0.0, "Parsing GrandOrgue INI...".to_string()));
-        }
+        if let Some(tx) = progress_tx { let _ = tx.send((0.0, "Parsing GrandOrgue INI...".to_string())); }
 
         let base_path = path.parent().ok_or_else(|| anyhow!("Invalid file path"))?;
         
@@ -767,15 +812,74 @@ impl Organ {
         let mut organ = Organ {
             base_path: base_path.to_path_buf(),
             name: path.file_stem().unwrap_or_default().to_string_lossy().to_string(),
-            sample_cache: None,
-            metadata_cache: None,
+            sample_cache: if pre_cache { Some(HashMap::new()) } else { None },
+            metadata_cache: if pre_cache { Some(HashMap::new()) } else { None },
             ..Default::default()
         };
 
-        if pre_cache {
-            organ.sample_cache = Some(HashMap::new());
-            organ.metadata_cache = Some(HashMap::new());
+        // --- Collect unique processing tasks ---
+        let mut conversion_tasks: HashSet<ConversionTask> = HashSet::new();
+
+        for (section_name, props) in conf.iter() {
+            if !section_name.starts_with("rank") { continue; }
+            
+            let get_prop = |key_upper: &str, key_lower: &str, default: &str| {
+                props.get(key_upper).or_else(|| props.get(key_lower))
+                    .and_then(|opt| opt.as_deref()).map(|s| s.to_string())
+                    .unwrap_or_else(|| default.to_string()).trim().replace("__HASH__", "#").to_string()
+            };
+
+            let pipe_count: usize = get_prop("NumberOfLogicalPipes", "numberoflogicalpipes", "0").parse().unwrap_or(0);
+            
+            for i in 1..=pipe_count {
+                let pipe_key_prefix_upper = format!("Pipe{:03}", i);
+                let pipe_key_prefix_lower = format!("pipe{:03}", i);
+
+                if let Some(attack_path_str) = get_prop(&pipe_key_prefix_upper, &pipe_key_prefix_lower, "").non_empty_or(None) {
+                    let attack_path_str = attack_path_str.replace('\\', "/");
+                    
+                    let mut pitch_tuning_cents: f32 = get_prop(
+                        &format!("{}PitchTuning", pipe_key_prefix_upper), 
+                        &format!("{}pitchtuning", pipe_key_prefix_lower), "0.0"
+                    ).parse().unwrap_or(0.0);
+
+                    if original_tuning && pitch_tuning_cents.abs() <= 20.0 { pitch_tuning_cents = 0.0; }
+
+                    if convert_to_16_bit || pitch_tuning_cents != 0.0 {
+                        conversion_tasks.insert(ConversionTask {
+                            relative_path: PathBuf::from(&attack_path_str),
+                            tuning_cents_int: (pitch_tuning_cents * 100.0) as i32,
+                            to_16bit: convert_to_16_bit,
+                        });
+                    }
+
+                    let release_count: usize = get_prop(
+                        &format!("{}ReleaseCount", pipe_key_prefix_upper), 
+                        &format!("{}releasecount", pipe_key_prefix_lower), "0"
+                    ).parse().unwrap_or(0);
+
+                    for r_idx in 1..=release_count {
+                        let rel_key_upper = format!("{}Release{:03}", pipe_key_prefix_upper, r_idx);
+                        let rel_key_lower = format!("{}release{:03}", pipe_key_prefix_lower, r_idx);
+                        if let Some(rel_path_str) = get_prop(&rel_key_upper, &rel_key_lower, "").non_empty_or(None) {
+                             if convert_to_16_bit || pitch_tuning_cents != 0.0 {
+                                 conversion_tasks.insert(ConversionTask {
+                                    relative_path: PathBuf::from(rel_path_str.replace('\\', "/")),
+                                    tuning_cents_int: (pitch_tuning_cents * 100.0) as i32,
+                                    to_16bit: convert_to_16_bit,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+        // --- Parallel Execution ---
+        Self::process_tasks_parallel(&organ.base_path, conversion_tasks, progress_tx)?;
+
+        // --- Assembly ---
+        if let Some(tx) = progress_tx { let _ = tx.send((1.0, "Assembling organ...".to_string())); }
 
         let mut stops_map: HashMap<String, Stop> = HashMap::new();
         let mut ranks_map: HashMap<String, Rank> = HashMap::new();
@@ -783,25 +887,11 @@ impl Organ {
         let mut stops_found = 0;
         let mut stops_filtered = 0;
 
-        for (section_index, (section_name, props)) in conf.iter().enumerate() {
-
-            // We use the outer section loop for the progress percentage.
-            if let Some(tx) = progress_tx {
-                // Throttle: Only update every few sections to save channel traffic, 
-                // or just update every time.
-                let progress = section_index as f32 / total_sections as f32;
-                let _ = tx.send((progress, "Processing Organ Definitions...".to_string()));
-            }
-
+        for (section_name, props) in conf.iter() {
             let get_prop = |key_upper: &str, key_lower: &str, default: &str| {
-                props.get(key_upper) // Try uppercase
-                    .or_else(|| props.get(key_lower)) // Try lowercase
-                    .and_then(|opt| opt.as_deref()) // Get Option<&str>
-                    .map(|s| s.to_string()) // Convert to Option<String>
-                    .unwrap_or_else(|| default.to_string()) // Provide default String
-                    .trim()
-                    .replace("__HASH__", "#") // Replace placeholder back
-                    .to_string()
+                props.get(key_upper).or_else(|| props.get(key_lower))
+                    .and_then(|opt| opt.as_deref()).map(|s| s.to_string())
+                    .unwrap_or_else(|| default.to_string()).trim().replace("__HASH__", "#").to_string()
             };
 
             // --- Parse Stops ---
@@ -879,18 +969,14 @@ impl Organ {
                         }
 
                         // Only process if needed (16-bit conversion OR pitch shift)
-                            if convert_to_16_bit || pitch_tuning_cents != 0.0 {
-                                if let Some(tx) = progress_tx {
-                                    let progress = section_index as f32 / total_sections as f32;
-                                    let _ = tx.send((progress, format!("Processing: {}", attack_path_str)));
-                                }
-                                attack_sample_path_relative = wav_converter::process_sample_file(
+                        if convert_to_16_bit || pitch_tuning_cents != 0.0 {
+                            attack_sample_path_relative = wav_converter::process_sample_file(
                                     &attack_sample_path_relative,
                                     &organ.base_path,
                                     pitch_tuning_cents,
                                     convert_to_16_bit
-                                )?;
-                            }
+                            )?;
+                        }
 
                         // Join with base path for the final absolute-like path
                         let attack_sample_path = organ.base_path.join(attack_sample_path_relative);
@@ -908,15 +994,8 @@ impl Organ {
                             let rel_key_lower = format!("{}release{:03}", pipe_key_prefix_lower, r_idx);
                             
                             if let Some(rel_path_str) = get_prop(&rel_key_upper, &rel_key_lower, "").non_empty_or(None) {
-                                let rel_path_str = rel_path_str.replace('\\', "/");
-                                let mut rel_path_relative = PathBuf::from(&rel_path_str);
-
-                                // Run converter
+                                let mut rel_path_relative = PathBuf::from(rel_path_str.replace('\\', "/"));
                                 if convert_to_16_bit || pitch_tuning_cents != 0.0 {
-                                    if let Some(tx) = progress_tx {
-                                        let progress = section_index as f32 / total_sections as f32;
-                                        let _ = tx.send((progress, format!("Processing: {}", rel_path_str)));
-                                    }
                                     rel_path_relative = wav_converter::process_sample_file(
                                         &rel_path_relative,
                                         &organ.base_path,
@@ -924,14 +1003,8 @@ impl Organ {
                                         convert_to_16_bit
                                     )?;
                                 }
-
-                                let rel_path = organ.base_path.join(rel_path_relative);
-                                
-                                let time_key_upper = format!("{}MaxKeyPressTime", rel_key_upper);
-                                let time_key_lower = format!("{}maxkeypresstime", rel_key_lower);
-                                
-                                let max_time: i64 = get_prop(&time_key_upper, &time_key_lower, "-1").parse().unwrap_or(-1);
-                                releases.push(ReleaseSample { path: rel_path, max_key_press_time_ms: max_time });
+                                let max_time: i64 = get_prop(&format!("{}MaxKeyPressTime", rel_key_upper), &format!("{}maxkeypresstime", rel_key_lower), "-1").parse().unwrap_or(-1);
+                                releases.push(ReleaseSample { path: organ.base_path.join(rel_path_relative), max_key_press_time_ms: max_time });
                             }
                         }
                         
