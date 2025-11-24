@@ -770,7 +770,7 @@ impl Organ {
                  stops_filtered += 1;
             }
         }
-        log::debug!("--- Stop Filtering Finished ---");
+        log::debug!("--- Filtered {} stops ---", stops_filtered);
 
         let mut stops: Vec<Stop> = stops_map.into_values().collect();
         stops.sort_by_key(|s| s.id_str.parse::<u32>().unwrap_or(0));
@@ -805,7 +805,6 @@ impl Organ {
 
         // Load the modified string
         let conf = inistr!(&safe_content);
-        let total_sections = conf.len();
 
         println!("Found {} sections in INI.", conf.len());
 
