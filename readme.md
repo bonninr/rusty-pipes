@@ -223,6 +223,14 @@ When you start the program for the first time, no stop will have any MIDI channe
 
 ## FAQ
 
+### Q: I get no MIDI activity when playing.
+
+A: Make sure you selected a MIDI input device on the config screen. Also note that if you have a MIDI file selected for playing, manual MIDI input is disabled.
+
+### Q: I get no sound. I can see MIDI activity though.
+
+A: You need to assign MIDI channels to one or more stops. Click on the "1" next to a stop to assign it to MIDI channel 1, and you should hear something when playing notes on that channel. Note that some stops might not have pipes at the octave you're playing, so be sure to check across the octave range.
+
 ### Q: My audio output crackles or cuts out
 
 A: This can happen either due to a too high gain, or your CPU being overstressed. If a red "Buffer underrun" warning appears, then you need to reduce polyphony with the [-Key (or the controls on the GUI), or select fewer stops. If no warning appears, reduce gain.
