@@ -4,7 +4,10 @@
 
 [![Built With Ratatui](https://ratatui.rs/built-with-ratatui/badge.svg)](https://ratatui.rs/)
 
-Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets. It features a text-based user interface, can be controlled via MIDI and play back MIDI files. Rusty Pipes can stream samples from disk instead of load them into RAM, though a RAM precache mode similar to GrandOrgue and Hauptwerk is available too.
+Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets. It features a text-based user interface, can be controlled via MIDI and play back MIDI files. Rusty Pipes can stream samples from disk instead of load them into RAM, though a RAM precache mode similar to GrandOrgue and Hauptwerk is available too. 
+
+Music sample: [Vierne Organ Symphony No2 - Cantabile - Frisach organ](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.flac) (FLAC)
+
 
 <img width="1699" height="1379" alt="image" src="https://github.com/user-attachments/assets/32279ae6-7535-4292-86c7-df35361003bc" />
 
@@ -31,11 +34,11 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 ## Missing features / Limitations / Known Issues
 
 * Streaming mode will not work well on HDDs or slow SSDs (use precaching in such cases)
-* Support for different manuals and switches
+* No support for split manuals and switches
 * Does not work as a plugin in DAWs
 * No support for percussive sound effects
 
-*Contributions are welcome!*
+*Contributions to add the above or other features are welcome!*
 
 ## Download
 
