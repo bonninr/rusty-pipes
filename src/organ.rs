@@ -250,6 +250,23 @@ struct XmlReleaseSample {
 
 impl Organ {
 
+    /// Reads a file to a String, falling back to Latin-1 (ISO-8859-1) if UTF-8 fails.
+    fn read_file_tolerant(path: &Path) -> Result<String> {
+        let bytes = std::fs::read(path)
+            .map_err(|e| anyhow!("Failed to read file {:?}: {}", path, e))?;
+
+        match String::from_utf8(bytes) {
+            Ok(s) => Ok(s),
+            Err(e) => {
+                log::warn!("File {:?} is not valid UTF-8. Falling back to Latin-1 decoding.", path);
+                // Recover the bytes from the error
+                let bytes = e.into_bytes();
+                // Manual ISO-8859-1 decoding: bytes map 1:1 to chars
+                Ok(bytes.into_iter().map(|b| b as char).collect())
+            }
+        }
+    }
+
     /// Helper to get the cache directory for a specific organ
     fn get_organ_cache_dir(organ_name: &str) -> Result<PathBuf> {
         let settings_path = confy::get_configuration_file_path("rusty-pipes", "settings")?;
@@ -436,7 +453,7 @@ impl Organ {
         
         let organ_root_path = path.parent().and_then(|p| p.parent())
             .ok_or_else(|| anyhow!("Invalid Hauptwerk file path structure."))?;
-        let file_content = std::fs::read_to_string(path)?;
+        let file_content = Self::read_file_tolerant(path)?;
 
         let organ_name = path.file_stem().unwrap_or_default().to_string_lossy().replace(".Organ_Hauptwerk_xml", "");
         let cache_path = Self::get_organ_cache_dir(&organ_name)?;
@@ -820,21 +837,13 @@ impl Organ {
 
         let base_path = path.parent().ok_or_else(|| anyhow!("Invalid file path"))?;
         
-        // Read file to string
-        let file_content = std::fs::read_to_string(path)
-            .map_err(|e| anyhow!("Failed to read organ file {:?}: {}", path, e))?;
+        let file_content = Self::read_file_tolerant(path)?;
         
-        // Replace '#' with a safe placeholder
-        // We use a placeholder that won't be in a real path.
         let safe_content = file_content.replace('#', "__HASH__");
-
-        // Load the modified string
         let conf = inistr!(&safe_content);
 
         let organ_name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
         let cache_path = Self::get_organ_cache_dir(&organ_name)?;
-
-        println!("Found {} sections in INI.", conf.len());
 
         let mut organ = Organ {
             base_path: base_path.to_path_buf(),
@@ -845,18 +854,29 @@ impl Organ {
             ..Default::default()
         };
 
-        // --- Collect unique processing tasks ---
+        // --- Collect Tasks Logic ---
         let mut conversion_tasks: HashSet<ConversionTask> = HashSet::new();
 
         for (section_name, props) in conf.iter() {
-            if !section_name.starts_with("rank") { continue; }
+            let section_lower = section_name.to_lowercase();
             
-            let get_prop = |key_upper: &str, key_lower: &str, default: &str| {
-                props.get(key_upper).or_else(|| props.get(key_lower))
-                    .and_then(|opt| opt.as_deref()).map(|s| s.to_string())
-                    .unwrap_or_else(|| default.to_string()).trim().replace("__HASH__", "#").to_string()
+            // Compatibility Fix: Check for [Rank...] OR [Stop...] sections that act as ranks
+            let is_rank_def = section_lower.starts_with("rank");
+            let is_stop_def = section_lower.starts_with("stop");
+            
+            // If it's a stop, verify it actually has pipes before treating it as a rank source
+            let has_pipes = if is_stop_def {
+                props.get("Pipe001").or_else(|| props.get("pipe001")).is_some()
+            } else {
+                false
             };
 
+            if !is_rank_def && !has_pipes { continue; }
+
+            let get_prop = |key_upper: &str, key_lower: &str, default: &str| {
+                props.get(key_upper).or_else(|| props.get(key_lower)).and_then(|opt| opt.as_deref()).map(|s| s.to_string()).unwrap_or_else(|| default.to_string()).trim().replace("__HASH__", "#").to_string()
+            };
+            
             let pipe_count: usize = get_prop("NumberOfLogicalPipes", "numberoflogicalpipes", "0").parse().unwrap_or(0);
             
             for i in 1..=pipe_count {
@@ -864,13 +884,12 @@ impl Organ {
                 let pipe_key_prefix_lower = format!("pipe{:03}", i);
 
                 if let Some(attack_path_str) = get_prop(&pipe_key_prefix_upper, &pipe_key_prefix_lower, "").non_empty_or(None) {
-                    let attack_path_str = attack_path_str.replace('\\', "/");
                     
-                    let mut pitch_tuning_cents: f32 = get_prop(
-                        &format!("{}PitchTuning", pipe_key_prefix_upper), 
-                        &format!("{}pitchtuning", pipe_key_prefix_lower), "0.0"
-                    ).parse().unwrap_or(0.0);
+                    // Ignore "REF:" entries (GrandOrgue aliases)
+                    if attack_path_str.starts_with("REF:") { continue; }
 
+                    let attack_path_str = attack_path_str.replace('\\', "/");
+                    let mut pitch_tuning_cents: f32 = get_prop(&format!("{}PitchTuning", pipe_key_prefix_upper), &format!("{}pitchtuning", pipe_key_prefix_lower), "0.0").parse().unwrap_or(0.0);
                     if original_tuning && pitch_tuning_cents.abs() <= 20.0 { pitch_tuning_cents = 0.0; }
 
                     conversion_tasks.insert(ConversionTask {
@@ -879,16 +898,15 @@ impl Organ {
                         to_16bit: convert_to_16_bit,
                     });
 
-                    let release_count: usize = get_prop(
-                        &format!("{}ReleaseCount", pipe_key_prefix_upper), 
-                        &format!("{}releasecount", pipe_key_prefix_lower), "0"
-                    ).parse().unwrap_or(0);
-
+                    let release_count: usize = get_prop(&format!("{}ReleaseCount", pipe_key_prefix_upper), &format!("{}releasecount", pipe_key_prefix_lower), "0").parse().unwrap_or(0);
                     for r_idx in 1..=release_count {
                         let rel_key_upper = format!("{}Release{:03}", pipe_key_prefix_upper, r_idx);
                         let rel_key_lower = format!("{}release{:03}", pipe_key_prefix_lower, r_idx);
                         if let Some(rel_path_str) = get_prop(&rel_key_upper, &rel_key_lower, "").non_empty_or(None) {
-                            conversion_tasks.insert(ConversionTask {
+                             // Ignore "REF:"
+                             if rel_path_str.starts_with("REF:") { continue; }
+
+                             conversion_tasks.insert(ConversionTask {
                                 relative_path: PathBuf::from(rel_path_str.replace('\\', "/")),
                                 tuning_cents_int: (pitch_tuning_cents * 100.0) as i32,
                                 to_16bit: convert_to_16_bit,
@@ -908,147 +926,135 @@ impl Organ {
         let mut stops_map: HashMap<String, Stop> = HashMap::new();
         let mut ranks_map: HashMap<String, Rank> = HashMap::new();
 
-        let mut stops_found = 0;
-        let mut stops_filtered = 0;
-
+        // --- Build Ranks ---
+        // We look for sections that act as Ranks (either [Rank...] or [Stop...] with pipes)
         for (section_name, props) in conf.iter() {
+            let section_lower = section_name.to_lowercase();
+            
+            // Determine if this section defines a rank
+            let is_explicit_rank = section_lower.starts_with("rank");
+            let is_stop_as_rank = section_lower.starts_with("stop") && 
+                                 (props.get("Pipe001").is_some() || props.get("pipe001").is_some());
+
+            if !is_explicit_rank && !is_stop_as_rank { continue; }
+
             let get_prop = |key_upper: &str, key_lower: &str, default: &str| {
-                props.get(key_upper).or_else(|| props.get(key_lower))
-                    .and_then(|opt| opt.as_deref()).map(|s| s.to_string())
-                    .unwrap_or_else(|| default.to_string()).trim().replace("__HASH__", "#").to_string()
+                props.get(key_upper).or_else(|| props.get(key_lower)).and_then(|opt| opt.as_deref()).map(|s| s.to_string()).unwrap_or_else(|| default.to_string()).trim().replace("__HASH__", "#").to_string()
             };
 
-            // --- Parse Stops ---
-            if section_name.starts_with("stop") {
-                stops_found += 1;
-                let id_str = section_name.trim_start_matches("stop").to_string();
-                
-                let name = get_prop("Name", "name", "");
-                // println!("Parsing stop {}: {}", id_str, name); // Debug line
+            // Extract ID: "Rank001" -> "001", "Stop001" -> "001"
+            let id_str = if is_explicit_rank {
+                section_name.trim_start_matches("rank").trim_start_matches("Rank").to_string()
+            } else {
+                section_name.trim_start_matches("stop").trim_start_matches("Stop").to_string()
+            };
 
-                // Filter out noise/key action stops
-                if name.contains("Key action") || name.contains("noise") || name.is_empty() {
-                    stops_filtered += 1;
-                    continue;
+            let name = get_prop("Name", "name", "");
+            let first_midi_note: u8 = get_prop("FirstAccessiblePipeLogicalKeyNumber", "firstaccessiblepipelogicalkeynumber", "1").parse().unwrap_or(1) 
+                .max(1) - 1 + 36; // Very rough approximation for GO mapping if MIDI numbers aren't explicit
+
+            let pipe_count: usize = get_prop("NumberOfLogicalPipes", "numberoflogicalpipes", "0").parse().unwrap_or(0);
+            let gain_db: f32 = get_prop("AmplitudeLevel", "amplitudelevel", "100.0").parse::<f32>().unwrap_or(100.0);
+            // Convert GO "AmplitudeLevel" (usually %) to dB? Or just treat as gain factor. 
+            // Rough approx: 100 = 0dB. Log scale. For now, let's normalize 100 -> 0.0dB.
+            let gain_db = if gain_db > 0.0 { 20.0 * (gain_db / 100.0).log10() } else { -96.0 };
+
+            let tracker_delay_ms: u32 = 0; 
+            let mut pipes = HashMap::new();
+
+            for i in 1..=pipe_count {
+                let pipe_key_prefix_upper = format!("Pipe{:03}", i);
+                let pipe_key_prefix_lower = format!("pipe{:03}", i);
+                let midi_note = first_midi_note + (i as u8 - 1);
+
+                if let Some(attack_path_str) = get_prop(&pipe_key_prefix_upper, &pipe_key_prefix_lower, "").non_empty_or(None) {
+                    
+                    // Compatibility: Skip REF pipes in assembly for now
+                    if attack_path_str.starts_with("REF:") { continue; }
+
+                    let attack_path_str = attack_path_str.replace('\\', "/");
+                    let attack_sample_path_relative = PathBuf::from(&attack_path_str);
+                    let mut pitch_tuning_cents: f32 = get_prop(&format!("{}PitchTuning", pipe_key_prefix_upper), &format!("{}pitchtuning", pipe_key_prefix_lower), "0.0").parse().unwrap_or(0.0);
+                    if original_tuning && pitch_tuning_cents.abs() <= 20.0 { pitch_tuning_cents = 0.0; }
+
+                    // Process Attack (This will find it in cache instantly)
+                    let final_attack_path = wav_converter::process_sample_file(
+                        &attack_sample_path_relative,
+                        &organ.base_path,
+                        &organ.cache_path,
+                        pitch_tuning_cents,
+                        convert_to_16_bit,
+                        target_sample_rate
+                    )?;
+
+                    let release_count: usize = get_prop(&format!("{}ReleaseCount", pipe_key_prefix_upper), &format!("{}releasecount", pipe_key_prefix_lower), "0").parse().unwrap_or(0);
+                    let mut releases = Vec::new();
+                    for r_idx in 1..=release_count {
+                        let rel_key_upper = format!("{}Release{:03}", pipe_key_prefix_upper, r_idx);
+                        let rel_key_lower = format!("{}release{:03}", pipe_key_prefix_lower, r_idx);
+                        if let Some(rel_path_str) = get_prop(&rel_key_upper, &rel_key_lower, "").non_empty_or(None) {
+                            
+                            if rel_path_str.starts_with("REF:") { continue; }
+
+                            let rel_path_relative = PathBuf::from(rel_path_str.replace('\\', "/"));
+                            
+                            let final_rel_path = wav_converter::process_sample_file(
+                                &rel_path_relative,
+                                &organ.base_path,
+                                &organ.cache_path,
+                                pitch_tuning_cents,
+                                convert_to_16_bit,
+                                target_sample_rate
+                            )?;
+
+                            let max_time: i64 = get_prop(&format!("{}MaxKeyPressTime", rel_key_upper), &format!("{}maxkeypresstime", rel_key_lower), "-1").parse().unwrap_or(-1);
+                            releases.push(ReleaseSample { path: final_rel_path, max_key_press_time_ms: max_time });
+                        }
+                    }
+                    releases.sort_by_key(|r| if r.max_key_press_time_ms == -1 { i64::MAX } else { r.max_key_press_time_ms });
+                    pipes.insert(midi_note, Pipe { attack_sample_path: final_attack_path, gain_db: 0.0, pitch_tuning_cents: 0.0, releases });
                 }
+            }
+            ranks_map.insert(id_str.clone(), Rank { name, id_str, first_midi_note, pipe_count, gain_db, tracker_delay_ms, pipes });
+        }
 
+        // --- Build Stops ---
+        for (section_name, props) in conf.iter() {
+            let get_prop = |key_upper: &str, key_lower: &str, default: &str| {
+                props.get(key_upper).or_else(|| props.get(key_lower)).and_then(|opt| opt.as_deref()).map(|s| s.to_string()).unwrap_or_else(|| default.to_string()).trim().replace("__HASH__", "#").to_string()
+            };
+
+            if section_name.to_lowercase().starts_with("stop") {
+                let id_str = section_name.trim_start_matches("stop").trim_start_matches("Stop").to_string();
+                let name = get_prop("Name", "name", "");
+                
+                if name.contains("Key action") || name.contains("noise") || name.is_empty() { continue; }
+                
+                // Try to find explicitly linked ranks (Standard GO)
                 let rank_count: usize = get_prop("NumberOfRanks", "numberofranks", "0").parse().unwrap_or(0);
                 let mut rank_ids = Vec::new();
-                
                 for i in 1..=rank_count {
-                    let key_upper = format!("Rank{:03}", i);
-                    let key_lower = format!("rank{:03}", i);
-                    if let Some(rank_id) = get_prop(&key_upper, &key_lower, "").non_empty_or(None) {
+                    if let Some(rank_id) = get_prop(&format!("Rank{:03}", i), &format!("rank{:03}", i), "").non_empty_or(None) {
                         rank_ids.push(rank_id.to_string());
                     }
                 }
 
-                stops_map.insert(id_str.clone(), Stop { name, id_str, rank_ids });
-            }
-            // --- Parse Ranks ---
-            else if section_name.starts_with("rank") {
-                let id_str = section_name.trim_start_matches("rank").to_string();
-                let name = get_prop("Name", "name", "");
-
-                let first_midi_note: u8 = get_prop("FirstMidiNoteNumber", "firstmidinotenumber", "0")
-                    .parse()
-                    .context(format!("Parsing FirstMidiNoteNumber for {section_name}"))?;
-                
-                let pipe_count: usize = get_prop("NumberOfLogicalPipes", "numberoflogicalpipes", "0")
-                    .parse()
-                    .context(format!("Parsing NumberOfLogicalPipes for {section_name}"))?;
-
-                let gain_db: f32 = get_prop("Gain", "gain", "0.0").parse().unwrap_or(0.0);
-                let tracker_delay_ms: u32 = get_prop("TrackerDelay", "trackerdelay", "0").parse().unwrap_or(0);
-                
-                let mut pipes = HashMap::new();
-                for i in 1..=pipe_count {
-                    let pipe_key_prefix_upper = format!("Pipe{:03}", i);
-                    let pipe_key_prefix_lower = format!("pipe{:03}", i);
-                    let midi_note = first_midi_note + (i as u8 - 1);
-
-                    // Get attack sample
-                    if let Some(attack_path_str) = get_prop(&pipe_key_prefix_upper, &pipe_key_prefix_lower, "").non_empty_or(None) {
-                        // Handle path separators and create relative path
-                        let attack_path_str = attack_path_str.replace('\\', "/");
-                        let attack_sample_path_relative = PathBuf::from(&attack_path_str);
-
-                        let pipe_gain_db: f32 = get_prop(
-                            &format!("{}Gain", pipe_key_prefix_upper), 
-                            &format!("{}gain", pipe_key_prefix_lower), 
-                            "0.0"
-                        ).parse().unwrap_or(0.0);
-                        
-                        let mut pitch_tuning_cents: f32 = get_prop(
-                            &format!("{}PitchTuning", pipe_key_prefix_upper), 
-                            &format!("{}pitchtuning", pipe_key_prefix_lower), 
-                            "0.0"
-                        ).parse().unwrap_or(0.0);
-
-                        // if original_tuning is enabled, we only apply pitch tuning if it's more than +/- 20 cents
-                        if original_tuning {
-                            if pitch_tuning_cents.abs() <= 20.0 {
-                                pitch_tuning_cents = 0.0;
-                            }
-                        }
-
-                        let final_attack_path = wav_converter::process_sample_file(
-                            &attack_sample_path_relative,
-                            &organ.base_path,
-                            &organ.cache_path,
-                            pitch_tuning_cents,
-                            convert_to_16_bit,
-                            target_sample_rate,
-                        )?;
-
-                        let release_count: usize = get_prop(
-                            &format!("{}ReleaseCount", pipe_key_prefix_upper), 
-                            &format!("{}releasecount", pipe_key_prefix_lower), 
-                            "0"
-                        ).parse().unwrap_or(0);
-                        
-                        let mut releases = Vec::new();
-
-                        for r_idx in 1..=release_count {
-                            let rel_key_upper = format!("{}Release{:03}", pipe_key_prefix_upper, r_idx);
-                            let rel_key_lower = format!("{}release{:03}", pipe_key_prefix_lower, r_idx);
-                            
-                            if let Some(rel_path_str) = get_prop(&rel_key_upper, &rel_key_lower, "").non_empty_or(None) {
-                                let rel_path_relative = PathBuf::from(rel_path_str.replace('\\', "/"));
-                                let final_rel_path = wav_converter::process_sample_file(
-                                    &rel_path_relative,
-                                    &organ.base_path,
-                                    &organ.cache_path,
-                                    pitch_tuning_cents,
-                                    convert_to_16_bit,
-                                    target_sample_rate,
-                                )?;
-                                let max_time: i64 = get_prop(&format!("{}MaxKeyPressTime", rel_key_upper), &format!("{}maxkeypresstime", rel_key_lower), "-1").parse().unwrap_or(-1);
-                                releases.push(ReleaseSample { path: final_rel_path, max_key_press_time_ms: max_time });
-                            }
-                        }
-                        
-                        // Sort releases by time, smallest first. -1 (default) should be last.
-                        releases.sort_by_key(|r| if r.max_key_press_time_ms == -1 { i64::MAX } else { r.max_key_press_time_ms });
-
-                        pipes.insert(midi_note, Pipe {
-                            attack_sample_path: final_attack_path,
-                            gain_db: pipe_gain_db,
-                            pitch_tuning_cents: 0.0, // Pitch tuning is pre-applied during conversion
-                            releases,
-                        });
+                // Compatibility Fix: If no explicit ranks, check if this stop matches an auto-generated rank (from Phase 1)
+                if rank_ids.is_empty() {
+                    if ranks_map.contains_key(&id_str) {
+                        rank_ids.push(id_str.clone());
                     }
                 }
-                ranks_map.insert(id_str.clone(), Rank { name, id_str, first_midi_note, pipe_count, gain_db, tracker_delay_ms, pipes });
-            }
+
+                // Only add stop if it actually triggers something
+                if !rank_ids.is_empty() {
+                    stops_map.insert(id_str.clone(), Stop { name, id_str, rank_ids });
+                }
+            } 
         }
-        
-        println!("Parsing complete. Stops found: {}. Stops filtered (noise/empty): {}. Stops added: {}.", stops_found, stops_filtered, stops_map.len());
 
-        // Convert stops_map to a vec and sort it for stable TUI display
         let mut stops: Vec<Stop> = stops_map.into_values().collect();
-        stops.sort_by(|a, b| a.id_str.cmp(&b.id_str)); // Sort by ID string
-
+        stops.sort_by(|a, b| a.id_str.cmp(&b.id_str));
         organ.stops = stops;
         organ.ranks = ranks_map;
 
