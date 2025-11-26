@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::audio::{get_audio_device_names, get_default_audio_device_name, get_supported_sample_rates};
+use crate::input::KeyboardLayout;
 
 /// Settings that are saved to the configuration file.
 #[derive(Debug, Serialize, Deserialize)]
@@ -22,6 +23,7 @@ pub struct AppSettings {
     pub polyphony: usize,
     pub audio_device_name: Option<String>,
     pub sample_rate: u32,
+    pub keyboard_layout: KeyboardLayout,
 }
 
 /// Default settings for a new installation.
@@ -41,6 +43,7 @@ impl Default for AppSettings {
             polyphony: 128,
             audio_device_name: None,
             sample_rate: 48000,
+            keyboard_layout: KeyboardLayout::Qwerty,
         }
     }
 }

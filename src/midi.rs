@@ -21,7 +21,7 @@ pub fn get_midi_device_names() -> Result<Vec<String>> {
 }
 
 /// Converts a MIDI note number to its name (e.g., 60 -> "C4").
-fn midi_note_to_name(note: u8) -> String {
+pub fn midi_note_to_name(note: u8) -> String {
     const NOTES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     let octave = (note / 12).saturating_sub(1); // MIDI note 0 is C-1
     let note_name = NOTES[(note % 12) as usize];

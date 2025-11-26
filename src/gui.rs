@@ -15,6 +15,7 @@ use crate::{
     app::AppMessage,
     app_state::{AppState, Preset},
     organ::Organ,
+    input::MusicCommand,
 };
 
 #[allow(dead_code)]
@@ -127,6 +128,40 @@ impl App for EguiApp {
 
         if !self.show_preset_save_modal {
             let input = ctx.input(|i| i.clone());
+
+            // --- Keyboard Music Input---
+            for event in &input.events {
+                if let egui::Event::Key { key, pressed, repeat, .. } = event {
+                    if *repeat { continue; } // Ignore key repeats for music
+
+                    // Map the key
+                    let command = {
+                        let state = self.app_state.lock().unwrap();
+                        state.keyboard_layout.map_egui(*key)
+                    };
+
+                    // Execute
+                    match command {
+                        MusicCommand::OctaveUp if *pressed => {
+                            self.app_state.lock().unwrap().octave_offset += 1;
+                        }
+                        MusicCommand::OctaveDown if *pressed => {
+                            self.app_state.lock().unwrap().octave_offset -= 1;
+                        }
+                        MusicCommand::PlayNote(semitone) => {
+                            let mut state = self.app_state.lock().unwrap();
+                            let note = state.get_keyboard_midi_note(semitone);
+                            let velocity = if *pressed { 100 } else { 0 };
+                            
+                            state.handle_keyboard_note(note, velocity, &self.audio_tx);
+                        }
+                        _ => {} // Ignore None or non-music keys
+                    }
+                }
+            }
+
+            // --- Function Keys ---
+
             let function_keys = [
                 egui::Key::F1, egui::Key::F2, egui::Key::F3, egui::Key::F4,
                 egui::Key::F5, egui::Key::F6, egui::Key::F7, egui::Key::F8,
@@ -301,7 +336,7 @@ impl EguiApp {
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_footer(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("footer").show(ctx, |ui| {
-            ui.label("Tip: F1-F12 to Recall, Shift+F1-F12 to Save, 'P' for Panic, Arrows to Navigate, 1-0 to Toggle");
+            ui.label("Tip: F1-F12 to Recall, Shift+F1-F12 to Save, 'P' for Panic, Arrows to Navigate, 1-0 to Toggle, E/R for Octave, +/- for Gain, [ / ] for Polyphony");
         });
     }
 

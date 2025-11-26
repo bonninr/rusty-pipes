@@ -18,6 +18,7 @@ use std::{
 
 use crate::app::{AppMessage};
 use crate::app_state::AppState;
+use crate::input::MusicCommand;
 
 const NUM_COLUMNS: usize = 3; // Number of columns for the stop list
 
@@ -139,106 +140,140 @@ pub fn run_tui_loop(
 
         // Handle input
         if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                
-                    match &mut tui_state.mode {
-                        AppMode::MainApp => {
-                            // --- Handle Main App Input ---
-                            let channel_to_toggle = match key.code {
-                                KeyCode::Char('1') => Some(0),
-                                KeyCode::Char('2') => Some(1),
-                                KeyCode::Char('3') => Some(2),
-                                KeyCode::Char('4') => Some(3),
-                                KeyCode::Char('5') => Some(4),
-                                KeyCode::Char('6') => Some(5),
-                                KeyCode::Char('7') => Some(6),
-                                KeyCode::Char('8') => Some(7),
-                                KeyCode::Char('9') => Some(8),
-                                KeyCode::Char('0') => Some(9),
-                                _ => None,
-                            };
-                            if let Some(channel) = channel_to_toggle {
-                                tui_state.toggle_stop_channel(channel, &audio_tx)?;
-                            } else {
-                                // Handle other keys if no channel key was pressed
-                                match key.code {
-                                    KeyCode::Char('q') | KeyCode::Esc => {
-                                        audio_tx.send(AppMessage::Quit)?;
-                                        break; // Exit TUI loop
-                                    }
-                                    KeyCode::Down | KeyCode::Char('j') => {
-                                        tui_state.next_item();
-                                    }
-                                    KeyCode::Up | KeyCode::Char('k') => {
-                                        tui_state.prev_item();
-                                    }
-                                    KeyCode::Char('l') | KeyCode::Right => tui_state.next_col(),
-                                    KeyCode::Char('h') | KeyCode::Left => tui_state.prev_col(),
-                                    KeyCode::Char('p') => {
-                                        audio_tx.send(AppMessage::AllNotesOff)?;
-                                    }
-                                    KeyCode::Char('a') => {
-                                        tui_state.select_all_channels_for_stop();
-                                    }
-                                    KeyCode::Char('n') => {
-                                        tui_state.select_none_channels_for_stop(&audio_tx)?;
-                                    }
-                                    KeyCode::F(n) if (1..=12).contains(&n) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-                                        let slot = (n - 1) as usize;
-                                        let current_name = tui_state.app_state.lock().unwrap().presets[slot]
-                                            .as_ref()
-                                            .map_or_else(
-                                                || format!("Preset F{}", slot + 1),
-                                                |p| p.name.clone()
-                                            );
-                                        tui_state.mode = AppMode::PresetSaveName(slot, current_name);
-                                    }
-                                    KeyCode::F(n) if (1..=12).contains(&n) && key.modifiers.is_empty() => {
-                                        if let Err(e) = tui_state.app_state.lock().unwrap().recall_preset((n - 1) as usize, &audio_tx) {
-                                            tui_state.app_state.lock().unwrap().add_midi_log(format!("ERROR recalling preset: {}", e));
-                                        }
-                                    }
-                                    // Gain
-                                    KeyCode::Char('+') | KeyCode::Char('=') => {
-                                        tui_state.app_state.lock().unwrap().modify_gain(0.05, &audio_tx);
-                                    }
-                                    KeyCode::Char('-') => {
-                                        tui_state.app_state.lock().unwrap().modify_gain(-0.05, &audio_tx);
-                                    }
-                                    // Polyphony
-                                    KeyCode::Char(']') => {
-                                        tui_state.app_state.lock().unwrap().modify_polyphony(16, &audio_tx);
-                                    }
-                                    KeyCode::Char('[') => {
-                                        tui_state.app_state.lock().unwrap().modify_polyphony(-16, &audio_tx);
-                                    }
-                                _ => {}
-                                }
-                            }
-                        },
-                        AppMode::PresetSaveName(slot, name_buffer) => {
-                            match key.code {
-                                KeyCode::Enter => {
-                                    if !name_buffer.is_empty() {
-                                        tui_state.app_state.lock().unwrap().save_preset(*slot, name_buffer.clone());
-                                    }
-                                    tui_state.mode = AppMode::MainApp;
-                                }
-                                KeyCode::Char(c) => {
-                                    name_buffer.push(c);
-                                }
-                                KeyCode::Backspace => {
-                                    name_buffer.pop();
-                                }
-                                KeyCode::Esc => {
-                                    tui_state.mode = AppMode::MainApp;
-                                }
-                                _ => {} // Ignore other keys
-                            }
+            let event = event::read()?;
+
+
+            if let Event::Key(key) = event {
+
+                // 1. Process Music Input via the shared helper
+                let command = {
+                    let state = tui_state.app_state.lock().unwrap();
+                    state.keyboard_layout.map_crossterm(key.code)
+                };
+
+                match command {
+                    MusicCommand::OctaveUp => {
+                        let mut state = tui_state.app_state.lock().unwrap();
+                        state.octave_offset = state.octave_offset.saturating_add(1);
+                    }
+                    MusicCommand::OctaveDown => {
+                        let mut state = tui_state.app_state.lock().unwrap();
+                        state.octave_offset = state.octave_offset.saturating_sub(1);
+                    }
+                    MusicCommand::PlayNote(semitone) => {
+                        let mut state = tui_state.app_state.lock().unwrap();
+                        let note = state.get_keyboard_midi_note(semitone);
+
+                        match key.kind {
+                            KeyEventKind::Press => state.handle_keyboard_note(note, 100, &audio_tx),
+                            KeyEventKind::Release => state.handle_keyboard_note(note, 0, &audio_tx),
+                            _ => {}
                         }
                     }
+                    MusicCommand::None => {
+                        // Handle UI Keys (Only on Press)
+                        if key.kind == KeyEventKind::Press {
+                
+                            match &mut tui_state.mode {
+                                AppMode::MainApp => {
+                                    // --- Handle Main App Input ---
+                                    let channel_to_toggle = match key.code {
+                                        KeyCode::Char('1') => Some(0),
+                                        KeyCode::Char('2') => Some(1),
+                                        KeyCode::Char('3') => Some(2),
+                                        KeyCode::Char('4') => Some(3),
+                                        KeyCode::Char('5') => Some(4),
+                                        KeyCode::Char('6') => Some(5),
+                                        KeyCode::Char('7') => Some(6),
+                                        KeyCode::Char('8') => Some(7),
+                                        KeyCode::Char('9') => Some(8),
+                                        KeyCode::Char('0') => Some(9),
+                                        _ => None,
+                                    };
+                                    if let Some(channel) = channel_to_toggle {
+                                        tui_state.toggle_stop_channel(channel, &audio_tx)?;
+                                    } else {
+                                        // Handle other keys if no channel key was pressed
+                                        match key.code {
+                                            KeyCode::Char('q') | KeyCode::Esc => {
+                                                audio_tx.send(AppMessage::Quit)?;
+                                                break; // Exit TUI loop
+                                            }
+                                            KeyCode::Down => {
+                                                tui_state.next_item();
+                                            }
+                                            KeyCode::Up => {
+                                                tui_state.prev_item();
+                                            }
+                                            KeyCode::Right => tui_state.next_col(),
+                                            KeyCode::Left => tui_state.prev_col(),
+                                            KeyCode::Char('p') => {
+                                                audio_tx.send(AppMessage::AllNotesOff)?;
+                                            }
+                                            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                                                tui_state.select_all_channels_for_stop();
+                                            }
+                                            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                                                tui_state.select_none_channels_for_stop(&audio_tx)?;
+                                            }
+                                            KeyCode::F(n) if (1..=12).contains(&n) && key.modifiers.contains(KeyModifiers::SHIFT) => {
+                                                let slot = (n - 1) as usize;
+                                                let current_name = tui_state.app_state.lock().unwrap().presets[slot]
+                                                    .as_ref()
+                                                    .map_or_else(
+                                                        || format!("Preset F{}", slot + 1),
+                                                        |p| p.name.clone()
+                                                    );
+                                                tui_state.mode = AppMode::PresetSaveName(slot, current_name);
+                                            }
+                                            KeyCode::F(n) if (1..=12).contains(&n) && key.modifiers.is_empty() => {
+                                                if let Err(e) = tui_state.app_state.lock().unwrap().recall_preset((n - 1) as usize, &audio_tx) {
+                                                    tui_state.app_state.lock().unwrap().add_midi_log(format!("ERROR recalling preset: {}", e));
+                                                }
+                                            }
+                                            // Gain
+                                            KeyCode::Char('+') | KeyCode::Char('=') => {
+                                                tui_state.app_state.lock().unwrap().modify_gain(0.05, &audio_tx);
+                                            }
+                                            KeyCode::Char('-') => {
+                                                tui_state.app_state.lock().unwrap().modify_gain(-0.05, &audio_tx);
+                                            }
+                                            // Polyphony
+                                            KeyCode::Char(']') => {
+                                                tui_state.app_state.lock().unwrap().modify_polyphony(16, &audio_tx);
+                                            }
+                                            KeyCode::Char('[') => {
+                                                tui_state.app_state.lock().unwrap().modify_polyphony(-16, &audio_tx);
+                                            }
+                                        _ => {}
+                                        }
+                                    }
+                                },
+                                AppMode::PresetSaveName(slot, name_buffer) => {
+                                    match key.code {
+                                        KeyCode::Enter => {
+                                            if !name_buffer.is_empty() {
+                                                tui_state.app_state.lock().unwrap().save_preset(*slot, name_buffer.clone());
+                                            }
+                                            tui_state.mode = AppMode::MainApp;
+                                        }
+                                        KeyCode::Char(c) => {
+                                            name_buffer.push(c);
+                                        }
+                                        KeyCode::Backspace => {
+                                            name_buffer.pop();
+                                        }
+                                        KeyCode::Esc => {
+                                            tui_state.mode = AppMode::MainApp;
+                                        }
+                                        _ => {} // Ignore other keys
+                                    }
+                                }
+                            }
+                        }
+                    } // non-note keyboard commmands
                 }
+
             }
         }
     }
@@ -281,7 +316,7 @@ fn draw_main_app_ui(
             .style(Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD))
     } else {
         let status = format!(
-            "CPU: {:.1}% | Gain: {:.0}% | Voices: {}/{} | [Q]uit | [P]anic | Nav:↑↓←→ | +/-:Gain | [/]:Poly | F1-12:Recall | Shift+F1-12:Save", 
+            "CPU: {:.1}% | Gain: {:.0}% | Voices: {}/{} | [Q]uit | [P]anic | +/-:Gain | E/R:Octave | [/]:Poly | F1-12:Recall | Shift+F1-12:Save", 
             app_state.cpu_load * 100.0,
             app_state.gain * 100.0, 
             app_state.active_voice_count,

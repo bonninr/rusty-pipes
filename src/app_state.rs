@@ -15,6 +15,7 @@ use crate::{
     midi,
     organ::Organ,
     config::{load_settings, save_settings},
+    input::KeyboardLayout,
 };
 
 // --- Shared Constants & Types ---
@@ -85,6 +86,8 @@ pub struct AppState {
     pub last_underrun: Option<Instant>, // Store when the last buffer underrun occurred
     pub active_voice_count: usize,
     pub cpu_load: f32,
+    pub keyboard_layout: KeyboardLayout,
+    pub octave_offset: i8, // Octave offset for computer keyboard input
 }
 
 pub fn get_preset_file_path() -> PathBuf {
@@ -95,7 +98,12 @@ pub fn get_preset_file_path() -> PathBuf {
 }
 
 impl AppState {
-    pub fn new(organ: Arc<Organ>, initial_gain: f32, initial_polyphony: usize) -> Result<Self> {
+    pub fn new(
+        organ: Arc<Organ>, 
+        gain: f32, 
+        polyphony: usize,
+        keyboard_layout: KeyboardLayout,
+    ) -> Result<Self> {
 
         let presets = Self::load_presets(&organ.name);
 
@@ -109,14 +117,22 @@ impl AppState {
             piano_roll_display_duration: Duration::from_secs(1), // Show 1 second of history
             channel_active_notes: HashMap::new(),
             presets,
-            gain: initial_gain,
-            polyphony: initial_polyphony,
+            gain,
+            polyphony,
             last_underrun: None,
             active_voice_count: 0,
             cpu_load: 0.0,
+            keyboard_layout,
+            octave_offset: 0,
         })
     }
     
+    // Helper to calculate the actual MIDI note
+    pub fn get_keyboard_midi_note(&self, semitone: u8) -> u8 {
+        // Base C3 = 48
+        (48 + (self.octave_offset as i32 * 12)) as u8 + semitone
+    }
+
     pub fn persist_settings(&self) {
         // Load existing settings to preserve other fields (like devices)
         let mut settings = load_settings().unwrap_or_default();
@@ -242,6 +258,62 @@ impl AppState {
             TuiMessage::TuiAllNotesOff => self.handle_tui_all_notes_off(),
         }
         Ok(())
+    }
+
+    /// Simulates a MIDI event from the computer keyboard on Channel 1 (Index 0).
+    /// handles audio dispatching and visual state updates.
+    pub fn handle_keyboard_note(&mut self, note: u8, velocity: u8, audio_tx: &Sender<AppMessage>) {
+        let channel = 0; // Computer keyboard mimics MIDI Channel 1
+        let now = Instant::now();
+        let note_name = crate::midi::midi_note_to_name(note); // Ensure this helper is public in midi.rs
+
+        if velocity > 0 {
+            // --- NOTE ON ---
+            
+            // Update Visuals (Piano Roll)
+            self.currently_playing_notes.insert(note, crate::app_state::PlayedNote {
+                note,
+                channel,
+                start_time: now,
+                end_time: None,
+            });
+
+            // Update Log
+            self.add_midi_log(format!("Key On: {} (Ch 1, Vel {})", note_name, velocity));
+
+            // Dispatch Audio for mapped stops
+            // We iterate all loaded stops to see which ones are listening to Channel 0
+            for (stop_idx, stop) in self.organ.stops.iter().enumerate() {
+                if let Some(channels) = self.stop_channels.get(&stop_idx) {
+                    if channels.contains(&channel) {
+                        // This stop is mapped to Ch 1, play it!
+                        let _ = audio_tx.send(AppMessage::NoteOn(note, velocity, stop.name.clone()));
+                    }
+                }
+            }
+        } else {
+            // --- NOTE OFF ---
+            
+            // Update Visuals (Piano Roll)
+            if let Some(played_note) = self.currently_playing_notes.remove(&note) {
+                 // Move to finished notes for the "trail" effect
+                let mut finished = played_note;
+                finished.end_time = Some(now);
+                self.finished_notes_display.push_back(finished);
+            }
+
+            // Update Log
+            self.add_midi_log(format!("Key Off: {} (Ch 1)", note_name));
+
+            // Dispatch Audio
+            for (stop_idx, stop) in self.organ.stops.iter().enumerate() {
+                if let Some(channels) = self.stop_channels.get(&stop_idx) {
+                    if channels.contains(&channel) {
+                        let _ = audio_tx.send(AppMessage::NoteOff(note, stop.name.clone()));
+                    }
+                }
+            }
+        }
     }
 
     /// Toggles a specific channel (0-9) for the specified stop.

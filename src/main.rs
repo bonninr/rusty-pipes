@@ -25,11 +25,13 @@ mod config;
 mod tui_config;
 mod gui_config;
 mod loading_ui;
+mod input;
 
 use app::{AppMessage, TuiMessage};
 use app_state::{AppState, connect_to_midi};
 use organ::Organ;
 use config::{AppSettings, RuntimeConfig};
+use input::KeyboardLayout;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 #[value(rename_all = "lower")]
@@ -150,6 +152,8 @@ fn main() -> Result<()> {
     let mut settings = config::load_settings().unwrap_or_default();
     let tui_mode = args.tui;
 
+    let active_layout = KeyboardLayout::detect();
+    log::info!("Detected system locale, defaulting keyboard layout to: {:?}", active_layout);
      
     // Command-line arguments override saved config
     if let Some(f) = args.organ_file { settings.organ_file = Some(f); }
@@ -201,6 +205,7 @@ fn main() -> Result<()> {
         audio_device_name: config.audio_device_name.clone(),
         sample_rate: config.sample_rate,
         tui_mode,        
+        keyboard_layout: active_layout,
     };
     if let Err(e) = config::save_settings(&settings_to_save) {
         log::warn!("Failed to save settings: {}", e);
@@ -344,7 +349,7 @@ fn main() -> Result<()> {
     }
 
     // --- Create thread-safe AppState ---
-    let app_state = Arc::new(Mutex::new(AppState::new(organ.clone(), config.gain, config.polyphony)?));
+    let app_state = Arc::new(Mutex::new(AppState::new(organ.clone(), config.gain, config.polyphony, active_layout)?));
 
     // --- Spawn the dedicated MIDI logic thread ---
     let logic_app_state = Arc::clone(&app_state);
