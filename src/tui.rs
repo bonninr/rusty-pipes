@@ -10,7 +10,6 @@ use ratatui::{
     widgets::{Block, Borders, canvas::{Canvas, Line as CanvasLine}, Clear, List, ListItem, ListState, Paragraph},
 };
 use std::{
-    collections::HashMap,
     thread,
     io::{stdout, Stdout},
     sync::{mpsc::Sender, Arc, Mutex},
