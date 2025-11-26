@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, PushKeyboardEnhancementFlags, PopKeyboardEnhancementFlags, KeyboardEnhancementFlags},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, canvas::{Canvas, Line as CanvasLine}, Clear, List, ListItem, ListState, Paragraph},
 };
 use std::{
+    collections::HashMap,
     thread,
     io::{stdout, Stdout},
     sync::{mpsc::Sender, Arc, Mutex},
@@ -169,6 +170,7 @@ pub fn run_tui_loop(
                             KeyEventKind::Release => state.handle_keyboard_note(note, 0, &audio_tx),
                             _ => {}
                         }
+
                     }
                     MusicCommand::None => {
                         // Handle UI Keys (Only on Press)
@@ -576,12 +578,38 @@ pub fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
     let mut stdout = stdout();
     enable_raw_mode()?;
     execute!(stdout, EnterAlternateScreen)?;
+    // Enable Keyboard Enhancements
+    // REPORT_EVENT_TYPES is required to distinguish Press vs Release
+    let supports_keyboard_enhancement = matches!(
+        crossterm::terminal::supports_keyboard_enhancement(), 
+        Ok(true)
+    );
+    if supports_keyboard_enhancement {
+        execute!(
+            stdout,
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::REPORT_EVENT_TYPES 
+            )
+        )?;
+    }
     Ok(Terminal::new(CrosstermBackend::new(stdout))?)
 }
 
 /// Helper to clean up the terminal.
 pub fn cleanup_terminal() -> Result<()> {
+    let mut stdout = stdout();
+    
+    // Disable Keyboard Enhancements
+    // If we don't do this, the user's shell might act weirdly after exit.
+    let supports_keyboard_enhancement = matches!(
+        crossterm::terminal::supports_keyboard_enhancement(), 
+        Ok(true)
+    );
+
+    if supports_keyboard_enhancement {
+        let _ = execute!(stdout, PopKeyboardEnhancementFlags);
+    }
+    execute!(stdout, LeaveAlternateScreen)?;
     disable_raw_mode()?;
-    execute!(stdout(), LeaveAlternateScreen)?;
     Ok(())
 }

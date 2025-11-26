@@ -4,7 +4,7 @@
 
 [![Built With Ratatui](https://ratatui.rs/built-with-ratatui/badge.svg)](https://ratatui.rs/)
 
-Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets. It features a text-based user interface, can be controlled via MIDI and play back MIDI files. Rusty Pipes can stream samples from disk instead of load them into RAM, though a RAM precache mode similar to GrandOrgue and Hauptwerk is available too. 
+Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets. It features both graphical and text-based user interface, can be controlled via MIDI and play back MIDI files. Rusty Pipes can stream samples from disk instead of load them into RAM, though a RAM precache mode similar to GrandOrgue and Hauptwerk is available too. 
 
 Music sample: [Vierne Organ Symphony No2 - Cantabile - Frisach organ](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.flac) (FLAC)
 
@@ -208,13 +208,13 @@ When you start the program for the first time, no stop will have any MIDI channe
 
 | Input | Action |
 | ----------- | ----------- |
-| Cursor keys| Select Drawbar / Register |
-| Space | Toggle Drawbar / Register on or off | 
+| Cursor keys| Select organ stop / register |
+| Z,S,X,D,C... | Play notes on keyboard | 
 | 1,2,3...0 | Map MIDI channel to selected stop |
 | Shift+F1..Shift+F10 | Save current MIDI mapping into one of 10 slots |
 | F1..F10 | Load MIDI mapping of given slot |
-| A | Enable all MIDI channels on selected stop |
-| N | Disable all MIDI channels on selected stop |
+| Shift-A | Enable all MIDI channels on selected stop |
+| Shift-N | Disable all MIDI channels on selected stop |
 | - + | Decrease/Increase gain |
 | [ ] | Decrease/Increase polyphony |
 | P | Panic (All notes turn off) |
