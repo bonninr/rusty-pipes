@@ -412,14 +412,14 @@ impl EguiApp {
             ui.add_space(5.0);
 
             // Get current values
-            let (mut gain, polyphony, mut selected_reverb_index, mut reverb_mix) = {
+            let (mut gain, polyphony, selected_reverb_index, mut reverb_mix) = {
                 let state = self.app_state.lock().unwrap();
                 (state.gain, state.polyphony, state.selected_reverb_index, state.reverb_mix)
             };
 
 
             ui.label("Reverb:");
-            let current_name = self.selected_reverb_index
+            let current_name = selected_reverb_index 
                 .and_then(|i| self.reverb_files.get(i))
                 .map(|(n, _)| n.as_str())
                 .unwrap_or("No Reverb");
@@ -428,14 +428,19 @@ impl EguiApp {
                 .selected_text(current_name)
                 .show_ui(ui, |ui| {
                     if ui.selectable_label(selected_reverb_index.is_none(), "No Reverb").clicked() {
-                        selected_reverb_index = None;
                         let _ = self.audio_tx.send(AppMessage::SetReverbWetDry(0.0));
+                        let mut state = self.app_state.lock().unwrap();
+                        state.selected_reverb_index = None;
+                        state.reverb_mix = 0.0;
+                        state.persist_settings();
                     }
                     
                     for (i, (name, path)) in self.reverb_files.iter().enumerate() {
                         if ui.selectable_label(selected_reverb_index == Some(i), name).clicked() {
-                            selected_reverb_index = Some(i);
                             let _ = self.audio_tx.send(AppMessage::SetReverbIr(path.clone()));
+                            let mut state = self.app_state.lock().unwrap();
+                            state.selected_reverb_index = Some(i);
+                            state.persist_settings();
                         }
                     }
                 });
@@ -445,8 +450,10 @@ impl EguiApp {
             // Reverb Mix
             ui.label("Reverb Mix:");
             if ui.add(egui::Slider::new(&mut reverb_mix, 0.0..=1.0).show_value(true)).changed() {
-                 self.app_state.lock().unwrap().reverb_mix = reverb_mix;
+                 let mut state = self.app_state.lock().unwrap();
+                 state.reverb_mix = reverb_mix;
                  let _ = self.audio_tx.send(AppMessage::SetReverbWetDry(reverb_mix));
+                 state.persist_settings();
             }
 
             // --- Gain Control ---

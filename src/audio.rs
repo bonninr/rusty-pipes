@@ -563,9 +563,9 @@ impl StereoConvolver {
 
         if global_peak > 0.0 {
             // Normalize so Peak == 1.0 (This preserves the natural character)
-            // Apply a safety attenuation of -15dB (approx 0.18) to prevent summation clipping.
+            // Apply a safety attenuation to prevent summation clipping.
             // This mimics "turning down the master volume" of the reverb engine internally.
-            let target_peak = 0.18; 
+            let target_peak = 0.015; 
             let scale = target_peak / global_peak;
             
             log::debug!("[Convolver] Normalizing IR. Input Peak: {:.4}, Scale Factor: {:.4} (Target: {})", global_peak, scale, target_peak);
