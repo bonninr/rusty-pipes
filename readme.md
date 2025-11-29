@@ -6,7 +6,12 @@
 
 Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets. It features both graphical and text-based user interface, can be controlled via MIDI and play back MIDI files. Rusty Pipes can stream samples from disk instead of load them into RAM, though a RAM precache mode similar to GrandOrgue and Hauptwerk is available too. 
 
-Music sample: [Vierne Organ Symphony No2 - Cantabile - Frisach organ](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.flac) (FLAC)
+Music samples:
+
+Vierne Organ - Symphony No2 - Cantabile - Frisach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.ogg)]
+
+Cesar Franck - Chorale No. 3 - Frisach organ: [[FLAC](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.flac)] [[OGG](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.ogg)]
+
 
 
 <img width="1690" height="1351" alt="image" src="https://github.com/user-attachments/assets/069fdda8-3ba5-4d9d-9b44-6a93a44d8893" />
