@@ -166,13 +166,11 @@ impl Voice {
             let path_buf_clone = path_buf.clone();
             let path_str = path_buf_clone.file_name().unwrap_or_default().to_string_lossy();
             let path_str_clone = path_str.clone();
-            log::trace!("[LoaderThread] START: {:?}", path_str);
             
             // Use catch_unwind to handle ALL panics
             let panic_result = std::panic::catch_unwind(move || {
 
                 let mut loader_loop_counter = 0u64;
-                let mut log_throttle = 0u64;
                 let mut cancelled_log_sent = false;
 
                 // This inner closure contains all the fallible logic
@@ -199,7 +197,6 @@ impl Voice {
 
                     if let (Some(cached_samples), Some(cached_metadata)) = (maybe_cached_data, maybe_cached_metadata) {
                         // --- CACHED PATH ---
-                        log::trace!("[LoaderThread] Using CACHED samples for {:?}", path_str);
                         samples_in_memory = (*cached_samples).clone();
                         // Get metadata from cache
                         loop_info = if is_attack_sample_clone { cached_metadata.loop_info } else { None };
@@ -212,8 +209,6 @@ impl Voice {
                         // --- STREAMING PATH ---
                         if organ_clone.sample_cache.is_some() {
                             log::warn!("[LoaderThread] CACHE MISS for {:?}. Falling back to streaming.", path_str);
-                        } else {
-                            log::trace!("[LoaderThread] STREAMING samples for {:?}", path_str);
                         }
                         
                         let file = File::open(&path_buf.clone())
@@ -249,7 +244,6 @@ impl Voice {
 
                         let is_looping = is_attack_sample_clone && loop_info.is_some();
                         if is_looping {
-                            log::debug!("[LoaderThread] Reading {:?} into memory for looping (streaming mode).", path_str);
                             samples_in_memory = decoder.collect();
                             use_memory_reader = true;
                             source_is_finished = false;
@@ -289,15 +283,9 @@ impl Voice {
 
                         if is_cancelled_clone.load(Ordering::Relaxed) {
                             if !cancelled_log_sent {
-                                log::trace!("[LoaderThread] CANCELLED: {:?} (in loader_loop)", path_str);
                                 cancelled_log_sent = true;
                             }
                             break 'loader_loop;
-                        }
-
-                        log_throttle += 1;
-                        if log_throttle % 100 == 0 { // Log every 100 iterations
-                            log::trace!("[LoaderThread] ALIVE: {:?} (Loop {})", path_str, loader_loop_counter);
                         }
 
                         let frames_to_read = 1024;
@@ -381,7 +369,6 @@ impl Voice {
 
                         // Decide to sleep or exit
                         if source_is_finished && !is_looping_sample {
-                            log::trace!("[LoaderThread] FINISHED (one-shot): {:?}", path_str);
                             break 'loader_loop;
                         }
 
@@ -391,8 +378,6 @@ impl Voice {
                         }
                         
                     } // --- End of 'loader_loop ---
-                
-                    log::trace!("[LoaderThread] EXITED_MAIN_LOOP: {:?}", path_str);
                 
                     Ok(()) // Success
                 })(); // End of fallible closure
@@ -407,8 +392,6 @@ impl Voice {
             if panic_result.is_err() {
                 log::error!("[LoaderThread] PANICKED. This is a bug. Path: {:?}", path_str_clone);
                 }
-
-            log::trace!("[LoaderThread] SETTING_FINISHED: {:?}", path_str_clone);
 
             // This line is *outside* the unwind block and will
             // execute *even if* the code inside it panicked.
@@ -541,7 +524,6 @@ impl StereoConvolver {
             // Mono IR: copy to both L and R
             ir_l = ir_samples_interleaved;
             ir_r = ir_l.clone();
-            log::debug!("[Convolver] Loaded mono IR ({} frames).", ir_l.len());
         } else {
             // Stereo IR: de-interleave
             let num_frames = ir_samples_interleaved.len() / ir_channels;
@@ -552,7 +534,6 @@ impl StereoConvolver {
                 ir_l.push(ir_samples_interleaved[i * ir_channels]); // L
                 ir_r.push(ir_samples_interleaved[i * ir_channels + 1]); // R
             }
-            log::debug!("[Convolver] Loaded stereo IR ({} frames).", ir_l.len());
         }
 
         // --- Peak Normalization with Headroom ---
@@ -718,8 +699,6 @@ fn trigger_note_release(
                     Instant::now()
                 ) {
                     Ok(mut voice) => {
-                        log::debug!("[AudioThread] -> Created RELEASE Voice for {:?} (Duration: {}ms, Gain: {:.2}dB)",
-                            release.path.file_name().unwrap_or_default(), press_duration, total_gain);
                         
                         voice.fade_level = 0.0; // Start silent
 
@@ -729,7 +708,6 @@ fn trigger_note_release(
 
                         // Now link the attack voice to this new release voice
                         if let Some(attack_voice) = voices.get_mut(&stopped_note.voice_id) {
-                            log::debug!("[AudioThread] ...linking attack voice {} to release voice {}", stopped_note.voice_id, release_voice_id);
                             attack_voice.is_cancelled.store(true, Ordering::SeqCst);
                             attack_voice.is_awaiting_release_sample = true;
                             attack_voice.release_voice_id = Some(release_voice_id);
@@ -749,7 +727,6 @@ fn trigger_note_release(
                 log::warn!("[AudioThread] ...but no release sample found for pipe on note {}.", note);
                 // No release sample, so just fade out the attack voice
                 if let Some(voice) = voices.get_mut(&stopped_note.voice_id) {
-                    log::debug!("[AudioThread] ...no release, fading out attack voice ID {}", stopped_note.voice_id);
                     voice.is_cancelled.store(true, Ordering::SeqCst);
                     voice.is_fading_out = true;
                 }
@@ -789,18 +766,14 @@ fn spawn_audio_processing_thread<P>(
         let mut voice_counter: u64 = 0;
         
         // This buffer holds the "dry" mix from all voices
-        let mut mix_buffer_stereo: [Vec<f32>; CHANNEL_COUNT] = [
-            vec![0.0; buffer_size_frames],
-            vec![0.0; buffer_size_frames],
-        ];
+        let mut mix_buffer: Vec<f32> = vec![0.0; buffer_size_frames * CHANNEL_COUNT];
         
-        // This buffer will hold the "wet" signal from the convolver
-        let mut wet_buffer_stereo: [Vec<f32>; CHANNEL_COUNT] = [
-            vec![0.0; buffer_size_frames],
-            vec![0.0; buffer_size_frames],
-        ];
+        // Scratch buffers for Reverb (Planar)
+        let mut reverb_dry_l: Vec<f32> = vec![0.0; buffer_size_frames];
+        let mut reverb_dry_r: Vec<f32> = vec![0.0; buffer_size_frames];
         
-        let mut interleaved_buffer: Vec<f32> = vec![0.0; buffer_size_frames * CHANNEL_COUNT];
+        let mut wet_buffer_l: Vec<f32> = vec![0.0; buffer_size_frames];
+        let mut wet_buffer_r: Vec<f32> = vec![0.0; buffer_size_frames];
         
         // --- This buffer is for popping from the voice's ringbuf ---
         let mut voice_read_buffer: Vec<f32> = vec![0.0; buffer_size_frames * CHANNEL_COUNT];
@@ -809,23 +782,7 @@ fn spawn_audio_processing_thread<P>(
         let mut convolver = StereoConvolver::new(buffer_size_frames);
         let mut wet_dry_ratio: f32 = 0.0; // Start 100% dry
 
-        let mut loop_counter: u64 = 0;
         let mut voices_to_remove: Vec<u64> = Vec::with_capacity(32);
-
-        // Calculate the duration of one audio buffer in microseconds.
-        let buffer_duration_micros = (buffer_size_frames as u64 * 1_000_000) / sample_rate as u64;
-        
-        // We will sleep for 80% of the buffer duration. This gives the thread
-        // 20% of the buffer time (~1ms for a 5.3ms buffer) to wake up
-        // and prepare the next block before the hardware needs it.
-        let sleep_duration = Duration::from_micros(
-            (buffer_duration_micros * 8) / 10
-        );
-        log::info!(
-            "[AudioThread] Buffer duration is {:.2}ms. Using adaptive sleep of {:?}.",
-            buffer_duration_micros as f32 / 1000.0,
-            sleep_duration
-        );
 
         // Calculate the maximum time allowed per buffer (CPU budget)
         let buffer_duration_secs = buffer_size_frames as f32 / sample_rate as f32;
@@ -853,9 +810,6 @@ fn spawn_audio_processing_thread<P>(
                                 if let Some(rank) = organ.ranks.get(rank_id) {
                                     if let Some(pipe) = rank.pipes.get(&note) {
                                         let total_gain = rank.gain_db + pipe.gain_db;
-                                        log::debug!("[AudioThread] NoteOn received for note {} on stop '{}' (rank: '{}', gain: {:.2}dB)",
-                                            note, stop_name, rank_id, total_gain);
-                                        log::debug!("[AudioThread] -> Playing pipe sample: {:?}", pipe.attack_sample_path.file_name().unwrap_or_default());
                                         // Play attack sample
                                         match Voice::new(
                                             &pipe.attack_sample_path,
@@ -898,20 +852,15 @@ fn spawn_audio_processing_thread<P>(
                     }
                     AppMessage::NoteOff(note, stop_name) => {
                         // Find the stop_index from the stop_name
-                        log::debug!("[AudioThread] NoteOff received for note {} on stop {}", note, stop_name);
                         if let Some(stop_index) = stop_name_to_index_map.get(&stop_name) {
                             let mut stopped_note_opt: Option<ActiveNote> = None;
-                            log::debug!("[AudioThread] Mapped stop '{}' to index {}", stop_name, stop_index);
                             // Check if the note is active at all
                             if let Some(note_list) = active_notes.get_mut(&note) {
-                                log::debug!("[AudioThread] Found active note {} on stop {}", note, stop_name);
                                 // Find the index of the specific note to remove
                                 if let Some(pos) = note_list.iter().position(|an| an.stop_index == *stop_index) {
-                                    log::debug!("[AudioThread] removing active note {} on stop {} with index {}", note, stop_name, pos);
                                     // Remove it from the list and take ownership
                                     stopped_note_opt = Some(note_list.remove(pos));
                                 }
-                                log::debug!("[AudioThread] Active notes for {}: {:?}", stop_name, note_list);
                                 // If list is now empty, remove the note key from the main map
                                 if note_list.is_empty() {
                                     active_notes.remove(&note);
@@ -920,7 +869,6 @@ fn spawn_audio_processing_thread<P>(
 
                             // If we successfully removed a note, trigger its release
                             if let Some(stopped_note) = stopped_note_opt {
-                                log::debug!("[AudioThread] Triggering release for stopped note {} on stop {}", stopped_note.note, stop_name);
                                     trigger_note_release(
                                         stopped_note,
                                         &organ,
@@ -930,11 +878,8 @@ fn spawn_audio_processing_thread<P>(
                                     );
                             } else {
                                 // This is common if NoteOff is sent twice, etc.
-                                log::debug!("[AudioThread] NoteOff for stop {} on note {}, but not found.", stop_name, note);
                                 }
 
-                        } else {
-                             log::warn!("[AudioThread] NoteOff for unknown stop: {}", stop_name);
                         }
                     }
                     AppMessage::AllNotesOff => {
@@ -996,10 +941,9 @@ fn spawn_audio_processing_thread<P>(
             }
 
             // --- Process all active voices ---
+
             // Clear mix buffer
-            for ch_buf in mix_buffer_stereo.iter_mut() {
-                ch_buf.fill(0.0);
-            }
+            mix_buffer.fill(0.0);
 
             // Check voice limits and steal if necessary
             enforce_voice_limit(&mut voices, sample_rate, polyphony);
@@ -1013,7 +957,6 @@ fn spawn_audio_processing_thread<P>(
                         if let Some(release_voice) = voices.get(&release_id) {
                             // The release voice is "ready" if its consumer has any data
                             if !release_voice.consumer.is_empty() {
-                                log::trace!("[AudioThread] Release voice {} is ready. Starting crossfade.", release_id);
                                 crossfades_to_start.push((*attack_id, release_id));
                             }
                         } else {
@@ -1066,7 +1009,6 @@ fn spawn_audio_processing_thread<P>(
                 }
 
                 // Pop *exactly* the amount we need
-                let frames_read = buffer_size_frames;
                 let _ = voice.consumer.pop_slice(&mut voice_read_buffer[..samples_to_read]);
 
                 // --- Latency Reporting ---
@@ -1084,52 +1026,29 @@ fn spawn_audio_processing_thread<P>(
                 let mut final_fade_level = initial_fade_level;
 
                 if voice.is_fading_in {
-                    final_fade_level += voice.fade_increment * (frames_read as f32);
-                    if final_fade_level >= 1.0 {
-                        final_fade_level = 1.0;
-                        voice.is_fading_in = false;
-                    }
+                    final_fade_level = (initial_fade_level + voice.fade_increment * buffer_size_frames as f32).min(1.0);
+                    if final_fade_level >= 1.0 { voice.is_fading_in = false; }
                 } else if voice.is_fading_out {
-                    final_fade_level -= voice.fade_increment * (frames_read as f32);
-                    if final_fade_level <= 0.0 {
-                        final_fade_level = 0.0;
-                    }
+                    final_fade_level = (initial_fade_level - voice.fade_increment * buffer_size_frames as f32).max(0.0);
                 }
-                
-                // Store the final fade level. This is now the state for the *next* block.
-                voice.fade_level = final_fade_level;
+                voice.fade_level = final_fade_level; // State update for next block
 
                 let start_gain = voice.gain * initial_fade_level;
                 let end_gain = voice.gain * final_fade_level;
+                let gain_step = (end_gain - start_gain) / buffer_size_frames as f32;
+                let mut current_gain = start_gain;
 
                 // --- Mixing Loop ---
-                if (start_gain - end_gain).abs() < 1e-8 { // Check for float equality
-                    // --- FAST PATH (No fade / constant gain) ---
-                    // This is the common case.
-                    if start_gain == 0.0 {
-                        // Faded out, or gain is 0. Do nothing.
-                    } else {
-                        // Optimized loop with no branching.
-                        // The compiler can vectorize this.
-                        let gain = start_gain;
-                        for i in 0..frames_read {
-                            let read_idx = i * CHANNEL_COUNT;
-                            mix_buffer_stereo[0][i] += voice_read_buffer[read_idx] * gain;
-                            mix_buffer_stereo[1][i] += voice_read_buffer[read_idx + 1] * gain;
-                        }
-                    }
-                } else {
-                    // --- SLOW PATH (Fading) ---
-                    // This only runs during a crossfade.
-                    let gain_step = (end_gain - start_gain) / (frames_read as f32);
-                    let mut current_gain = start_gain;
+                let mix_chunks = mix_buffer.chunks_exact_mut(CHANNEL_COUNT);
+                let voice_chunks = voice_read_buffer.chunks_exact(CHANNEL_COUNT).take(buffer_size_frames);
+
+                for (mix_frame, voice_frame) in mix_chunks.zip(voice_chunks) {
+                    // voice_frame and mix_frame are slices of length 2 (guaranteed)
+                    // The compiler will vectorize these multiplications and additions.
+                    mix_frame[0] += voice_frame[0] * current_gain; // Left
+                    mix_frame[1] += voice_frame[1] * current_gain; // Right
                     
-                    for i in 0..frames_read {
-                        let read_idx = i * CHANNEL_COUNT;
-                        mix_buffer_stereo[0][i] += voice_read_buffer[read_idx] * current_gain;
-                        mix_buffer_stereo[1][i] += voice_read_buffer[read_idx + 1] * current_gain;
-                        current_gain += gain_step;
-                    }
+                    current_gain += gain_step;
                 }
 
                 // --- Voice Removal Logic (simplified) ---
@@ -1150,9 +1069,6 @@ fn spawn_audio_processing_thread<P>(
                         // We now own the voice.
                         // Take the handle and send it to the reaper.
                         if let Some(handle) = voice.loader_handle.take() {
-                            
-                            log::debug!("[AudioThread] Sending handle for {:?} to reaper", voice.debug_path.file_name().unwrap_or_default());
-
                             if let Err(e) = reaper_tx.send(handle) {
                                 // This should only happen if the reaper died.
                                 // Fall back to forgetting the handle to avoid blocking.
@@ -1167,34 +1083,47 @@ fn spawn_audio_processing_thread<P>(
                 voices_to_remove.clear();
             }
 
-            // Apply Master Gain to the Summed Bus
-            if system_gain != 1.0 {
-                for channel in &mut mix_buffer_stereo {
-                    for sample in channel.iter_mut() {
-                        *sample *= system_gain;
-                    }
+            // --- Apply Reverb ---
+            let apply_reverb = wet_dry_ratio > 0.0 && convolver.is_loaded;
+            if apply_reverb {
+                // De-interleave ONLY if we need reverb (Planarize)
+                // This is a linear pass, very fast.
+                for i in 0..buffer_size_frames {
+                    reverb_dry_l[i] = mix_buffer[i * CHANNEL_COUNT];
+                    reverb_dry_r[i] = mix_buffer[i * CHANNEL_COUNT + 1];
                 }
+
+                // Process (Planar In -> Planar Out)
+                convolver.process(
+                    &reverb_dry_l, &reverb_dry_r,
+                    &mut wet_buffer_l, &mut wet_buffer_r
+                );
             }
 
-            // --- Apply Convolution Reverb ---
-            // If the user selected "No Reverb" (SetReverbIr(None) -> processed in GUI as SetReverbWetDry(0.0) or simply handled here), 
-            // wet_dry_ratio will be 0.0.
+            // --- Final Combine & System Gain ---
+            // Combine Dry + Wet and apply Master Gain in one pass.
+            // We write the result DIRECTLY into mix_buffer, which is already Interleaved.
+            // (We no longer need a separate `interleaved_buffer` step).
             
-            // To save CPU, we check if we should process reverb at all.
-            // Note: If tails are ringing out, we shouldn't cut them off abruptly, 
-            // but for simplicity, if wet mix is 0, we skip processing.
-            if wet_dry_ratio > 0.0 && convolver.is_loaded {
-                let (wet_l_slice, wet_r_slice) = wet_buffer_stereo.split_at_mut(1);
-                convolver.process(
-                    &mix_buffer_stereo[0],     
-                    &mix_buffer_stereo[1],     
-                    &mut wet_l_slice[0],       
-                    &mut wet_r_slice[0],       
-                );
+            let dry_level = (1.0 - wet_dry_ratio) * system_gain;
+            let wet_level = wet_dry_ratio * system_gain;
+            
+            // Optimization: If no reverb, simplify the math
+            if apply_reverb {
+                for i in 0..buffer_size_frames {
+                    let dry_l = mix_buffer[i * CHANNEL_COUNT];
+                    let dry_r = mix_buffer[i * CHANNEL_COUNT + 1];
+                    let wet_l = wet_buffer_l[i];
+                    let wet_r = wet_buffer_r[i];
+
+                    mix_buffer[i * CHANNEL_COUNT]     = (dry_l * dry_level) + (wet_l * wet_level);
+                    mix_buffer[i * CHANNEL_COUNT + 1] = (dry_r * dry_level) + (wet_r * wet_level);
+                }
             } else {
-                // If bypassed, ensure wet buffer is silent so we don't mix garbage
-                wet_buffer_stereo[0].fill(0.0);
-                wet_buffer_stereo[1].fill(0.0);
+                // Just apply master gain
+                 for sample in mix_buffer.iter_mut() {
+                    *sample *= system_gain;
+                }
             }
 
             // Calculate Load
@@ -1217,46 +1146,17 @@ fn spawn_audio_processing_thread<P>(
                 last_ui_update = Instant::now();
             }
 
-            // --- Interleave, Mix, and push to ring buffer ---
-            let dry_level = 1.0 - wet_dry_ratio;
-            let wet_level = wet_dry_ratio;
-
-            for i in 0..buffer_size_frames {
-                let dry_l = mix_buffer_stereo[0][i];
-                let dry_r = mix_buffer_stereo[1][i];
-                let wet_l = wet_buffer_stereo[0][i];
-                let wet_r = wet_buffer_stereo[1][i];
-
-                interleaved_buffer[i * CHANNEL_COUNT] = (dry_l * dry_level) + (wet_l * wet_level);
-                interleaved_buffer[i * CHANNEL_COUNT + 1] = (dry_r * dry_level) + (wet_r * wet_level);
-            }
-
-            // Throttle thread based on RingBuffer fullness
+            // --- Push to Ring Buffer ---
             let mut offset = 0;
-            let needed = interleaved_buffer.len();
+            let needed = mix_buffer.len();
             while offset < needed {
-                let pushed = producer.push_slice(&interleaved_buffer[offset..needed]);
+                let pushed = producer.push_slice(&mix_buffer[offset..needed]);
                 offset += pushed;
+                // Throttle based on ringbuffer fullness
                 if offset < needed {
-                    // Buffer is full. This acts as our "Sleep".
-                    // We wait 1ms and try again.
                     thread::sleep(Duration::from_millis(1));
                 }
             }
-
-            loop_counter += 1;
-            if loop_counter % 100 == 0 { // Log approx. every 3 seconds
-                let total_voice_buffered: usize = voices.values().map(|v| v.consumer.occupied_len()).sum();
-                log::trace!(
-                    "[AudioThread] STATUS: Loop {}. Active voices: {}. Total buffered samples: {}. Main ringbuf: {}/{}",
-                    loop_counter,
-                    voices.len(),
-                    total_voice_buffered,
-                    producer.occupied_len(),
-                    producer.capacity()
-                );
-            }
-
 
         }
     });
