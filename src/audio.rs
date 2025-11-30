@@ -474,6 +474,8 @@ fn trigger_note_release(
                 .find(|r| r.max_key_press_time_ms == -1 || press_duration <= r.max_key_press_time_ms)
                 .or_else(|| pipe.releases.last());
 
+            let mut release_created = false;
+
             if let Some(release) = release_sample {
                 let total_gain = rank.gain_db + pipe.gain_db;
                 match Voice::new(
@@ -502,10 +504,15 @@ fn trigger_note_release(
                                 rv.is_fading_in = true;
                             }
                         }
+                        release_created = true;
                     }
                     Err(e) => log::error!("Error creating release: {}", e),
                 }
-            } else {
+            } 
+            
+            // If release creation failed (or no sample), force attack to fade out immediately.
+            // Otherwise, it gets stuck in the loop forever.
+            if !release_created {
                 if let Some(voice) = voices.get_mut(&stopped_note.voice_id) {
                     voice.is_cancelled.store(true, Ordering::SeqCst);
                     voice.is_fading_out = true;
@@ -646,8 +653,15 @@ fn spawn_audio_processing_thread<P>(
                 if attack_voice.is_awaiting_release_sample {
                     if let Some(release_id) = attack_voice.release_voice_id {
                         if let Some(rv) = voices.get(&release_id) {
-                            if !rv.consumer.is_empty() { crossfades_to_start.push((*attack_id, release_id)); }
-                        } else { crossfades_to_start.push((*attack_id, u64::MAX)); }
+                            if !rv.consumer.is_empty() { 
+                                crossfades_to_start.push((*attack_id, release_id)); 
+                            } else if rv.is_finished.load(Ordering::Relaxed) {
+                                // Don't wait forever on slow or buggy reads.
+                                crossfades_to_start.push((*attack_id, u64::MAX));
+                            }
+                        } else {
+                            crossfades_to_start.push((*attack_id, u64::MAX)); 
+                        }
                     }
                 }
             }
