@@ -84,22 +84,22 @@ fn get_item_display(idx: usize, state: &ConfigState) -> String {
     let settings = &state.settings;
     let row = SettingRow::from_index(idx).unwrap(); // Safe unwrap
     match row {
-        SettingRow::OrganFile => format!("1. Organ File:       {}", path_to_str(settings.organ_file.as_deref())),
-        SettingRow::AudioDevice => format!("2. Audio Device:     {}", state.selected_audio_device_name.as_deref().unwrap_or("Default")),
-        SettingRow::SampleRate => format!("3. Sample Rate:      {} Hz", settings.sample_rate),
-        SettingRow::MidiDevice => format!("4. MIDI Device:      {}", state.selected_midi_port.as_ref().map_or("None", |(_, n)| n.as_str())),
-        SettingRow::MidiFile => format!("5. MIDI File (Play): {}", path_to_str(state.midi_file.as_deref())),
-        SettingRow::ReverbIRFile => format!("6. Reverb IR File:   {}", path_to_str(settings.ir_file.as_deref())),
-        SettingRow::ReverbMix => format!("7. Reverb Mix:       {:.2}", settings.reverb_mix),
-        SettingRow::Gain => format!("8. Gain:             {:.2}", settings.gain),
-        SettingRow::Polyphony => format!("9. Polyphony:        {}", settings.polyphony),
-        SettingRow::AudioBuffer => format!("0. Audio Buffer:     {} frames", settings.audio_buffer_frames),
-        SettingRow::PreloadFrames => format!("-. Preload Frames:   {} frames", settings.preload_frames),
-        SettingRow::Precache => format!("-. Pre-cache:        {}", bool_to_str(settings.precache)),
-        SettingRow::ConvertTo16Bit => format!("=. Convert to 16-bit:{}", bool_to_str(settings.convert_to_16bit)),
-        SettingRow::OriginalTuning => format!("+. Original Tuning:  {}", bool_to_str(settings.original_tuning)),
-        SettingRow::Start => "S. Start Rusty Pipes".to_string(),
-        SettingRow::Quit => "Q. Quit".to_string(),
+        SettingRow::OrganFile => format!("Organ File:       {}", path_to_str(settings.organ_file.as_deref())),
+        SettingRow::AudioDevice => format!("Audio Device:     {}", state.selected_audio_device_name.as_deref().unwrap_or("Default")),
+        SettingRow::SampleRate => format!("Sample Rate:      {} Hz", settings.sample_rate),
+        SettingRow::MidiDevice => format!("MIDI Device:      {}", state.selected_midi_port.as_ref().map_or("None", |(_, n)| n.as_str())),
+        SettingRow::MidiFile => format!("MIDI File (Play): {}", path_to_str(state.midi_file.as_deref())),
+        SettingRow::ReverbIRFile => format!("Reverb IR File:   {}", path_to_str(settings.ir_file.as_deref())),
+        SettingRow::ReverbMix => format!("Reverb Mix:       {:.2}", settings.reverb_mix),
+        SettingRow::Gain => format!("Gain:             {:.2}", settings.gain),
+        SettingRow::Polyphony => format!("Polyphony:        {}", settings.polyphony),
+        SettingRow::AudioBuffer => format!("Audio Buffer:     {} frames", settings.audio_buffer_frames),
+        SettingRow::PreloadFrames => format!("Preload Frames:   {} frames", settings.preload_frames),
+        SettingRow::Precache => format!("Pre-cache:        {}", bool_to_str(settings.precache)),
+        SettingRow::ConvertTo16Bit => format!("Convert to 16-bit:{}", bool_to_str(settings.convert_to_16bit)),
+        SettingRow::OriginalTuning => format!("Original Tuning:  {}", bool_to_str(settings.original_tuning)),
+        SettingRow::Start => "Start Rusty Pipes".to_string(),
+        SettingRow::Quit => "Quit".to_string(),
     }
 }
 
@@ -584,6 +584,7 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
                 SettingRow::Gain => "Enter Gain (0.0 - 1.0)",
                 SettingRow::Polyphony => "Enter Polyphony (1 - 1024)",
                 SettingRow::AudioBuffer => "Enter Audio Buffer Size",
+                SettingRow::PreloadFrames => "Enter Preload Frames",
                 _ => "Enter Value",
             };
             draw_text_input_modal(frame, title, buffer, 40, 3);
