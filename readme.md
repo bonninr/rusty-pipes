@@ -145,9 +145,13 @@ The maximum number of pipes playing. This actually works a bit differently that 
 The number of frames used in the internal audio buffer. Higher numbers work on slower computers, but introduce more latency. Fast PCs can use lower values like 256. If you get distorted or choppy audio, raise that number.
 When using reverb, it is recommended to use a value that is a power of 2, like 256, 512 or 1024.
 
+### Preload frames
+
+Loads the first few audio frames of every sample into RAM. Whenever a sample is being played, the first few milliseconds will from straight from RAM, giving your disk time to read the rest of the sample. The amount of RAM this takes depends on how many stops and samples your organ uses. On a well-sized organ the default of 16384 frames uses around 3GB of RAM.
+
 ### Precaching
 
-Loads all samples into RAM on startup, just like other virtual pipe organ programs. Use this if your disk is too slow or you are not happy with the latency of streaming samples.
+Loads all samples completely into RAM on startup. Use this if your disk is too slow or you are not happy with the latency of streaming samples. Note that if you enable precaching, the "preload frames" setting becomes meaningless since all sample data is loaded into RAM.
 
 ### Convert to 16 bit
 
@@ -190,6 +194,8 @@ Options:
           Select an audio device by name
       --audio-buffer-frames <NUM_FRAMES>
           Audio buffer size in frames (lower values reduce latency but may cause glitches) [default: 512]
+      --preload-frames <NUM_PRELOAD_FRAMES>
+          How many audio frames to pre-load for each pipe's samples (uses RAM, prevents buffer underruns)
       --tui
           Run in terminal UI (TUI) mode as a fallback
   -h, --help
@@ -241,6 +247,17 @@ A: Make sure you selected a MIDI input device on the config screen. Also note th
 
 A: You need to assign MIDI channels to one or more stops. Click on the "1" next to a stop to assign it to MIDI channel 1, and you should hear something when playing notes on that channel. Note that some stops might not have pipes at the octave you're playing, so be sure to check across the octave range.
 
+### Q: I get red "Buffer underrun" indicators while playing
+
+A: Your system can't load and mix sample data fast enough, which causes gaps in the audio. There are several things you can tweak:
+
+1. Increase the Audio Buffer size. This will increase latency but also give your PC more time to get the work done in time.
+2. Reduce Polyphony. This will make your organ sound less "full", but greatly reduce the work your CPU has to do. You can do this while playing.
+3. Increase number of Preloaded Audio Frames. This will use more RAM but instantly get the initial sample data from memory, giving your system time to load the rest of the sample from disk.
+4. Enable Precaching. This will use a lot of RAM but remove the need to constantly load samples from disk.
+5. Lower the sample rate. 48kHz takes more effort than 44.1kHz.
+6. Switch to 16-bit mode. Not recommended since the performance gain is minimal. Internal processing is always performed in 32-bit.
+
 ### Q: My audio output crackles or cuts out
 
 A: This can happen either due to a too high gain, or your CPU being overstressed. If a red "Buffer underrun" warning appears, then you need to reduce polyphony with the [-Key (or the controls on the GUI), or select fewer stops. If no warning appears, reduce gain.
@@ -263,11 +280,8 @@ A: IR files are just .wav files that tell the system how a room reacts to a sing
 
 Please be reasonable and ask for permission before popping balloons in churches.
 
-### Q: I have reduced my polyphony but my PC still cannot handle the amount of stops I want to use, what can I do?
-
-A: Enable precaching on the config dialog. Precaching takes more RAM but reduces stress on the CPU because it doesn't have to deal with disk IO all the time.
-
 ### Q: My latency (time between keypress and sound output) is too high
 
-A: As a first step, reduce the buffer size on the config dialog. If the audio starts to crackle, increase it a bit. 256 should work on most modern systems. Second, enable precaching. On systems with slow SSDs or hard disks this can help a lot, while on fast SSDs the improvement is often not noticeable. Third, use a wired MIDI controller, not Bluetooth. Same for headphones, bluetooth usually adds a lot of delay. Finally, make sure you enable the "Pro Audio" mode on your device, and if you're on Linux don't use native ALSA. Instead use PulseAudio or Jack.
+1. Reduce the buffer size on the config dialog. If the audio starts to crackle, increase it a bit. 256 should work on most modern systems, fast systems may use 128. Note that if you want to use reverb, use sizes like 64, 128, 256, 512, 1024 for better performance. Arbitrary sizes work too but cause reverb to use more CPU.
+2. Use a wired MIDI controller, not Bluetooth. Same for headphones, bluetooth usually adds a lot of delay. Finally, make sure you enable the "Pro Audio" mode on your device, and if you're on Linux don't use native ALSA. Instead use PulseAudio or Jack.
 
