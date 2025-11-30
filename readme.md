@@ -73,7 +73,9 @@ Apple's OS prevents users from running unsigned programs. To bypass this mechani
 
 The configuration dialog is shown on startup in both text and graphical mode, the settings are the same for both.
 
-<img width="644" height="670" alt="image" src="https://github.com/user-attachments/assets/b1fa1114-3d62-467d-9ab9-ce1a9cb52043" />
+<img width="662" height="772" alt="image" src="https://github.com/user-attachments/assets/5f5899a1-1fee-4e06-b204-75b13779d4ea" />
+
+<img width="697" height="706" alt="image" src="https://github.com/user-attachments/assets/e525cc1d-e4f8-4978-b80f-f4ad5510e69d" />
 
 ### Organ file
 
