@@ -8,7 +8,9 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 
 Music samples:
 
-Vierne Organ - Symphony No2 - Cantabile - Frisach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.ogg)]
+Vierne - Organ Syphony No.2 - Allegro - Friesach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Allegro.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Allegro.ogg)]
+
+Vierne - Organ Symphony No.2 - Cantabile - Frisach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.ogg)]
 
 Cesar Franck - Chorale No. 3 - Frisach organ: [[FLAC](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.flac)] [[OGG](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.ogg)]
 
