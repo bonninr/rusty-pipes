@@ -54,6 +54,7 @@ pub struct Pipe {
     pub gain_db: f32,
     pub pitch_tuning_cents: f32,
     pub releases: Vec<ReleaseSample>,
+    pub preloaded_bytes: Option<Arc<Vec<f32>>>,
 }
 
 /// Represents a release sample and its trigger condition.
@@ -62,6 +63,7 @@ pub struct ReleaseSample {
     pub path: PathBuf,
     /// Max key press time in ms. -1 means "default".
     pub max_key_press_time_ms: i64,
+    pub preloaded_bytes: Option<Arc<Vec<f32>>>,
 }
 
 /// Internal struct to track unique conversion jobs for parallel processing
@@ -290,6 +292,7 @@ impl Organ {
         original_tuning: bool,
         target_sample_rate: u32,
         progress_tx: Option<mpsc::Sender<(f32, String)>>,
+        preload_frames: usize,
     ) -> Result<Self> {
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
         let loader_tx = progress_tx.clone();
@@ -311,9 +314,78 @@ impl Organ {
             
             // Run the parallel loader
             organ.run_parallel_precache(target_sample_rate, progress_tx)?;
+        } else {
+            organ.preload_attack_samples(target_sample_rate, progress_tx, preload_frames)?;
         }
         Ok(organ)
 
+    }
+
+    fn preload_attack_samples(
+        &mut self,
+        target_sample_rate: u32,
+        progress_tx: Option<mpsc::Sender<(f32, String)>>,
+        preload_frames: usize,
+    ) -> Result<()> {
+        log::info!("[Cache] Pre-loading attack/release transients...");
+        
+        // Collect all paths that need loading
+        let mut paths = HashSet::new();
+        for rank in self.ranks.values() {
+            for pipe in rank.pipes.values() {
+                paths.insert(pipe.attack_sample_path.clone());
+                for r in &pipe.releases {
+                    paths.insert(r.path.clone());
+                }
+            }
+        }
+        let unique_paths: Vec<PathBuf> = paths.into_iter().collect();
+        let total = unique_paths.len();
+        log::debug!("[Cache] Found {} unique attack/release samples to preload.", total);
+        if total == 0 { return Ok(()); }
+        
+        // Load them in parallel
+        let loaded_count = AtomicUsize::new(0);
+        
+        // Map Path -> Arc<Vec<f32>> (Preloaded Chunk)
+        let loaded_chunks: HashMap<PathBuf, Arc<Vec<f32>>> = unique_paths
+            .par_iter()
+            .filter_map(|path| {
+                 // Load just the start using a helper from wav_converter
+                 match wav_converter::load_sample_head(path, target_sample_rate, preload_frames) {
+                     Ok(data) => {
+                         let current = loaded_count.fetch_add(1, Ordering::Relaxed);
+                         if let Some(tx) = &progress_tx {
+                             if current % 50 == 0 {
+                                 let _ = tx.send((current as f32 / total as f32, "Pre-loading transients...".to_string()));
+                             }
+                         }
+                         Some((path.clone(), Arc::new(data)))
+                     },
+                     Err(e) => {
+                         log::warn!("Failed to preload {:?}: {}", path, e);
+                         None
+                     }
+                 }
+            })
+            .collect();
+
+        // Assign the loaded chunks back to the pipes
+        for rank in self.ranks.values_mut() {
+            for pipe in rank.pipes.values_mut() {
+                if let Some(data) = loaded_chunks.get(&pipe.attack_sample_path) {
+                    pipe.preloaded_bytes = Some(data.clone());
+                }
+                for release in &mut pipe.releases {
+                    if let Some(data) = loaded_chunks.get(&release.path) {
+                        release.preloaded_bytes = Some(data.clone());
+                    }
+                }
+            }
+        }
+        
+        log::info!("[Cache] Pre-loaded {} attack headers.", loaded_chunks.len());
+        Ok(())
     }
 
     /// Helper to execute a set of unique audio conversion tasks in parallel
@@ -723,6 +795,7 @@ impl Organ {
                         releases.push(ReleaseSample {
                             path: final_rel_path,
                             max_key_press_time_ms: release_link.max_key_press_time_ms,
+                            preloaded_bytes: None,
                         });
                     }
                 }
@@ -735,6 +808,7 @@ impl Organ {
                 gain_db: 0.0,
                 pitch_tuning_cents: 0.0,
                 releases,
+                preloaded_bytes: None,
             };
 
             if let Some(_existing) = rank.pipes.insert(pipe_info.midi_note, final_pipe) {
@@ -1009,11 +1083,26 @@ impl Organ {
                             )?;
 
                             let max_time: i64 = get_prop(&format!("{}MaxKeyPressTime", rel_key_upper), &format!("{}maxkeypresstime", rel_key_lower), "-1").parse().unwrap_or(-1);
-                            releases.push(ReleaseSample { path: final_rel_path, max_key_press_time_ms: max_time });
+                            releases.push(ReleaseSample { 
+                                path: final_rel_path, 
+                                max_key_press_time_ms: 
+                                max_time,
+                                preloaded_bytes: None,
+                             });
                         }
                     }
                     releases.sort_by_key(|r| if r.max_key_press_time_ms == -1 { i64::MAX } else { r.max_key_press_time_ms });
-                    pipes.insert(midi_note, Pipe { attack_sample_path: final_attack_path, gain_db: 0.0, pitch_tuning_cents: 0.0, releases });
+                    pipes.insert(midi_note, 
+                        Pipe { 
+                            attack_sample_path: 
+                            final_attack_path, 
+                            gain_db: 0.0, 
+                            pitch_tuning_cents: 
+                            0.0, 
+                            releases,
+                            preloaded_bytes: None,
+                        }
+                    );
                 }
             }
             ranks_map.insert(id_str.clone(), Rank { name, id_str, first_midi_note, pipe_count, gain_db, tracker_delay_ms, pipes });

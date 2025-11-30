@@ -138,7 +138,16 @@ struct Voice {
 
 impl Voice {
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
-    fn new(path: &Path, organ: Arc<Organ>, sample_rate: u32, gain_db: f32, start_fading_in: bool, is_attack_sample: bool, note_on_time: Instant) -> Result<Self> {
+    fn new(
+        path: &Path, 
+        organ: Arc<Organ>, 
+        sample_rate: u32, 
+        gain_db: f32, 
+        start_fading_in: bool, 
+        is_attack_sample: bool, 
+        note_on_time: Instant,
+        preloaded_bytes: Option<Arc<Vec<f32>>>,
+    ) -> Result<Self> {
         
         let fade_frames = (sample_rate as f32 * CROSSFADE_TIME) as usize;
         let fade_increment = if fade_frames > 0 { 1.0 / fade_frames as f32 } else { 1.0 };
@@ -155,6 +164,15 @@ impl Voice {
         let is_cancelled = Arc::new(AtomicBool::new(false));
         let is_attack_sample_clone = is_attack_sample;
         
+        // If we have pre-loaded attack bytes, push them to the ring buffer right away.
+        let mut preloaded_frames_count = 0;
+        if let Some(ref preloaded) = preloaded_bytes {
+            // Push as much as fits (it should all fit given buffer size)
+            let pushed = producer.push_slice(preloaded);
+            // Calculate how many frames we skipped so the loader thread knows where to start
+            preloaded_frames_count = pushed / CHANNEL_COUNT;
+        }
+
         // Clone variables to move into the loader thread
         let path_buf = path.to_path_buf();
         let is_finished_clone = Arc::clone(&is_finished);
@@ -194,6 +212,9 @@ impl Voice {
                     let mut samples_in_memory: Vec<f32> = Vec::new();
                     
                     let mut interleaved_buffer = vec![0.0f32; 1024 * CHANNEL_COUNT];
+                    
+                    // If we already pushed preloaded data, we need to skip that many frames when we start reading.
+                    let frames_to_skip = preloaded_frames_count;
 
                     if let (Some(cached_samples), Some(cached_metadata)) = (maybe_cached_data, maybe_cached_metadata) {
                         // --- CACHED PATH ---
@@ -204,7 +225,6 @@ impl Voice {
                         
                         use_memory_reader = true;
                         source_is_finished = false; // This prevents the release sample from being prematurely marked as finished
-                    
                     } else {
                         // --- STREAMING PATH ---
                         if organ_clone.sample_cache.is_some() {
@@ -248,7 +268,21 @@ impl Voice {
                             use_memory_reader = true;
                             source_is_finished = false;
                         } else {
-                            source = Some(Box::new(decoder));
+                            // Streaming iterator
+                            let mut iterator = Box::new(decoder);
+                            
+                            // Skip the frames we already played from the pre-load buffer
+                            if frames_to_skip > 0 {
+                                // We need to consume N items * channels
+                                let samples_to_skip = frames_to_skip * input_channels;
+                                // Simple consume
+                                for _ in 0..samples_to_skip {
+                                    if iterator.next().is_none() {
+                                        break; 
+                                    }
+                                }
+                            }
+                            source = Some(iterator);
                             source_is_finished = false;
                             use_memory_reader = false;
                         }
@@ -256,7 +290,7 @@ impl Voice {
 
                     // --- Setup loop points (applies to both cached and streaming-loaded-to-memory) ---
                     let is_mono = input_channels == 1;
-                    let mut current_frame_index: usize = 0;
+                    let mut current_frame_index: usize = frames_to_skip;
                     let mut loop_start_frame: usize = 0;
                     let mut loop_end_frame: usize = 0;
                     let mut is_looping_sample = is_attack_sample_clone && loop_info.is_some();
@@ -696,7 +730,8 @@ fn trigger_note_release(
                     total_gain,
                     false,
                     false,
-                    Instant::now()
+                    Instant::now(),
+                    release.preloaded_bytes.clone(),
                 ) {
                     Ok(mut voice) => {
                         
@@ -819,6 +854,7 @@ fn spawn_audio_processing_thread<P>(
                                             false,
                                             true,
                                             note_on_time,
+                                            pipe.preloaded_bytes.clone(),
                                         ) {
                                             Ok(voice) => {
                                                 let voice_id = voice_counter;

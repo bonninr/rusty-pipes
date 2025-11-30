@@ -46,11 +46,12 @@ enum SettingRow {
     Gain = 7,
     Polyphony = 8,
     AudioBuffer = 9,
-    Precache = 10,
-    ConvertTo16Bit = 11,
-    OriginalTuning = 12,
-    Start = 13,
-    Quit = 14,
+    PreloadFrames = 10,
+    Precache = 11,
+    ConvertTo16Bit = 12,
+    OriginalTuning = 13,
+    Start = 14,
+    Quit = 15,
 }
 
 impl SettingRow {
@@ -67,11 +68,12 @@ impl SettingRow {
             7 => Some(Self::Gain),
             8 => Some(Self::Polyphony),
             9 => Some(Self::AudioBuffer),
-            10 => Some(Self::Precache),
-            11 => Some(Self::ConvertTo16Bit),
-            12 => Some(Self::OriginalTuning),
-            13 => Some(Self::Start),
-            14 => Some(Self::Quit),
+            10 => Some(Self::PreloadFrames),
+            11 => Some(Self::Precache),
+            12 => Some(Self::ConvertTo16Bit),
+            13 => Some(Self::OriginalTuning),
+            14 => Some(Self::Start),
+            15 => Some(Self::Quit),
             _ => None,
         }
     }
@@ -92,6 +94,7 @@ fn get_item_display(idx: usize, state: &ConfigState) -> String {
         SettingRow::Gain => format!("8. Gain:             {:.2}", settings.gain),
         SettingRow::Polyphony => format!("9. Polyphony:        {}", settings.polyphony),
         SettingRow::AudioBuffer => format!("0. Audio Buffer:     {} frames", settings.audio_buffer_frames),
+        SettingRow::PreloadFrames => format!("-. Preload Frames:   {} frames", settings.preload_frames),
         SettingRow::Precache => format!("-. Pre-cache:        {}", bool_to_str(settings.precache)),
         SettingRow::ConvertTo16Bit => format!("=. Convert to 16-bit:{}", bool_to_str(settings.convert_to_16bit)),
         SettingRow::OriginalTuning => format!("+. Original Tuning:  {}", bool_to_str(settings.original_tuning)),
@@ -179,11 +182,11 @@ pub fn run_config_ui(
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => break 'config_loop,
                         KeyCode::Down | KeyCode::Char('j') => {
-                            let i = state.list_state.selected().map_or(0, |i| (i + 1) % 15);
+                            let i = state.list_state.selected().map_or(0, |i| (i + 1) % 16);
                             state.list_state.select(Some(i));
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
-                            let i = state.list_state.selected().map_or(14, |i| (i + 14) % 15);
+                            let i = state.list_state.selected().map_or(15, |i| (i + 15) % 16);
                             state.list_state.select(Some(i));
                         }
                         KeyCode::Enter => {
@@ -235,6 +238,10 @@ pub fn run_config_ui(
                                         let buffer = state.config_state.settings.audio_buffer_frames.to_string();
                                         state.mode = ConfigMode::TextInput(idx, buffer);
                                     }
+                                    SettingRow::PreloadFrames => { // Preload Frames
+                                        let buffer = state.config_state.settings.preload_frames.to_string();
+                                        state.mode = ConfigMode::TextInput(idx, buffer);
+                                    }
                                     SettingRow::Precache => state.config_state.settings.precache = !state.config_state.settings.precache,
                                     SettingRow::ConvertTo16Bit => state.config_state.settings.convert_to_16bit = !state.config_state.settings.convert_to_16bit,
                                     SettingRow::OriginalTuning => state.config_state.settings.original_tuning = !state.config_state.settings.original_tuning,
@@ -248,6 +255,7 @@ pub fn run_config_ui(
                                                 ir_file: s.ir_file.clone(),
                                                 reverb_mix: s.reverb_mix,
                                                 audio_buffer_frames: s.audio_buffer_frames,
+                                                preload_frames: s.preload_frames,
                                                 precache: s.precache,
                                                 convert_to_16bit: s.convert_to_16bit,
                                                 original_tuning: s.original_tuning,
@@ -424,6 +432,11 @@ pub fn run_config_ui(
                                         state.config_state.settings.audio_buffer_frames = val;
                                     }
                                 }
+                                SettingRow::PreloadFrames => { // Preload Frames
+                                    if let Ok(val) = buffer.parse::<usize>() {
+                                        state.config_state.settings.preload_frames = val;
+                                    }
+                                }
                                 _ => {}
                             }
                             state.mode = ConfigMode::Main;
@@ -485,7 +498,7 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
 
 
     // Build config items
-    let num_config_items = 14;
+    let num_config_items = SettingRow::Quit as usize + 1;
     let items: Vec<ListItem> = (0..num_config_items)
         .map(|i| {
             let text = get_item_display(i, &state.config_state);

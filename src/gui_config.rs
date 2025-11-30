@@ -286,6 +286,11 @@ impl App for ConfigApp {
                         ui.add(egui::DragValue::new(&mut self.state.settings.audio_buffer_frames).speed(32.0).range(32..=4096));
                         ui.end_row();
 
+                        // --- Preload Frames ---
+                        ui.label("Preload Frames:");
+                        ui.add(egui::DragValue::new(&mut self.state.settings.preload_frames).speed(32.0).range(1024..=65536));
+                        ui.end_row();
+
                         // --- Boolean Options ---
                         ui.label("Options:");
                         ui.vertical(|ui| {
@@ -346,6 +351,7 @@ impl App for ConfigApp {
                             ir_file: self.state.settings.ir_file.clone(),
                             reverb_mix: self.state.settings.reverb_mix,
                             audio_buffer_frames: self.state.settings.audio_buffer_frames,
+                            preload_frames: self.state.settings.preload_frames,
                             precache: self.state.settings.precache,
                             convert_to_16bit: self.state.settings.convert_to_16bit,
                             original_tuning: self.state.settings.original_tuning,

@@ -93,7 +93,11 @@ struct Args {
     /// Audio buffer size in frames (lower values reduce latency but may cause glitches)
     #[arg(long, value_name = "NUM_FRAMES")]
     audio_buffer_frames: Option<usize>,
-     
+
+    /// How many audio frames to pre-load for each pipe's samples (uses RAM, prevents buffer underruns)
+    #[arg(long, value_name = "NUM_PRELOAD_FRAMES")]
+    preload_frames: Option<usize>,
+
     /// Run in terminal UI (TUI) mode as a fallback
     #[arg(long)]
     tui: bool,
@@ -196,6 +200,7 @@ fn main() -> Result<()> {
         ir_file: config.ir_file.clone(),
         reverb_mix: config.reverb_mix,
         audio_buffer_frames: config.audio_buffer_frames,
+        preload_frames: config.preload_frames,
         precache: config.precache,
         convert_to_16bit: config.convert_to_16bit,
         original_tuning: config.original_tuning,
@@ -254,6 +259,7 @@ fn main() -> Result<()> {
                 load_config.original_tuning,
                 load_config.sample_rate,
                 Some(progress_tx), // Pass the transmitter
+                load_config.preload_frames,
             );
 
             log::info!("[LoadingThread] Finished.");
@@ -311,7 +317,8 @@ fn main() -> Result<()> {
             config.precache, 
             config.original_tuning,
             config.sample_rate,
-            if config.precache && tui_mode { Some(tui_progress_tx) } else { None }
+            if config.precache && tui_mode { Some(tui_progress_tx) } else { None },
+            config.preload_frames,
         )?);
     }
      

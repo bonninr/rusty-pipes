@@ -582,3 +582,116 @@ pub fn process_sample_file(
 
     Ok(cache_full_path)
 }
+
+pub fn load_sample_head(path: &Path, target_sample_rate: u32, max_frames: usize) -> Result<Vec<f32>> {
+    let file = File::open(path).with_context(|| format!("Failed to open sample head: {:?}", path))?;
+    let mut reader = BufReader::new(file);
+    log::debug!("Preloading {} frames from {:?}", max_frames, path);
+
+    // Try parsing as WAV
+    match crate::wav::parse_wav_metadata(&mut reader, path) {
+        Ok((fmt, _chunks, data_offset, data_size)) => {
+            // --- WAV PATH ---
+            if fmt.sample_rate != target_sample_rate {
+                return Err(anyhow!("Sample rate mismatch in head load: {} != {}", fmt.sample_rate, target_sample_rate));
+            }
+
+            let bytes_per_frame = (fmt.bits_per_sample / 8) as u32 * fmt.num_channels as u32;
+            let total_frames = data_size / bytes_per_frame;
+            let frames_to_read = (max_frames as u32).min(total_frames);
+
+            // Seek to data
+            reader.seek(SeekFrom::Start(data_offset))?;
+
+            // We always output Stereo (2 channels) for the RingBuffer
+            let mut interleaved_stereo = Vec::with_capacity(frames_to_read as usize * 2);
+
+            for _ in 0..frames_to_read {
+                // Read all channels for this frame
+                let mut frame_samples = Vec::with_capacity(fmt.num_channels as usize);
+                
+                for _ in 0..fmt.num_channels {
+                    let sample_f32 = match (fmt.audio_format, fmt.bits_per_sample) {
+                        (1, 16) => (reader.read_i16::<LittleEndian>()? as f32) / I16_MAX_F,
+                        (1, 24) => (read_i24(&mut reader)? as f32) / I24_MAX_F,
+                        (1, 32) => (reader.read_i32::<LittleEndian>()? as f32) / I32_MAX_F,
+                        (3, 32) => reader.read_f32::<LittleEndian>()?,
+                        _ => 0.0, // Unsupported fallback
+                    };
+                    frame_samples.push(sample_f32);
+                }
+
+                // Push to output based on channel count
+                if fmt.num_channels == 1 {
+                    // Mono -> Stereo
+                    interleaved_stereo.push(frame_samples[0]); // L
+                    interleaved_stereo.push(frame_samples[0]); // R
+                } else {
+                    // Stereo (or take first 2 of multi-channel)
+                    interleaved_stereo.push(frame_samples[0]); // L
+                    interleaved_stereo.push(frame_samples[1]); // R
+                }
+            }
+
+            Ok(interleaved_stereo)
+        },
+        Err(e) if e.is::<IsWavPackError>() => {
+            // --- WAVPACK PATH ---
+            // Use Symphonia, but stop early
+            let src = File::open(path)?;
+            let mss = MediaSourceStream::new(Box::new(src), Default::default());
+            let mut hint = Hint::new();
+            if let Some(ext) = path.extension() { hint.with_extension(&ext.to_string_lossy()); }
+
+            let probed = symphonia::default::get_probe()
+                .format(&hint, mss, &Default::default(), &Default::default())?;
+            let mut format = probed.format;
+            let track = format.default_track().ok_or_else(|| anyhow!("No track"))?;
+            let track_id = track.id;
+            let params = track.codec_params.clone();
+
+            let sample_rate = params.sample_rate.unwrap_or(48000);
+            if sample_rate != target_sample_rate {
+                 return Err(anyhow!("Sample rate mismatch in head load (WV): {} != {}", sample_rate, target_sample_rate));
+            }
+
+            let mut decoder = symphonia::default::get_codecs().make(&params, &Default::default())?;
+            let mut interleaved_stereo = Vec::with_capacity(max_frames * 2);
+            let source_channels = params.channels.map_or(2, |c| c.count());
+
+            // Decode loop
+            while interleaved_stereo.len() < max_frames * 2 {
+                let packet = match format.next_packet() {
+                    Ok(p) => p,
+                    Err(_) => break, // EOF
+                };
+                if packet.track_id() != track_id { continue; }
+
+                if let Ok(decoded) = decoder.decode(&packet) {
+                    let spec = *decoded.spec();
+                    let duration = decoded.capacity() as u64;
+                    let mut sample_buf = SampleBuffer::<f32>::new(duration, spec);
+                    sample_buf.copy_interleaved_ref(decoded);
+                    let samples = sample_buf.samples();
+
+                    // Process these samples into our output
+                    // samples is interleaved source data
+                    for frame in samples.chunks(source_channels) {
+                        if interleaved_stereo.len() >= max_frames * 2 { break; }
+                        
+                        if source_channels == 1 {
+                            interleaved_stereo.push(frame[0]); // L
+                            interleaved_stereo.push(frame[0]); // R
+                        } else {
+                            interleaved_stereo.push(frame[0]); // L
+                            interleaved_stereo.push(frame[1]); // R
+                        }
+                    }
+                }
+            }
+            
+            Ok(interleaved_stereo)
+        },
+        Err(e) => Err(e).with_context(|| format!("Failed to parse metadata for head load: {:?}", path)),
+    }
+}
