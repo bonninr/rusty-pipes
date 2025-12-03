@@ -6,7 +6,6 @@ use std::sync::{Arc, mpsc};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use serde::Deserialize;
 use quick_xml::de::from_str;
-use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::wav_converter;
@@ -38,6 +37,7 @@ pub struct Stop {
 pub struct Rank {
     pub name: String,
     pub id_str: String, // e.g., "013"
+    pub division_id: String, // e.g., "SW"
     pub first_midi_note: u8,
     pub pipe_count: usize,
     pub gain_db: f32,
@@ -142,7 +142,7 @@ struct ObjectList {
     #[serde(rename = "ContinuousControlStageSwitch", default)]
     cc_stage_switches: Vec<serde::de::IgnoredAny>,
     #[serde(rename = "Division", default)]
-    divisions: Vec<serde::de::IgnoredAny>,
+    divisions: Vec<XmlDivision>,
     #[serde(rename = "DivisionInput", default)]
     division_inputs: Vec<serde::de::IgnoredAny>,
     #[serde(rename = "ImageSet", default)]
@@ -166,6 +166,14 @@ struct ObjectList {
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
+struct XmlDivision {
+    #[serde(rename = "DivisionID")]
+    id: String,
+    #[serde(rename = "Name", default = "default_string")]
+    name: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 struct XmlGeneral {
     #[serde(rename = "Name", default = "default_string")]
     name: String,
@@ -177,6 +185,8 @@ struct XmlStop {
     id: String,
     #[serde(rename = "Name", default = "default_string")]
     name: String,
+    #[serde(rename = "DivisionID", default = "default_string")]
+    division_id: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -193,6 +203,8 @@ struct XmlRank {
     id: String,
     #[serde(rename = "Name", default = "default_string")]
     name: String,
+    #[serde(rename = "DivisionID", default = "default_string")]
+    division_id: String,
 }
 
 // From ObjectType="Pipe_SoundEngine01"
@@ -544,18 +556,18 @@ impl Organ {
         log::debug!("Parsing XML file...");
         let xml_data: HauptwerkXml = from_str(&file_content)
             .map_err(|e| anyhow!("Failed to parse Hauptwerk XML: {}", e))?;
-        log::debug!("XML parsing complete. Found {} ObjectList entries.", xml_data.object_lists.len());
 
-        // Extract and organize XML objects
+        // Extract Objects
         let mut xml_stops = Vec::new();
         let mut xml_ranks = Vec::new();
-        let mut xml_pipes = Vec::new();     
+        let mut xml_pipes = Vec::new();      
         let mut xml_layers = Vec::new();
         let mut xml_attack_samples = Vec::new();
         let mut xml_release_samples = Vec::new();
         let mut xml_stop_ranks = Vec::new();
         let mut xml_generals = Vec::new();
         let mut xml_samples = Vec::new();
+        let mut xml_divisions = Vec::new();
 
         for list in xml_data.object_lists {
             match list.object_type.as_str() {
@@ -568,36 +580,51 @@ impl Organ {
                 "Pipe_SoundEngine01_AttackSample" => xml_attack_samples.extend(list.attack_samples),
                 "Pipe_SoundEngine01_ReleaseSample" => xml_release_samples.extend(list.release_samples),
                 "Sample" => xml_samples.extend(list.samples),
-                _ => {} // Ignore other object types
+                "Division" => xml_divisions.extend(list.divisions),
+                _ => {} 
             }
         }
 
-        log::debug!("Collected: {} stops, {} ranks, {} stop-ranks.", xml_stops.len(), xml_ranks.len(), xml_stop_ranks.len());
-        log::debug!("Collected: {} pipes, {} layers, {} attacks, {} releases, {} samples.",
-            xml_pipes.len(), xml_layers.len(), xml_attack_samples.len(), xml_release_samples.len(), xml_samples.len());
-
-        // Set organ name
         if let Some(general) = xml_generals.first() {
-            if !general.name.is_empty() {
-                organ.name = general.name.clone();
-            }
+            if !general.name.is_empty() { organ.name = general.name.clone(); }
         }
 
-        // Build StopRank map (StopID -> Vec<RankID>)
+        // Build Division Map (ID -> Name)
+        let mut division_name_map: HashMap<String, String> = HashMap::new();
+        for div in xml_divisions {
+            division_name_map.insert(div.id, div.name);
+        }
+
+        // Helper to abbreviate division names
+        let get_division_prefix = |div_id: &str| -> String {
+            if let Some(name) = division_name_map.get(div_id) {
+                let n = name.to_lowercase();
+                if n.contains("pedal") { return "P".to_string(); }
+                if n.contains("hauptwerk") || n.contains("great") { return "HW".to_string(); }
+                if n.contains("schwell") || n.contains("swell") { return "SW".to_string(); }
+                if n.contains("positiv") || n.contains("choir") { return "Pos".to_string(); }
+                if n.contains("brust") { return "BW".to_string(); }
+                if n.contains("ober") { return "OW".to_string(); }
+                if n.contains("solo") { return "So".to_string(); }
+                // Fallback: First 3 chars of name
+                return name.chars().take(3).collect::<String>();
+            }
+            "".to_string()
+        };
+
+        // Build StopRank map
         let mut stop_to_ranks_map: HashMap<String, Vec<String>> = HashMap::new();
         for sr in xml_stop_ranks {
-            stop_to_ranks_map
-                .entry(sr.stop_id)
-                .or_default()
-                .push(sr.rank_id);
+            stop_to_ranks_map.entry(sr.stop_id).or_default().push(sr.rank_id);
         }
 
-        // Build Ranks map (empty pipes)
+        // Build Ranks map
         let mut ranks_map: HashMap<String, Rank> = HashMap::new();
         for xr in xml_ranks {
             ranks_map.insert(xr.id.clone(), Rank {
                 name: xr.name,
                 id_str: xr.id,
+                division_id: xr.division_id, 
                 pipe_count: 0,
                 pipes: HashMap::new(),
                 first_midi_note: 0,
@@ -605,40 +632,26 @@ impl Organ {
                 tracker_delay_ms: 0,
             });
         }
-        log::debug!("Created {} empty ranks.", ranks_map.len());
 
-        // Assemble Pipes
-        
-        // Create lookup maps for quick assembly
+        // Standard Pipe/Sample Loading
         let pipe_map: HashMap<String, &XmlPipe> = xml_pipes.iter().map(|p| (p.id.clone(), p)).collect();
-        
-        // Map SampleID -> Sample (for filename and pitch)
         let sample_map: HashMap<String, &XmlSample> = xml_samples.iter()
-            .filter(|s| !s.path.is_empty()) // Only map samples that have a path
+            .filter(|s| !s.path.is_empty())
             .map(|s| (s.id.clone(), s))
             .collect();
-
-        
-        // Map LayerID -> AttackSample (for SampleID)
         let attack_map: HashMap<String, &XmlAttackSample> = xml_attack_samples.iter()
             .map(|a| (a.layer_id.clone(), a))
             .collect();
-        
-        // Map LayerID -> Vec<ReleaseSamples> (for SampleID)
         let mut release_map: HashMap<String, Vec<&XmlReleaseSample>> = HashMap::new();
         for rel in &xml_release_samples { release_map.entry(rel.layer_id.clone()).or_default().push(rel); }
 
-        // --- Collect unique processing tasks ---
         let mut conversion_tasks: HashSet<ConversionTask> = HashSet::new();
-
         for layer in &xml_layers {
             let Some(pipe_info) = pipe_map.get(&layer.pipe_id) else { continue; };
             if !ranks_map.contains_key(&pipe_info.rank_id) { continue; }
-
             let Some(attack_link) = attack_map.get(&layer.id) else { continue; };
             let Some(attack_sample_info) = sample_map.get(&attack_link.sample_id) else { continue; };
             
-            // Pitch logic (duplicated for discovery phase)
             let target_midi_note = pipe_info.midi_note as f32;
             let original_midi_note = if let Some(pitch_hz) = attack_sample_info.pitch_exact_sample_pitch {
                  if pitch_hz > 0.0 { 12.0 * (pitch_hz / 440.0).log2() + 69.0 } else { target_midi_note }
@@ -658,27 +671,23 @@ impl Organ {
 
             if let Some(xml_release_links) = release_map.get(&layer.id) {
                 for release_link in xml_release_links {
-                     if let Some(rs) = sample_map.get(&release_link.sample_id) {
-                        let path_str = format!("OrganInstallationPackages/{:0>6}/{}", rs.installation_package_id, rs.path.replace('\\', "/"));
-                        conversion_tasks.insert(ConversionTask {
-                            relative_path: PathBuf::from(path_str),
-                            tuning_cents_int: (tuning * 100.0) as i32,
-                            to_16bit: convert_to_16_bit,
-                        });
-                     }
+                      if let Some(rs) = sample_map.get(&release_link.sample_id) {
+                         let path_str = format!("OrganInstallationPackages/{:0>6}/{}", rs.installation_package_id, rs.path.replace('\\', "/"));
+                         conversion_tasks.insert(ConversionTask {
+                             relative_path: PathBuf::from(path_str),
+                             tuning_cents_int: (tuning * 100.0) as i32,
+                             to_16bit: convert_to_16_bit,
+                         });
+                      }
                 }
             }
         }
 
-        // --- Parallel Execution ---
-        // This will create all necessary files on disk.
         Self::process_tasks_parallel(&organ.base_path, &organ.cache_path, conversion_tasks, target_sample_rate, progress_tx)?;
 
-        // --- Assembly (Standard Sequential Logic) ---
-        // Since files now exist, wav_converter::process_sample_file returns instantly.
         if let Some(tx) = progress_tx { let _ = tx.send((1.0, "Assembling organ...".to_string())); }
 
-        let mut pipes_assembled = 0;
+        // Pipe Assembly
         for layer in &xml_layers {
             
             let Some(pipe_info) = pipe_map.get(&layer.pipe_id) else {
@@ -781,11 +790,8 @@ impl Organ {
                 for release_link in xml_release_links {
                     if let Some(release_sample_info) = sample_map.get(&release_link.sample_id) {
                         let rel_path_str = format!("OrganInstallationPackages/{:0>6}/{}", release_sample_info.installation_package_id, release_sample_info.path.replace('\\', "/"));
-
-                        let rel_path_relative = PathBuf::from(&rel_path_str);
-
                         let final_rel_path = wav_converter::process_sample_file(
-                            &rel_path_relative,
+                            &PathBuf::from(&rel_path_str),
                             &organ.base_path,
                             &organ.cache_path,
                             final_pitch_tuning_cents,
@@ -802,91 +808,160 @@ impl Organ {
             }
             releases.sort_by_key(|r| if r.max_key_press_time_ms == -1 { i64::MAX } else { r.max_key_press_time_ms });
 
-            // Create and insert Pipe into its Rank
-            let final_pipe = Pipe {
+            rank.pipes.insert(pipe_info.midi_note, Pipe {
                 attack_sample_path: final_attack_path,
                 gain_db: 0.0,
                 pitch_tuning_cents: 0.0,
                 releases,
                 preloaded_bytes: None,
-            };
-
-            if let Some(_existing) = rank.pipes.insert(pipe_info.midi_note, final_pipe) {
-                log::warn!("Duplicate pipe for MIDI note {} in Rank {}. Overwriting.",
-                    pipe_info.midi_note, rank.id_str);
-            }
-            pipes_assembled += 1; // Count successfully assembled pipes
+            });
         }
 
-        log::debug!("Pipe assembly loop finished. Assembled {} pipes.", pipes_assembled);
-
-        // Final Assembly
-        
-        // Update pipe counts in ranks
         for rank in ranks_map.values_mut() {
             rank.pipe_count = rank.pipes.len();
-            // Optionally find the first MIDI note
             if let Some(first_key) = rank.pipes.keys().next() {
                 rank.first_midi_note = *first_key;
             }
         }
 
-        // Build Stops Vec
+        // Stop linking and naming
         let mut stops_filtered = 0;
         let mut stops_map: HashMap<String, Stop> = HashMap::new();
+
+        let tokenize = |s: &str| -> (Vec<String>, Vec<String>) {
+            let mut words = Vec::new();
+            let mut pitches = Vec::new();
+            for part in s.split(|c: char| !c.is_alphanumeric() && c != '/' && c != '.') {
+                let clean = part.trim().to_lowercase();
+                if clean.is_empty() { continue; }
+                let is_pitch = clean.chars().any(|c| c.is_digit(10)) && 
+                               (clean.contains('\'') || clean.len() < 5 || clean.contains('/'));
+                if is_pitch { pitches.push(clean); } else { words.push(clean); }
+            }
+            (words, pitches)
+        };
+
+        let parse_id = |id: &str| -> i32 {
+            id.chars().filter(|c| c.is_digit(10)).collect::<String>().parse().unwrap_or(999999)
+        };
+
         for xs in xml_stops {
-            // Apply same filter as INI loader
             if xs.name.contains("Key action") || xs.name.contains("noise") || xs.name.is_empty() {
                 stops_filtered += 1;
                 continue;
             }
 
-            log::debug!("Filtering stop '{}' (ID: {})", xs.name, xs.id);
-            let rank_ids = stop_to_ranks_map.get(&xs.id).cloned().unwrap_or_default();
-            
-            if rank_ids.is_empty() {
-                log::debug!("-> Stop {} has no associated rank IDs.", xs.id);
-            } else {
-                log::debug!("-> Stop {} is associated with rank IDs: {:?}", xs.id, rank_ids);
+            // Explicit
+            let mut rank_ids = stop_to_ranks_map.get(&xs.id).cloned().unwrap_or_default();
+            let mut linkage_method = "Explicit".to_string();
+
+            // ID Match
+            if rank_ids.is_empty() && ranks_map.contains_key(&xs.id) {
+                rank_ids.push(xs.id.clone());
+                linkage_method = "ID Match".to_string();
             }
 
             let has_pipes = rank_ids.iter().any(|rid| {
-                if let Some(rank) = ranks_map.get(rid) {
-                    if !rank.pipes.is_empty() {
-                        log::debug!("-> Rank {} (Name: {}) has {} pipes. OK.", rid, rank.name, rank.pipes.len());
-                        // List pipes and their samples for debugging, ordered by midi_note
-                        for (midi_note, pipe) in rank.pipes.iter().sorted_by_key(|(k, _)| *k) {
-                            log::debug!("   - MIDI Note {}: Attack Sample: {}", midi_note, pipe.attack_sample_path.display());
-                            for release in &pipe.releases {
-                                log::debug!("       - Release Sample: {} (Max Key Press Time: {} ms)", release.path.display(), release.max_key_press_time_ms);
-                            }
-                        }
-
-                        true
-                        
-                    } else {
-                        log::debug!("-> Rank {} (Name: {}) has 0 pipes.", rid, rank.name);
-                        false
-                    }
-                } else {
-                    log::debug!("-> Rank ID {} not found in ranks_map.", rid);
-                    false
-                }
+                ranks_map.get(rid).map(|r| !r.pipes.is_empty()).unwrap_or(false)
             });
 
-            if !rank_ids.is_empty() && has_pipes {
-                log::debug!("-> SUCCESS: Adding stop '{}'", xs.name);
-                stops_map.insert(xs.id.clone(), Stop {
-                    name: xs.name,
-                    id_str: xs.id,
-                    rank_ids,
-                });
-            } else {
-                log::debug!("-> FILTERED: Stop '{}' (ID: {}): No (valid) ranks associated or ranks have no pipes.", xs.name, xs.id);
-                 stops_filtered += 1;
+            // Smart Name Scoring
+            if rank_ids.is_empty() || !has_pipes {
+                let (stop_words, stop_pitches) = tokenize(&xs.name);
+                let stop_id_num = parse_id(&xs.id);
+
+                let mut best_score = 0;
+                let mut best_id_match = String::new();
+                let mut min_distance = i32::MAX;
+
+                for rank in ranks_map.values() {
+                    if rank.pipes.is_empty() { continue; }
+
+                    // Division Check
+                    if !xs.division_id.is_empty() && !rank.division_id.is_empty() {
+                        if xs.division_id != rank.division_id { continue; }
+                    }
+
+                    let (rank_words, rank_pitches) = tokenize(&rank.name);
+
+                    // Exact Pitch Match
+                    let pitch_mismatch = stop_pitches.iter().any(|sp| !rank_pitches.contains(sp));
+                    if !stop_pitches.is_empty() && pitch_mismatch { continue; }
+
+                    let mut score = 0;
+                    
+                    if !xs.division_id.is_empty() && xs.division_id == rank.division_id {
+                        score += 50; 
+                    }
+
+                    for sw in &stop_words {
+                        if rank_words.contains(sw) { 
+                            score += 2; 
+                            if sw.len() <= 2 { score += 10; } 
+                        }
+                    }
+
+                    if xs.name.to_lowercase() == rank.name.to_lowercase() { score += 20; }
+                    if rank.name.contains(&xs.id) { score += 5; }
+
+                    if score > 0 {
+                        let rank_id_num = parse_id(&rank.id_str);
+                        let distance = (stop_id_num - rank_id_num).abs();
+
+                        if score > best_score {
+                            best_score = score;
+                            best_id_match = rank.id_str.clone();
+                            min_distance = distance;
+                        } else if score == best_score {
+                            if distance < min_distance {
+                                best_id_match = rank.id_str.clone();
+                                min_distance = distance;
+                            }
+                        }
+                    }
+                }
+
+                if !best_id_match.is_empty() {
+                    rank_ids = vec![best_id_match];
+                    linkage_method = format!("Smart Score (Best: {})", best_score);
+                }
             }
+
+            let final_has_pipes = rank_ids.iter().any(|rid| {
+                ranks_map.get(rid).map(|r| !r.pipes.is_empty()).unwrap_or(false)
+            });
+
+            // Prefix Logic
+            let prefix = get_division_prefix(&xs.division_id);
+            let mut final_name = xs.name.clone();
+            
+            // Only prepend if the name doesn't already start with the prefix (case-insensitive check)
+            if !prefix.is_empty() {
+                // Remove existing "SW", "P", etc. if they are part of the name to ensure uniform formatting? 
+                // Or just check if it starts with it.
+                let name_lower = final_name.to_lowercase();
+                let prefix_lower = prefix.to_lowercase();
+                
+                // If name is "Octave 4" and prefix is "P", make it "P Octave 4"
+                // If name is "P Octave 4" and prefix is "P", leave it alone.
+                if !name_lower.starts_with(&prefix_lower) {
+                    final_name = format!("{} {}", prefix, final_name);
+                }
+            }
+
+            if !final_has_pipes {
+                 log::warn!("-> WARNING: Stop '{}' (ID: {}, Div: {}) is Silent. (Method: {})", final_name, xs.id, xs.division_id, linkage_method);
+            } else {
+                 log::info!("-> SUCCESS: Stop '{}' (Div: {}) linked via [{}] to {} rank(s).", final_name, xs.division_id, linkage_method, rank_ids.len());
+            }
+
+            stops_map.insert(xs.id.clone(), Stop {
+                name: final_name, // Use the prefixed name
+                id_str: xs.id,
+                rank_ids,
+            });
         }
-        log::debug!("--- Filtered {} stops ---", stops_filtered);
+        log::info!("--- Filtered {} stops ---", stops_filtered);
 
         let mut stops: Vec<Stop> = stops_map.into_values().collect();
         stops.sort_by_key(|s| s.id_str.parse::<u32>().unwrap_or(0));
@@ -897,8 +972,8 @@ impl Organ {
         log::debug!("Final maps: {} stops, {} ranks.", organ.stops.len(), organ.ranks.len());
         Ok(organ)
     }
-    
-    /// Loads and parses a GrandOrgue (.organ) file.
+
+        /// Loads and parses a GrandOrgue (.organ) file.
     fn load_grandorgue(
         path: &Path, 
         convert_to_16_bit: bool, 
@@ -1105,7 +1180,8 @@ impl Organ {
                     );
                 }
             }
-            ranks_map.insert(id_str.clone(), Rank { name, id_str, first_midi_note, pipe_count, gain_db, tracker_delay_ms, pipes });
+            let division_id = String::new(); // GrandOrgue does not have DivisionIDs
+            ranks_map.insert(id_str.clone(), Rank { name, id_str, division_id, first_midi_note, pipe_count, gain_db, tracker_delay_ms, pipes });
         }
 
         // --- Build Stops ---
