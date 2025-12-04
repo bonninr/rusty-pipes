@@ -33,6 +33,34 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+flatpak:
+    name: Build Linux Flatpak
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Vendor Dependencies
+        run: |
+          mkdir -p .cargo
+          cargo vendor > .cargo/config.toml
+
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: com.dividebysandwich.rustypipes.yml
+          bundle: rusty-pipes.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}
+
+      - name: Upload Flatpak Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-bundle
+          path: rusty-pipes.flatpak
+
   build:
     strategy:
       fail-fast: false
@@ -189,7 +217,7 @@ jobs:
 
   deploy:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build, build-deb]
+    needs: [flatpak, build, build-deb]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -207,3 +235,4 @@ jobs:
             ./artifacts/*/*.tar.gz
             ./artifacts/*/*.zip
             ./artifacts/*/*.deb
+            ./artifacts/*/*.flatpak
