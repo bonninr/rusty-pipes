@@ -233,6 +233,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
+      - name: Rename Flatpak
+        run: |
+          VERSION=${{ github.ref_name }}
+          mv ./artifacts/flatpak-bundle/rusty-pipes.flatpak ./rusty-pipes-${VERSION}-x86_64.flatpak
       - name: List
         run: find ./artifacts
       - name: Release
@@ -242,4 +246,4 @@ jobs:
             ./artifacts/*/*.tar.gz
             ./artifacts/*/*.zip
             ./artifacts/*/*.deb
-            ./artifacts/*/*.flatpak
+            ./*.flatpak
