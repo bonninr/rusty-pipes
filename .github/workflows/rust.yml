@@ -33,7 +33,7 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-flatpak:
+  flatpak:
     name: Build Linux Flatpak
     runs-on: ubuntu-latest
     container:
