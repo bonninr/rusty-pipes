@@ -30,6 +30,7 @@ Cesar Franck - Chorale No. 3 - Frisach organ: [[FLAC](https://playspoon.com/file
 * Hauptwerk Sample Set support (Experimental)
 * Streaming-based sample playback
 * RAM based sample playback (optional)
+* Tremulant (synthesized)
 * Extremely low memory requirements (in streaming mode)
 * Polyphony limited only by CPU power
 * MIDI controlled

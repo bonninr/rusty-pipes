@@ -120,6 +120,7 @@ pub fn get_audio_device_names() -> Result<Vec<String>> {
 }
 
 /// Returns the name of the default audio output device, if available.
+#[allow(non_snake_case)]
 pub fn get_default_audio_device_name() -> Result<Option<String>> {
     let host = get_cpal_host();
     match host.default_output_device() {
