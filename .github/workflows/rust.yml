@@ -15,7 +15,6 @@ defaults:
 jobs:
   test:
     runs-on: ubuntu-latest
-    needs: flatpak
     steps:
       - uses: actions/checkout@v4
       
@@ -36,6 +35,7 @@ jobs:
 
   flatpak:
     name: Build Linux Flatpak
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -79,7 +79,7 @@ jobs:
             OS: macos-latest
           - TARGET: x86_64-pc-windows-msvc
             OS: windows-latest
-    needs: build-deb
+    needs: test
     runs-on: ${{ matrix.OS }}
     env:
       NAME: rusty-pipes
@@ -191,7 +191,7 @@ jobs:
             ./artifacts
 
   build-deb:
-    needs: flatpak
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
