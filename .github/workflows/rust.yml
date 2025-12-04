@@ -36,10 +36,16 @@ jobs:
   flatpak:
     name: Build Linux Flatpak
     runs-on: ubuntu-latest
-    needs: test
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install Flatpak Builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder elfutils
+          # Add Flathub so the builder can download the runtime (SDK 25.08)
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: Vendor Dependencies
         run: |
@@ -49,11 +55,9 @@ jobs:
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          manifest-path: com.dividebysandwich.rustypipes.yml
           bundle: rusty-pipes.flatpak
+          manifest-path: com.dividebysandwich.rustypipes.yml
           cache-key: flatpak-builder-${{ github.sha }}
-          image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
-          docker-options: --privileged
 
       - name: Upload Flatpak Bundle
         uses: actions/upload-artifact@v4
