@@ -11,36 +11,39 @@ use midir::MidiInput;
 use crate::config::{AppSettings, ConfigState, RuntimeConfig};
 use crate::tui::{cleanup_terminal, setup_terminal};
 use crate::tui_filepicker;
+use crate::tui_midi;
 use crate::app::{PIPES, LOGO};
 use crate::audio::get_supported_sample_rates;
 
+#[derive(Clone)]
 enum ConfigMode {
     Main,
-    MidiSelection,
     AudioSelection,
     SampleRateSelection,
     IrSelection, // Reverb Impulse Response File selection
     TextInput(usize, String), // Holds (config_index, buffer)
+    MidiDeviceList,         // List of detected devices
+    MidiMapping(usize),     // Editing device at specific index in settings.midi_devices
 }
 
 struct TuiConfigState {
     config_state: ConfigState,
-    _midi_input_arc: Arc<Mutex<Option<MidiInput>>>,
     list_state: ListState,
-    midi_list_state: ListState,
     audio_list_state: ListState,
     sample_rate_list_state: ListState,
     ir_list_state: ListState,
+    midi_dev_list_state: ListState,
+    midi_mapping_state: tui_midi::TuiMidiState,
     mode: ConfigMode,
 }
 
 #[derive(Copy, Clone, PartialEq)]
 enum SettingRow {
     OrganFile = 0,
-    AudioDevice = 1,
-    SampleRate = 2,
-    MidiDevice = 3,
-    MidiFile = 4,
+    MidiDevices = 1,
+    MidiFile = 2,
+    AudioDevice = 3,
+    SampleRate = 4,
     ReverbIRFile = 5,
     ReverbMix = 6,
     Gain = 7,
@@ -59,10 +62,10 @@ impl SettingRow {
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
             0 => Some(Self::OrganFile),
-            1 => Some(Self::AudioDevice),
-            2 => Some(Self::SampleRate),
-            3 => Some(Self::MidiDevice),
-            4 => Some(Self::MidiFile),
+            1 => Some(Self::MidiDevices),
+            2 => Some(Self::MidiFile),
+            3 => Some(Self::AudioDevice),
+            4 => Some(Self::SampleRate),
             5 => Some(Self::ReverbIRFile),
             6 => Some(Self::ReverbMix),
             7 => Some(Self::Gain),
@@ -87,7 +90,7 @@ fn get_item_display(idx: usize, state: &ConfigState) -> String {
         SettingRow::OrganFile => format!("Organ File:       {}", path_to_str(settings.organ_file.as_deref())),
         SettingRow::AudioDevice => format!("Audio Device:     {}", state.selected_audio_device_name.as_deref().unwrap_or("Default")),
         SettingRow::SampleRate => format!("Sample Rate:      {} Hz", settings.sample_rate),
-        SettingRow::MidiDevice => format!("MIDI Device:      {}", state.selected_midi_port.as_ref().map_or("None", |(_, n)| n.as_str())),
+        SettingRow::MidiDevices => format!("MIDI Input Devices:   {} enabled", settings.midi_devices.iter().filter(|d| d.enabled).count()),
         SettingRow::MidiFile => format!("MIDI File (Play): {}", path_to_str(state.midi_file.as_deref())),
         SettingRow::ReverbIRFile => format!("Reverb IR File:   {}", path_to_str(settings.ir_file.as_deref())),
         SettingRow::ReverbMix => format!("Reverb Mix:       {:.2}", settings.reverb_mix),
@@ -122,14 +125,6 @@ pub fn run_config_ui(
 
     let config_state = ConfigState::new(settings, &midi_input_arc)?;
 
-    let initial_midi_index = config_state.selected_midi_port.as_ref()
-        .and_then(|(selected_port, _)| {
-            config_state.available_ports.iter().position(|(port, _)| port == selected_port)
-        });
-    
-    let mut midi_list_state = ListState::default();
-    midi_list_state.select(initial_midi_index); // Select the found index (or None)
-
     let initial_audio_index = config_state.selected_audio_device_name.as_ref()
         .and_then(|selected_name| {
             config_state.available_audio_devices.iter().position(|name| name == selected_name)
@@ -152,15 +147,16 @@ pub fn run_config_ui(
 
     let mut state = TuiConfigState {
         config_state,
-        _midi_input_arc: midi_input_arc,
         list_state: ListState::default(),
-        midi_list_state,
         audio_list_state,
+        midi_dev_list_state: ListState::default(),
+        midi_mapping_state: tui_midi::TuiMidiState::new(),
         sample_rate_list_state: ListState::default(),
         ir_list_state, // New
         mode: ConfigMode::Main,
     };
     state.list_state.select(Some(0));
+    state.midi_dev_list_state.select(Some(0));
 
     let mut final_config: Option<RuntimeConfig> = None;
 
@@ -177,7 +173,9 @@ pub fn run_config_ui(
                 continue;
             }
 
-            match &mut state.mode {
+            let current_mode = state.mode.clone();
+
+            match current_mode {
                 ConfigMode::Main => {
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => break 'config_loop,
@@ -208,9 +206,9 @@ pub fn run_config_ui(
                                     SettingRow::SampleRate => { 
                                         state.mode = ConfigMode::SampleRateSelection; 
                                     }
-                                    SettingRow::MidiDevice => { // MIDI Device
-                                        state.mode = ConfigMode::MidiSelection;
-                                    }
+                                    SettingRow::MidiDevices => {
+                                        state.mode = ConfigMode::MidiDeviceList;
+                                    },
                                     SettingRow::MidiFile => { // MIDI File
                                         let path = tui_filepicker::run_file_picker(
                                             &mut terminal,
@@ -250,6 +248,15 @@ pub fn run_config_ui(
                                             state.config_state.error_msg = Some("Please select an Organ File to start.".to_string());
                                         } else {
                                             let s = &state.config_state.settings;
+                                            // Collect active devices
+                                            let mut active_devices = Vec::new();
+                                            for (port, name) in &state.config_state.system_midi_ports {
+                                                if let Some(cfg) = s.midi_devices.iter().find(|d| d.name == *name) {
+                                                    if cfg.enabled {
+                                                        active_devices.push((port.clone(), cfg.clone()));
+                                                    }
+                                                }
+                                            }
                                             final_config = Some(RuntimeConfig {
                                                 organ_file: s.organ_file.clone().unwrap(),
                                                 ir_file: s.ir_file.clone(),
@@ -260,8 +267,7 @@ pub fn run_config_ui(
                                                 convert_to_16bit: s.convert_to_16bit,
                                                 original_tuning: s.original_tuning,
                                                 midi_file: state.config_state.midi_file.clone(),
-                                                midi_port: state.config_state.selected_midi_port.as_ref().map(|(p, _)| p.clone()),
-                                                midi_port_name: state.config_state.selected_midi_port.as_ref().map(|(_, n)| n.clone()),
+                                                active_midi_devices: active_devices,
                                                 gain: s.gain,
                                                 polyphony: s.polyphony,
                                                 audio_device_name: state.config_state.selected_audio_device_name.clone(),
@@ -277,32 +283,60 @@ pub fn run_config_ui(
                         _ => {}
                     }
                 }
-                ConfigMode::MidiSelection => {
+                ConfigMode::MidiDeviceList => {
+                    let count = state.config_state.system_midi_ports.len();
                     match key.code {
                         KeyCode::Esc => state.mode = ConfigMode::Main,
                         KeyCode::Down | KeyCode::Char('j') => {
-                            let len = state.config_state.available_ports.len();
-                            if len > 0 {
-                                let i = state.midi_list_state.selected().map_or(0, |i| (i + 1) % len);
-                                state.midi_list_state.select(Some(i));
+                            if count > 0 {
+                                let i = state.midi_dev_list_state.selected().map_or(0, |i| (i + 1) % count);
+                                state.midi_dev_list_state.select(Some(i));
                             }
-                        }
+                        },
                         KeyCode::Up | KeyCode::Char('k') => {
-                            let len = state.config_state.available_ports.len();
-                            if len > 0 {
-                                let i = state.midi_list_state.selected().map_or(len - 1, |i| (i + len - 1) % len);
-                                state.midi_list_state.select(Some(i));
+                            if count > 0 {
+                                let i = state.midi_dev_list_state.selected().map_or(count - 1, |i| (i + count - 1) % count);
+                                state.midi_dev_list_state.select(Some(i));
                             }
-                        }
+                        },
+                        KeyCode::Char(' ') => {
+                            // Toggle Enabled
+                            if let Some(idx) = state.midi_dev_list_state.selected() {
+                                if let Some((_, name)) = state.config_state.system_midi_ports.get(idx) {
+                                    if let Some(cfg) = state.config_state.settings.midi_devices.iter_mut().find(|d| d.name == *name) {
+                                        cfg.enabled = !cfg.enabled;
+                                    }
+                                }
+                            }
+                        },
                         KeyCode::Enter => {
-                            if let Some(idx) = state.midi_list_state.selected() {
-                                state.config_state.selected_midi_port = state.config_state.available_ports.get(idx).cloned();
+                            // Go to Mapping
+                            if let Some(idx) = state.midi_dev_list_state.selected() {
+                                if let Some((_, name)) = state.config_state.system_midi_ports.get(idx) {
+                                    // We need to find the index in settings.midi_devices
+                                    if let Some(cfg_idx) = state.config_state.settings.midi_devices.iter().position(|d| d.name == *name) {
+                                        // Reset the midi state for the new device
+                                        state.midi_mapping_state = tui_midi::TuiMidiState::new();
+                                        state.mode = ConfigMode::MidiMapping(cfg_idx);
+                                    }
+                                }
                             }
-                            state.mode = ConfigMode::Main;
-                        }
+                        },
                         _ => {}
                     }
-                }
+                },
+                ConfigMode::MidiMapping(idx) => {
+                    let action = if let Some(device) = state.config_state.settings.midi_devices.get_mut(idx) {
+                        tui_midi::handle_input(key, &mut state.midi_mapping_state, device)
+                    } else {
+                        tui_midi::MappingAction::Back
+                    };
+
+                    match action {
+                        tui_midi::MappingAction::Back => state.mode = ConfigMode::MidiDeviceList,
+                        _ => {}
+                    }
+                },
                 ConfigMode::AudioSelection => {
                     match key.code {
                         KeyCode::Esc => state.mode = ConfigMode::Main,
@@ -405,34 +439,40 @@ pub fn run_config_ui(
                         _ => {}
                     }
                 }
-                ConfigMode::TextInput(idx, buffer) => {
+                ConfigMode::TextInput(idx, mut buffer) => {
                     match key.code {
-                        KeyCode::Char(c) => buffer.push(c),
-                        KeyCode::Backspace => { buffer.pop(); }
+                        KeyCode::Char(c) => {
+                            buffer.push(c);
+                            state.mode = ConfigMode::TextInput(idx, buffer); // Update buffer in state
+                        }
+                        KeyCode::Backspace => { 
+                            buffer.pop(); 
+                            state.mode = ConfigMode::TextInput(idx, buffer);
+                        }
                         KeyCode::Esc => state.mode = ConfigMode::Main,
                         KeyCode::Enter => {
-                            match SettingRow::from_index(*idx).unwrap() {
-                                SettingRow::ReverbMix => { // Reverb Mix
+                            match SettingRow::from_index(idx).unwrap() {
+                                SettingRow::ReverbMix => { 
                                     if let Ok(val) = buffer.parse::<f32>() {
                                         state.config_state.settings.reverb_mix = val.clamp(0.0, 1.0);
                                     }
                                 }
-                                SettingRow::Gain => { // Gain
+                                SettingRow::Gain => {
                                     if let Ok(val) = buffer.parse::<f32>() {
                                         state.config_state.settings.gain = val.clamp(0.0, 1.0);
                                     }
                                 }
-                                SettingRow::Polyphony => { // Polyphony
+                                SettingRow::Polyphony => {
                                     if let Ok(val) = buffer.parse::<usize>() {
                                         state.config_state.settings.polyphony = val.clamp(1, 1024);
                                     }
                                 }
-                                SettingRow::AudioBuffer => { // Audio Buffer
+                                SettingRow::AudioBuffer => {
                                     if let Ok(val) = buffer.parse::<usize>() {
                                         state.config_state.settings.audio_buffer_frames = val;
                                     }
                                 }
-                                SettingRow::PreloadFrames => { // Preload Frames
+                                SettingRow::PreloadFrames => {
                                     if let Ok(val) = buffer.parse::<usize>() {
                                         state.config_state.settings.preload_frames = val;
                                     }
@@ -457,12 +497,22 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
 
     let area = frame.area();
 
+    // Check if we are in a fullscreen sub-mode (Mapping)
+    if let ConfigMode::MidiMapping(idx) = state.mode {
+        // Clone device to avoid double borrow (one mutable for state, one immutable for device)
+        if let Some(dev) = state.config_state.settings.midi_devices.get(idx).cloned() {
+             tui_midi::draw(frame, area, &mut state.midi_mapping_state, &dev);
+             return;
+        }
+    }
+
     // --- Calculate new header height ---
     let pipes_lines = PIPES.lines().count(); // 7
     let logo_lines_count = LOGO.lines().count(); // 5
     // 7(pipes) + 5(logo) + 1(indicia) + 1(blank) + 1(title) + 2(borders) = 17
     let header_height = (pipes_lines + logo_lines_count + 5) as u16;
 
+    // --- Main Layout ---
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -501,7 +551,7 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
     let num_config_items = SettingRow::Quit as usize + 1;
     let items: Vec<ListItem> = (0..num_config_items)
         .map(|i| {
-            let text = get_item_display(i, &state.config_state);
+        let text = get_item_display(i, &state.config_state);
             let mut list_item = ListItem::new(text.clone());
             
             // Index 10 is "S. Start Rusty Pipes"
@@ -533,19 +583,11 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(footer, main_layout[2]);
 
-    // Handle Modals
-    match &state.mode {
-        ConfigMode::MidiSelection => {
-            let items: Vec<String> = state.config_state.available_ports.iter()
-                .map(|(_, name)| name.clone())
-                .collect();
-            draw_modal_list(
-                frame,
-                "Select MIDI Device (↑/↓, Enter, Esc)",
-                &items,
-                &mut state.midi_list_state,
-            );
-        }
+    // --- Modals ---
+    match state.mode {
+        ConfigMode::MidiDeviceList => {
+             draw_midi_device_list(frame, state);
+        },
         ConfigMode::AudioSelection => {
             let mut items = vec!["[ Default ]".to_string()];
             items.extend(state.config_state.available_audio_devices.iter().cloned());
@@ -578,8 +620,8 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
                 &mut state.ir_list_state
              );
         }
-        ConfigMode::TextInput(idx, buffer) => {
-            let title = match SettingRow::from_index(*idx).unwrap() {
+        ConfigMode::TextInput(idx, ref buffer) => {
+            let title = match SettingRow::from_index(idx).unwrap() {
                 SettingRow::ReverbMix => "Enter Reverb Mix (0.0 - 1.0)",
                 SettingRow::Gain => "Enter Gain (0.0 - 1.0)",
                 SettingRow::Polyphony => "Enter Polyphony (1 - 1024)",
@@ -591,6 +633,32 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
         }
         _ => {}
     }
+}
+
+fn draw_midi_device_list(frame: &mut Frame, state: &mut TuiConfigState) {
+    let area = centered_rect(frame.area(), 60, 60);
+    
+    let items: Vec<ListItem> = state.config_state.system_midi_ports.iter().map(|(_, name)| {
+        // Find config status
+        let enabled = if let Some(cfg) = state.config_state.settings.midi_devices.iter().find(|d| d.name == *name) {
+            cfg.enabled
+        } else { false };
+        
+        let checkbox = if enabled { "[x]" } else { "[ ]" };
+        ListItem::new(format!("{} {}", checkbox, name))
+    }).collect();
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" MIDI Devices ")
+        .title_bottom(" Space: Toggle | Enter: Configure | Esc: Back ");
+        
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black));
+        
+    frame.render_widget(Clear, area);
+    frame.render_stateful_widget(list, area, &mut state.midi_dev_list_state);
 }
 
 fn draw_modal_list(

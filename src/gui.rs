@@ -25,7 +25,7 @@ pub struct EguiApp {
     audio_tx: Sender<AppMessage>,
 
     // Need to hold the connection to keep it alive
-    _midi_connection: Option<MidiInputConnection<()>>,
+    _midi_connection: Vec<MidiInputConnection<()>>,
 
     // --- GUI-specific state ---
     selected_stop_index: Option<usize>,
@@ -46,7 +46,7 @@ pub fn run_gui_loop(
     audio_tx: Sender<AppMessage>,
     app_state: Arc<Mutex<AppState>>,
     organ: Arc<Organ>,
-    midi_connection: Option<MidiInputConnection<()>>,
+    midi_connection: Vec<MidiInputConnection<()>>,
     gui_ctx_tx: Sender<egui::Context>,
     reverb_files: Vec<(String, PathBuf)>,
     initial_ir_file: Option<PathBuf>,

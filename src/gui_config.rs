@@ -6,6 +6,7 @@ use crate::config::{AppSettings, ConfigState, RuntimeConfig};
 use crate::gui_filepicker;
 use crate::app::{PIPES, LOGO};
 use crate::audio::get_supported_sample_rates;
+use crate::gui_midi::MidiMappingWindow;
 
 #[allow(dead_code)]
 struct ConfigApp {
@@ -13,9 +14,9 @@ struct ConfigApp {
     midi_input_arc: Arc<Mutex<Option<MidiInput>>>, 
     output: Arc<Mutex<Option<RuntimeConfig>>>, 
     is_finished: Arc<Mutex<bool>>,
-    selected_midi_port_index: Option<usize>,
     selected_audio_device_index: Option<usize>,
     selected_ir_index: Option<usize>,
+    midi_mapping_window: MidiMappingWindow,
 }
 
 impl ConfigApp {
@@ -27,12 +28,6 @@ impl ConfigApp {
     ) -> Self {
         let state = ConfigState::new(settings, &midi_input_arc).expect("Failed to create ConfigState");
 
-        // Find the index of the pre-selected port, if any
-        let selected_midi_port_index = state.selected_midi_port.as_ref()
-            .and_then(|(selected_port, _)| {
-                state.available_ports.iter().position(|(port, _)| port == selected_port)
-            });
-        
         // Find the index of the pre-selected audio device, if any
         let selected_audio_device_index = state.selected_audio_device_name.as_ref()
             .and_then(|selected_name| {
@@ -48,9 +43,9 @@ impl ConfigApp {
             midi_input_arc,
             output,
             is_finished,
-            selected_midi_port_index,
             selected_audio_device_index,
             selected_ir_index,
+            midi_mapping_window: MidiMappingWindow::new(),
         }
     }
 
@@ -74,6 +69,10 @@ impl ConfigApp {
 
 impl App for ConfigApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
+        
+        // Modal MIDI Mapping Window
+        self.midi_mapping_window.show(ctx, &mut self.state.settings.midi_devices);
+
         egui::CentralPanel::default().show(ctx, |ui| {
             
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -181,25 +180,35 @@ impl App for ConfigApp {
                         ui.end_row();
 
                         // --- MIDI Device ---
-                        ui.label("MIDI Device:");
-                        let selected_text = self.selected_midi_port_index
-                            .and_then(|idx| self.state.available_ports.get(idx))
-                            .map_or("None", |(_, name)| name.as_str());
-                        
-                        // Give the ComboBox a minimum width
-                        ui.set_min_width(300.0); 
-                        egui::ComboBox::from_id_salt("midi_device_combo")
-                            .selected_text(selected_text)
-                            .show_ui(ui, |ui| {
-                                if ui.selectable_label(self.selected_midi_port_index.is_none(), "None").clicked() {
-                                    self.selected_midi_port_index = None;
-                                }
-                                for (i, (_, name)) in self.state.available_ports.iter().enumerate() {
-                                    if ui.selectable_label(self.selected_midi_port_index == Some(i), name).clicked() {
-                                        self.selected_midi_port_index = Some(i);
+                        ui.label("MIDI Inputs:");
+                        ui.vertical(|ui| {
+                            if self.state.system_midi_ports.is_empty() {
+                                ui.label(egui::RichText::new("No devices found").weak());
+                            } else {
+                                egui::ScrollArea::vertical().id_salt("midi_list_scroll").max_height(150.0).show(ui, |ui| {
+                                    // Iterate available system ports
+                                    for (_port, name) in &self.state.system_midi_ports {
+                                        ui.horizontal(|ui| {
+                                            // Find corresponding config entry
+                                            if let Some(cfg_idx) = self.state.settings.midi_devices.iter().position(|d| d.name == *name) {
+                                                
+                                                // Checkbox for Enable/Disable
+                                                ui.checkbox(&mut self.state.settings.midi_devices[cfg_idx].enabled, "");
+                                                
+                                                // Name Label
+                                                ui.label(name);
+                                                
+                                                // Mapping Button
+                                                if ui.button("⚙ Map").clicked() {
+                                                    self.midi_mapping_window.device_index = cfg_idx;
+                                                    self.midi_mapping_window.visible = true;
+                                                }
+                                            }
+                                        });
                                     }
-                                }
-                            });
+                                });
+                            }
+                        });
                         ui.end_row();
 
                         // --- MIDI File ---
@@ -338,10 +347,15 @@ impl App for ConfigApp {
                     );
                     
                     if start_button.clicked() {
-                        let (port, name) = self.selected_midi_port_index
-                            .and_then(|idx| self.state.available_ports.get(idx))
-                            .map_or((None, None), |(p, n)| (Some(p.clone()), Some(n.clone())));
-
+                        // Collect enabled MIDI devices + ports
+                        let mut active_devices = Vec::new();
+                        for (port, name) in &self.state.system_midi_ports {
+                            if let Some(cfg) = self.state.settings.midi_devices.iter().find(|d| d.name == *name) {
+                                if cfg.enabled {
+                                    active_devices.push((port.clone(), cfg.clone()));
+                                }
+                            }
+                        }
                         let audio_device_name = self.selected_audio_device_index
                             .and_then(|idx| self.state.available_audio_devices.get(idx))
                             .cloned();
@@ -356,8 +370,7 @@ impl App for ConfigApp {
                             convert_to_16bit: self.state.settings.convert_to_16bit,
                             original_tuning: self.state.settings.original_tuning,
                             midi_file: self.state.midi_file.clone(),
-                            midi_port: port,
-                            midi_port_name: name,
+                            active_midi_devices: active_devices,
                             gain: self.state.settings.gain,
                             polyphony: self.state.settings.polyphony,
                             audio_device_name,
@@ -372,6 +385,7 @@ impl App for ConfigApp {
                     if self.state.settings.organ_file.is_none() {
                         ui.label(egui::RichText::new("Please select an Organ File.").color(egui::Color32::YELLOW));
                     }
+
                 });
             }); 
         });

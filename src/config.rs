@@ -8,6 +8,38 @@ use std::fs;
 use crate::audio::{get_audio_device_names, get_default_audio_device_name, get_supported_sample_rates};
 use crate::input::KeyboardLayout;
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum MidiMappingMode {
+    /// All input channels from this device map to a single target channel
+    Simple,
+    /// Each input channel (0-15) is individually mapped to a target channel
+    Complex,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MidiDeviceConfig {
+    pub name: String,
+    pub enabled: bool,
+    pub mapping_mode: MidiMappingMode,
+    /// Used if mode is Simple: All inputs go to this channel (0-15)
+    pub simple_target_channel: u8,
+    /// Used if mode is Complex: Index = Input Channel, Value = Target Channel
+    pub complex_mapping: [u8; 16],
+}
+
+impl Default for MidiDeviceConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            enabled: false,
+            mapping_mode: MidiMappingMode::Simple,
+            simple_target_channel: 0,
+            // Default 1:1 mapping (0->0, 1->1, etc.)
+            complex_mapping: std::array::from_fn(|i| i as u8), 
+        }
+    }
+}
+
 /// Settings that are saved to the configuration file.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -20,12 +52,13 @@ pub struct AppSettings {
     pub convert_to_16bit: bool,
     pub original_tuning: bool,
     pub tui_mode: bool,
-    pub midi_device_name: Option<String>,
     pub gain: f32,
     pub polyphony: usize,
     pub audio_device_name: Option<String>,
     pub sample_rate: u32,
     pub keyboard_layout: KeyboardLayout,
+    #[serde(default)] 
+    pub midi_devices: Vec<MidiDeviceConfig>,
 }
 
 /// Default settings for a new installation.
@@ -41,12 +74,12 @@ impl Default for AppSettings {
             convert_to_16bit: false,
             original_tuning: false,
             tui_mode: false, // Default to GUI
-            midi_device_name: None,
             gain: 0.4, // Conservative default gain
             polyphony: 128,
             audio_device_name: None,
             sample_rate: 48000,
             keyboard_layout: KeyboardLayout::Qwerty,
+            midi_devices: Vec::new(),
         }
     }
 }
@@ -69,10 +102,9 @@ pub struct RuntimeConfig {
 
     // --- Runtime-Only Settings ---
     pub midi_file: Option<PathBuf>,
-    pub midi_port: Option<MidiInputPort>,
-    pub midi_port_name: Option<String>,
     pub audio_device_name: Option<String>,
     pub sample_rate: u32,
+    pub active_midi_devices: Vec<(MidiInputPort, MidiDeviceConfig)>,
 }
 
 /// Loads settings from disk.
@@ -137,10 +169,10 @@ pub fn get_available_ir_files() -> Vec<(String, PathBuf)> {
 pub struct ConfigState {
     pub settings: AppSettings,
     pub midi_file: Option<PathBuf>,
-    pub selected_midi_port: Option<(MidiInputPort, String)>,
     
-    // MIDI-related fields
-    pub available_ports: Vec<(MidiInputPort, String)>,
+    // List of currently connected system ports: (Port, Name)
+    pub system_midi_ports: Vec<(MidiInputPort, String)>,
+
     pub error_msg: Option<String>,
 
     // Audio-related fields
@@ -152,31 +184,28 @@ pub struct ConfigState {
 
 impl ConfigState {
     pub fn new(mut settings: AppSettings, midi_input_arc: &Arc<Mutex<Option<MidiInput>>>) -> Result<Self> {
-        let mut available_ports = Vec::new();
         let mut error_msg = None;
-        let mut selected_midi_port = None;
+
+        let mut system_midi_ports = Vec::new();
 
         if let Some(midi_in) = midi_input_arc.lock().unwrap().as_ref() {
-            let ports = midi_in.ports();
-            if ports.is_empty() {
-                error_msg = Some("No MIDI devices found.".to_string());
-            } else {
-                for port in ports.iter() {
-                    if let Ok(name) = midi_in.port_name(port) {
-                        available_ports.push((port.clone(), name));
+            for port in midi_in.ports() {
+                if let Ok(name) = midi_in.port_name(&port) {
+                    system_midi_ports.push((port, name.clone()));
+                    
+                    // Sync settings with detected ports.
+                    // If a detected port is not in settings, add it (disabled by default).
+                    if !settings.midi_devices.iter().any(|d| d.name == name) {
+                        settings.midi_devices.push(MidiDeviceConfig {
+                            name,
+                            enabled: false,
+                            ..Default::default()
+                        });
                     }
                 }
             }
-
-            // After populating available_ports, check against saved settings
-            if let Some(saved_name) = &settings.midi_device_name {
-                if let Some(found_port) = available_ports.iter().find(|(_, name)| name == saved_name) {
-                    selected_midi_port = Some(found_port.clone());
-                }
-            }
-
         } else {
-            error_msg = Some("Failed to initialize MIDI.".to_string());
+             error_msg = Some("Failed to initialize MIDI.".to_string());
         }
 
         let mut available_audio_devices = Vec::new();
@@ -233,8 +262,7 @@ impl ConfigState {
         Ok(Self {
             settings,
             midi_file: None,
-            selected_midi_port,
-            available_ports,
+            system_midi_ports,
             error_msg,
             available_audio_devices,
             selected_audio_device_name,

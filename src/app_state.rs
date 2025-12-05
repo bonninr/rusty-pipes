@@ -14,7 +14,7 @@ use crate::{
     app::{AppMessage, TuiMessage},
     midi,
     organ::Organ,
-    config::{load_settings, save_settings},
+    config::{load_settings, save_settings, MidiDeviceConfig},
     input::KeyboardLayout,
 };
 
@@ -48,18 +48,11 @@ pub fn connect_to_midi(
     port: &MidiInputPort,
     port_name: &str,
     tui_tx: &Sender<TuiMessage>,
+    config: MidiDeviceConfig, // New Argument
 ) -> Result<MidiInputConnection<()>> {
-    let tui_tx_clone = tui_tx.clone();
-    let conn = midi_input.connect(
-        port,
-        port_name,
-        move |_timestamp, message, _| {
-            midi::midi_callback(message, &tui_tx_clone);
-        },
-        (),
-    ).map_err(|e| anyhow::anyhow!("Failed to connect to MIDI device {}: {}", port_name, e))?;
-
-    Ok(conn)
+    // We delegate to the logic in midi.rs, which sets up the callback 
+    // with the specific channel mapping rules found in `config`.
+    midi::connect_to_midi(midi_input, port, port_name, tui_tx, config)
 }
 
 // --- Shared State Struct ---

@@ -3,12 +3,12 @@ use std::sync::mpsc::Sender;
 use std::path::PathBuf;
 use std::fs;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use midly::{Smf, TrackEventKind, MidiMessage as MidlyMidiMessage, MetaMessage};
-use midir::MidiInput;
-use std::time::Instant;
+use midir::{MidiInput, MidiInputPort};
 
 use crate::app::TuiMessage;
+use crate::config::{MidiDeviceConfig, MidiMappingMode};
 
 /// Returns a list of all available MIDI input device names.
 pub fn get_midi_device_names() -> Result<Vec<String>> {
@@ -28,65 +28,111 @@ pub fn midi_note_to_name(note: u8) -> String {
     format!("{}{}", note_name, octave)
 }
 
-/// This is the callback function passed to `midir::MidiInput::connect`.
-/// It's called by the `midir` thread when a MIDI message is received.
-pub fn midi_callback(
-    message: &[u8], 
+/// Connects to a specific MIDI port with a specific configuration.
+pub fn connect_to_midi(
+    midi_input: MidiInput,
+    port: &MidiInputPort,
+    device_name: &str,
     tui_tx: &Sender<TuiMessage>,
+    config: MidiDeviceConfig,
+) -> Result<midir::MidiInputConnection<()>> {
+    
+    let tx_clone = tui_tx.clone();
+    let name_clone = device_name.to_string();
+
+    midi_input.connect(
+        port, 
+        device_name, 
+        move |_, message, _| {
+            process_live_midi_message(message, &tx_clone, &config, &name_clone);
+        }, 
+        ()
+    ).map_err(|e| anyhow::anyhow!("Failed to connect to MIDI device {}: {}", device_name, e))
+}
+
+/// Processes raw MIDI bytes, applies channel mapping, and sends events to the App.
+fn process_live_midi_message(
+    message: &[u8],
+    tui_tx: &Sender<TuiMessage>,
+    config: &MidiDeviceConfig,
+    _device_name: &str, // Useful if you want to log *which* device sent the message
 ) {
+    if message.len() < 3 {
+        return; 
+    }
+
+    let status = message[0];
+    // Ignore system real-time messages (0xF8-0xFF) and Sysex for now
+    if status >= 0xF0 {
+        return;
+    }
+
+    let raw_channel = status & 0x0F;
+    let msg_type = status & 0xF0;
+
+    // --- APPLY MAPPING ---
+    let target_channel = match config.mapping_mode {
+        MidiMappingMode::Simple => config.simple_target_channel,
+        MidiMappingMode::Complex => {
+            // Safety check for array bounds (0-15)
+            config.complex_mapping.get(raw_channel as usize).cloned().unwrap_or(raw_channel)
+        }
+    };
+
+    // Reconstruct the status byte with the new channel
+    let new_status = msg_type | (target_channel & 0x0F);
+    
+    // Create new message buffer
+    let mut mapped_message = Vec::with_capacity(message.len());
+    mapped_message.push(new_status);
+    mapped_message.extend_from_slice(&message[1..]);
+
+    // Pass to the parser
+    parse_and_send(&mapped_message, tui_tx, target_channel);
+}
+
+/// Parses the (mapped) message and sends TUI/Audio events.
+fn parse_and_send(message: &[u8], tui_tx: &Sender<TuiMessage>, channel: u8) {
     let now = Instant::now();
-        
-    // Parse and send to Audio thread
-    if message.len() >= 3 {
-        let channel = message[0] & 0x0F; // MIDI channels 0-15
-        match message[0] {
-            0x90..=0x9F => { // Note On
-                let note = message[1];
-                let velocity = message[2];
-                if velocity > 0 {
-                    // This is a real Note On
-                    let note_name = midi_note_to_name(note);
-                    let log_msg = format!("Note On: {} (Ch {}, Vel {})", note_name, channel + 1, velocity);
-                    let _ = tui_tx.send(TuiMessage::MidiLog(log_msg));
-                    // Send raw event to TUI
-                    let _ = tui_tx.send(TuiMessage::MidiNoteOn(note, velocity, channel));
-                    // Send piano roll event
-                    let _ = tui_tx.send(TuiMessage::TuiNoteOn(note, channel, now));
-                } else {
-                    // Note On with velocity 0 is a Note Off
-                    let note_name = midi_note_to_name(note);
-                    let log_msg = format!("Note Off: {} (Ch {})", note_name, channel + 1);
-                    let _ = tui_tx.send(TuiMessage::MidiLog(log_msg));
-                    // Send raw event to TUI
-                    let _ = tui_tx.send(TuiMessage::MidiNoteOff(note, channel));
-                    // Send piano roll event
-                    let _ = tui_tx.send(TuiMessage::TuiNoteOff(note, channel, now));
-                }
-            },
-            0x80..=0x8F => { // Note Off
-                let note = message[1];
+    let status = message[0];
+    
+    match status & 0xF0 {
+        0x90 => { // Note On
+            let note = message[1];
+            let velocity = message[2];
+            if velocity > 0 {
+                let note_name = midi_note_to_name(note);
+                let log_msg = format!("Note On: {} (Ch {}, Vel {})", note_name, channel + 1, velocity);
+                let _ = tui_tx.send(TuiMessage::MidiLog(log_msg));
+                let _ = tui_tx.send(TuiMessage::MidiNoteOn(note, velocity, channel));
+                let _ = tui_tx.send(TuiMessage::TuiNoteOn(note, channel, now));
+            } else {
+                // Velocity 0 = Note Off
                 let note_name = midi_note_to_name(note);
                 let log_msg = format!("Note Off: {} (Ch {})", note_name, channel + 1);
                 let _ = tui_tx.send(TuiMessage::MidiLog(log_msg));
-                // Send raw event to TUI
                 let _ = tui_tx.send(TuiMessage::MidiNoteOff(note, channel));
-                // Send piano roll event
                 let _ = tui_tx.send(TuiMessage::TuiNoteOff(note, channel, now));
-            },
-            0xB0..=0xBF => { // Controller Change
-                let controller = message[1];
-                if controller == 123 { // CC #123 = All Notes Off
-                    let log_msg = format!("All Off (Ch {})", channel + 1);
-                    let _ = tui_tx.send(TuiMessage::MidiLog(log_msg));
-                    // Send raw event to TUI
-                    let _ = tui_tx.send(TuiMessage::MidiChannelNotesOff(channel));
-                    // Also clear the TUI piano roll
-                    let _ = tui_tx.send(TuiMessage::TuiAllNotesOff);
-                }
-                // TODO: Handle Sustain (CC #64) if needed
-            },
-            _ => {} // Ignore other messages
-        }
+            }
+        },
+        0x80 => { // Note Off
+            let note = message[1];
+            let note_name = midi_note_to_name(note);
+            let log_msg = format!("Note Off: {} (Ch {})", note_name, channel + 1);
+            let _ = tui_tx.send(TuiMessage::MidiLog(log_msg));
+            let _ = tui_tx.send(TuiMessage::MidiNoteOff(note, channel));
+            let _ = tui_tx.send(TuiMessage::TuiNoteOff(note, channel, now));
+        },
+        0xB0 => { // Control Change
+            let controller = message[1];
+            if controller == 123 { // All Notes Off
+                let log_msg = format!("All Off (Ch {})", channel + 1);
+                let _ = tui_tx.send(TuiMessage::MidiLog(log_msg));
+                let _ = tui_tx.send(TuiMessage::MidiChannelNotesOff(channel));
+                let _ = tui_tx.send(TuiMessage::TuiAllNotesOff);
+            }
+        },
+        _ => {}
     }
 }
 

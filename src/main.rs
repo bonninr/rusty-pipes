@@ -8,7 +8,7 @@ use std::fs::{self, File};
 use std::thread::{self, JoinHandle};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use midir::{MidiInput, MidiInputConnection};
+use midir::MidiInput;
 
 mod app;
 mod audio;
@@ -23,14 +23,16 @@ mod gui_filepicker;
 mod tui_filepicker;
 mod config;
 mod tui_config;
+mod tui_midi;
 mod gui_config;
+mod gui_midi;
 mod loading_ui;
 mod input;
 
 use app::{AppMessage, TuiMessage};
 use app_state::{AppState, connect_to_midi};
 use organ::Organ;
-use config::{AppSettings, RuntimeConfig};
+use config::{AppSettings, RuntimeConfig, MidiDeviceConfig};
 use input::KeyboardLayout;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
@@ -82,7 +84,7 @@ struct Args {
     #[arg(long)]
     list_midi_devices: bool,
 
-    /// Select a MIDI device by name
+    /// Select a MIDI device by name (Enables this device with default 1:1 channel mapping)
     #[arg(long, value_name = "MIDI_DEVICE")]
     midi_device: Option<String>,
 
@@ -169,6 +171,22 @@ fn main() -> Result<()> {
     if let Some(o) = args.original_tuning { settings.original_tuning = o; }
     if let Some(d) = args.audio_device { settings.audio_device_name = Some(d); }
 
+    // --- CLI: MIDI Device Selection ---
+    // If a device is specified via CLI, we ensure it exists in settings and is enabled.
+    // We treat it as a passthrough (1:1 mapping), which is the default for MidiDeviceConfig.
+    if let Some(device_name) = args.midi_device {
+        if let Some(dev) = settings.midi_devices.iter_mut().find(|d| d.name == device_name) {
+            dev.enabled = true;
+        } else {
+            // New device from CLI, add it with defaults (Enabled=true, Simple/Complex defaults to 1:1)
+            settings.midi_devices.push(MidiDeviceConfig {
+                name: device_name,
+                enabled: true,
+                ..Default::default()
+            });
+        }
+    }
+
     // --- Run Configuration UI ---
     let config_result = if tui_mode {
         tui_config::run_config_ui(settings, Arc::clone(&midi_input_arc))
@@ -195,6 +213,13 @@ fn main() -> Result<()> {
     };
      
     // --- Save Final Settings (excluding runtime options) ---
+    // We reconstruct the midi_devices list based on the active connections + config logic.
+    // Note: This simple approach saves the state of devices that were active/configured in this session.
+    let devices_to_save: Vec<MidiDeviceConfig> = config.active_midi_devices
+        .iter()
+        .map(|(_, cfg)| cfg.clone())
+        .collect();
+
     let settings_to_save = AppSettings {
         organ_file: Some(config.organ_file.clone()),
         ir_file: config.ir_file.clone(),
@@ -204,7 +229,7 @@ fn main() -> Result<()> {
         precache: config.precache,
         convert_to_16bit: config.convert_to_16bit,
         original_tuning: config.original_tuning,
-        midi_device_name: config.midi_port_name.clone(),
+        midi_devices: devices_to_save,
         gain: config.gain,
         polyphony: config.polyphony,
         audio_device_name: config.audio_device_name.clone(),
@@ -222,13 +247,12 @@ fn main() -> Result<()> {
         println!("\nRusty Pipes - Virtual Pipe Organ Simulator v{}\n", env!("CARGO_PKG_VERSION"));
     }
 
-    let organ: Arc<Organ>; // Define organ variable
+    let organ: Arc<Organ>; 
 
     let reverb_files = config::get_available_ir_files();
 
     // If we are in GUI mode, we generally want the loading window, 
     // especially if we are precaching OR converting OR just parsing a large file.
-    // This prevents the main thread from freezing during startup.
     let needs_loading_ui = !tui_mode; 
 
     if needs_loading_ui {
@@ -240,7 +264,7 @@ fn main() -> Result<()> {
         let is_finished = Arc::new(AtomicBool::new(false));
 
         // We need to move the config and is_finished Arc into the loading thread
-        let load_config = config.clone(); // Clone RuntimeConfig
+        let load_config = config.clone(); 
         let is_finished_clone = Arc::clone(&is_finished);
 
         // This Arc<Mutex<...>> will hold the result from the loading thread
@@ -258,7 +282,7 @@ fn main() -> Result<()> {
                 load_config.precache,
                 load_config.original_tuning,
                 load_config.sample_rate,
-                Some(progress_tx), // Pass the transmitter
+                Some(progress_tx), 
                 load_config.preload_frames,
             );
 
@@ -284,7 +308,7 @@ fn main() -> Result<()> {
         let organ_result = organ_result_arc.lock().unwrap().take()
             .ok_or_else(|| anyhow::anyhow!("Loading thread did not produce an organ"))?;
         
-        organ = Arc::new(organ_result?); // Handle the Result<> from Organ::load
+        organ = Arc::new(organ_result?);
 
     } else {
         // --- TUI Loading (Simple text progress) ---
@@ -310,7 +334,6 @@ fn main() -> Result<()> {
 
         // Note: For TUI mode, we only pass the progress transmitter if we are precaching.
         // If we aren't precaching, the conversion is usually fast enough (or hidden) in TUI.
-        // You could enable it for conversion too if desired.
         organ = Arc::new(Organ::load(
             &config.organ_file, 
             config.convert_to_16bit, 
@@ -370,7 +393,6 @@ fn main() -> Result<()> {
 
         // This is a blocking loop, it waits for messages from either the MIDI callback or the file player.
         while let Ok(msg) = tui_rx.recv() {
-             
             if egui_ctx.is_none() {
                 if let Ok(ctx) = gui_ctx_rx.try_recv() {
                     egui_ctx = Some(ctx);
@@ -396,29 +418,42 @@ fn main() -> Result<()> {
 
     // --- Start MIDI input ---
     let _midi_file_thread: Option<JoinHandle<()>>;
-    let mut _midi_connection: Option<MidiInputConnection<()>> = None;
-
-    // We take the MidiInput object back from the Arc *after* the config UI is closed.
-    let mut midi_input_opt = midi_input_arc.lock().unwrap().take();
+    // We store multiple connections to keep them alive
+    let mut midi_connections = Vec::new(); 
 
     if let Some(path) = config.midi_file {
         // --- Play from MIDI file ---
         if tui_mode { println!("Starting MIDI file playback: {}", path.display()); }
         _midi_file_thread = Some(midi::play_midi_file(path, tui_tx.clone())?);
-    } else if let (Some(port), Some(name), Some(midi_input)) = (
-        config.midi_port,
-        config.midi_port_name,
-        midi_input_opt.take() // Use the MidiInput we just took from the Arc
-    ) {
-        // --- Use live MIDI input ---
-        if tui_mode { println!("Connecting to MIDI device: {}", name); }
-        // The `midi_input` and `port` are now guaranteed to be from the same instance.
-        _midi_connection = Some(connect_to_midi(midi_input, &port, &name, &tui_tx)?);
-        app_state.lock().unwrap().add_midi_log(format!("Connected to: {}", name));
-        _midi_file_thread = None;
     } else {
-        // --- No MIDI file or device ---
-        if tui_mode { println!("No MIDI file or device selected. Running without MIDI input."); }
+        // --- Use live MIDI input (Multiple Devices) ---
+        // Iterate over the configured active devices
+        if !config.active_midi_devices.is_empty() {
+            for (port, dev_config) in config.active_midi_devices {
+                let client_name = format!("Rusty Pipes - {}", dev_config.name);
+                
+                // Create a new client for each connection (midir consumes the client on connect)
+                match MidiInput::new(&client_name) {
+                    Ok(client) => {
+                        if tui_mode { println!("Connecting to MIDI device: {}", dev_config.name); }
+                        
+                        match connect_to_midi(client, &port, &dev_config.name, &tui_tx, dev_config.clone()) {
+                            Ok(conn) => {
+                                midi_connections.push(conn);
+                                app_state.lock().unwrap().add_midi_log(format!("Connected: {}", dev_config.name));
+                            },
+                            Err(e) => {
+                                log::error!("Failed to connect to {}: {}", dev_config.name, e);
+                                app_state.lock().unwrap().add_midi_log(format!("Error: {}", e));
+                            }
+                        }
+                    },
+                    Err(e) => log::error!("Failed to create MIDI client for {}: {}", dev_config.name, e),
+                }
+            }
+        } else if tui_mode {
+            println!("No MIDI devices enabled. Running without MIDI input.");
+        }
         _midi_file_thread = None;
     }
 
@@ -434,7 +469,7 @@ fn main() -> Result<()> {
             audio_tx,
             Arc::clone(&app_state),
             organ,
-            _midi_connection, // Pass the connection to the GUI
+            midi_connections, // Pass the Vector of connections
             gui_ctx_tx,
             reverb_files,
             config.ir_file.clone(),
