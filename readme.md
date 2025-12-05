@@ -78,9 +78,9 @@ Apple's OS prevents users from running unsigned programs. To bypass this mechani
 
 The configuration dialog is shown on startup in both text and graphical mode, the settings are the same for both.
 
-<img width="662" height="772" alt="image" src="https://github.com/user-attachments/assets/5f5899a1-1fee-4e06-b204-75b13779d4ea" />
+<img width="660" height="832" alt="image" src="https://github.com/user-attachments/assets/7f18fc49-7b7a-43fb-bd1a-5c25816ae337" />
 
-<img width="697" height="706" alt="image" src="https://github.com/user-attachments/assets/e525cc1d-e4f8-4978-b80f-f4ad5510e69d" />
+<img width="972" height="633" alt="image" src="https://github.com/user-attachments/assets/f8f6a1e0-8cac-44ce-ba7c-40e7121eadff" />
 
 ### Organ file
 
@@ -102,9 +102,25 @@ Command line example: ```rusty-pipes /path/to/name.organ /path/to/file.mid```
 
 ### MIDI device
 
- Select one or more MIDI input devices that shall be used to play. For each device you can choose whether all of its 16 MIDI channels shall be mapped to one "virtual" MIDI channel in RustyPipes (which can in turn be mapped to one or more organ stops), or you can select "Complex mapping" to select the mapping for each of the MIDI devices' channels separately.
+Select one or more MIDI input devices that shall be used to play. For each device you can choose between "simple" and "complex" mapping. When not selecting a MIDI file, it is assumed that some form of MIDI input device shall be used. This is the main mode of operation for RustyPipes.
 
- When not selecting a MIDI file, it is assumed that some form of MIDI input device shall be used. This is the main mode of operation for RustyPipes.
+The MIDI mapping can be configured in both the graphical user interface and in the text-driven TUI mode.
+
+#### Simple MIDI mapping
+
+<img width="564" height="274" alt="image" src="https://github.com/user-attachments/assets/3ce985e5-9ccf-4ee9-ab59-272265dc6716" />
+
+<img width="602" height="87" alt="image" src="https://github.com/user-attachments/assets/4d8bcc99-efc9-4466-9030-d92597ce4128" />
+
+This maps all of the input device's midi channels to a single virtual MIDI channel within RustyPipes, which can then be mapped to one or more organ stops.
+
+#### Complex MIDI mapping
+
+<img width="564" height="551" alt="image" src="https://github.com/user-attachments/assets/3f484cd1-779d-4c1d-a864-fb013ba38b6f" />
+
+<img width="531" height="312" alt="image" src="https://github.com/user-attachments/assets/f9eafa27-ede2-4a3d-9f20-ff921b3a1756" />
+
+This allows the configuration of each of the MIDI devices' channels separately, mapping them to one or more virtual MIDI channels within RustyPipes.
 
 #### Selecting a MIDI device via command line parameter
 
