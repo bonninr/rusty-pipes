@@ -59,7 +59,7 @@ jobs:
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: rusty-pipes.flatpak
-          manifest-path: com.dividebysandwich.rustypipes.yml
+          manifest-path: io.github.dividebysandwich.rusty-pipes.yml
           cache-key: flatpak-builder-${{ github.sha }}
 
       - name: Upload Flatpak Bundle

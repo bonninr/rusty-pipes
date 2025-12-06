@@ -1,4 +1,4 @@
-app-id: com.dividebysandwich.rustypipes
+app-id: io.github.dividebysandwich.rusty-pipes
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
@@ -13,14 +13,14 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --device=dri
+  - --share=ipc
   # Audio (PulseAudio/Pipewire)
   - --socket=pulseaudio
   # High-performance audio (PipeWire/JACK)
   - --filesystem=xdg-run/pipewire-0
   - --filesystem=xdg-run/jack
-  # Filesystem access
-  # Required to load external Organ sample sets (GrandOrgue/Hauptwerk files)
-  - --filesystem=home
+  # Access to user music directory for organ samples
+  - --filesystem=xdg-music
   # MIDI Hardware access (ALSA Sequencer)
   - --device=all 
 
@@ -34,8 +34,8 @@ modules:
       - cargo --offline fetch --manifest-path Cargo.toml
       - cargo --offline build --release --manifest-path Cargo.toml
       - install -D target/release/rusty-pipes /app/bin/rusty-pipes
-      - install -D -m 644 assets/rusty-pipes.png /app/share/icons/hicolor/128x128/apps/com.dividebysandwich.rustypipes.png
-      - install -D -m 644 assets/rusty-pipes.desktop /app/share/applications/com.dividebysandwich.rustypipes.desktop
+      - install -D -m 644 assets/rusty-pipes.png /app/share/icons/hicolor/128x128/apps/io.github.dividebysandwich.rusty-pipes.png
+      - install -D -m 644 assets/rusty-pipes.desktop /app/share/applications/io.github.dividebysandwich.rusty-pipes.desktop
     sources:
       - type: dir
         path: .
