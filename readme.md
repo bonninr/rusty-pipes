@@ -294,6 +294,8 @@ This example loads the Hauptwerk sample set "GreenPositiv", using convolutional 
 
 RustyPipes can be controlled via HTTP/REST requests. The default port for the API is 8080 but can be changed with a command line parameter. Accessing http://localhost:8080/ with a web browser will display a Swagger UI that documents the available API functions and also lets you try them out directly.
 
+<img width="849" height="708" alt="image" src="https://github.com/user-attachments/assets/0819759b-7124-47d8-ae7b-97dae2d71be8" />
+
 > [!NOTE]
 > The REST API is only available once an organ has been loaded and RustyPipes is ready to play.
 
