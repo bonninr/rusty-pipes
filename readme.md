@@ -271,6 +271,10 @@ When you start the program for the first time, no stop will have any MIDI channe
 
 Rusty Pipes supports the activation/deactivation of organ stops via MIDI events. In GUI mode, click on a Stop name to open the configuration dialog. In TUI mode, press the [i] key.
 
+<img width="403" height="575" alt="image" src="https://github.com/user-attachments/assets/665ce46f-6554-4bbe-8a11-341b29c678bc" />
+
+<img width="997" height="123" alt="image" src="https://github.com/user-attachments/assets/2457f2a7-46d1-4977-a2ee-79b6e63b96e5" />
+
 Each of the 16 virtual organ MIDI channels can be assigned a MIDI event to enable or disable the current organ Stop on that channel. It does not matter which physical MIDI device or MIDI channel that event comes from. Clicking the learn button will start listening for a midi event. Learned events can be forgotten via the clear button.
 
 These MIDI event assignments are saved to a JSON file for each organ.
@@ -279,6 +283,8 @@ These MIDI event assignments are saved to a JSON file for each organ.
 
 Live performances can be recorded as MIDI and Audio. Both recording types can be active at the same time.
 The recordings are saved in the user's config directory in the "recordings" subfolder, and are named with the organ name and the current timestamp.
+
+<img width="344" height="91" alt="image" src="https://github.com/user-attachments/assets/4d4e4ba9-4862-435a-b8d3-a3eb389ac97e" />
 
 The record buttons are at the bottom of the window in GUI mode. In TUI mode use the keyboard shortcuts to start/stop recording.
 
