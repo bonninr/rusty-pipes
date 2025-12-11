@@ -33,6 +33,12 @@ pub struct OrganInfoResponse {
     name: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct PresetSaveRequest {
+    /// The name to assign to this preset
+    name: String,
+}
+
 // --- Shared State ---
 
 struct ApiData {
@@ -47,10 +53,17 @@ struct ApiData {
     paths(
         get_stops, 
         update_stop_channel,
-        get_organ_info
+        get_organ_info,
+        load_preset,
+        save_preset
     ),
     components(
-        schemas(StopStatusResponse, ChannelUpdateRequest, OrganInfoResponse)
+        schemas(
+            StopStatusResponse, 
+            ChannelUpdateRequest, 
+            OrganInfoResponse,
+            PresetSaveRequest
+        )
     ),
     tags(
         (name = "Rusty Pipes API", description = "Control endpoints for the virtual organ")
@@ -160,6 +173,88 @@ async fn update_stop_channel(
     }
 }
 
+/// Recalls a stop mapping preset (equivalent to F1-F12).
+#[utoipa::path(
+    post,
+    path = "/presets/{slot_id}/load",
+    tag = "Presets",
+    params(
+        ("slot_id" = usize, Path, description = "Preset Slot ID (1-12)")
+    ),
+    responses(
+        (status = 200, description = "Preset loaded successfully"),
+        (status = 400, description = "Invalid slot ID"),
+        (status = 404, description = "Preset is empty"),
+        (status = 500, description = "Internal application error")
+    )
+)]
+async fn load_preset(
+    path: web::Path<usize>,
+    data: web::Data<ApiData>
+) -> impl Responder {
+    let slot_id = path.into_inner();
+
+    // Validate 1-based index from URL
+    if !(1..=12).contains(&slot_id) {
+        return HttpResponse::BadRequest().body("Slot ID must be between 1 and 12");
+    }
+
+    let mut state = data.app_state.lock().unwrap();
+    // Convert to 0-based index for internal logic
+    let internal_index = slot_id - 1;
+
+    match state.recall_preset(internal_index, &data.audio_tx) {
+        Ok(_) => {
+            // Check if it actually loaded something or if the slot was empty
+            if state.presets[internal_index].is_some() {
+                state.add_midi_log(format!("API: Loaded Preset F{}", slot_id));
+                HttpResponse::Ok().json(serde_json::json!({ "status": "success", "slot": slot_id }))
+            } else {
+                HttpResponse::NotFound().body(format!("Preset slot F{} is empty", slot_id))
+            }
+        },
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error loading preset: {}", e))
+    }
+}
+
+/// Saves the current stop mapping to a preset slot (equivalent to Shift+F1-F12).
+#[utoipa::path(
+    post,
+    path = "/presets/{slot_id}/save",
+    tag = "Presets",
+    request_body = PresetSaveRequest,
+    params(
+        ("slot_id" = usize, Path, description = "Preset Slot ID (1-12)")
+    ),
+    responses(
+        (status = 200, description = "Preset saved successfully"),
+        (status = 400, description = "Invalid slot ID")
+    )
+)]
+async fn save_preset(
+    path: web::Path<usize>,
+    body: web::Json<PresetSaveRequest>,
+    data: web::Data<ApiData>
+) -> impl Responder {
+    let slot_id = path.into_inner();
+
+    if !(1..=12).contains(&slot_id) {
+        return HttpResponse::BadRequest().body("Slot ID must be between 1 and 12");
+    }
+
+    let mut state = data.app_state.lock().unwrap();
+    let internal_index = slot_id - 1;
+
+    state.save_preset(internal_index, body.name.clone());
+    state.add_midi_log(format!("API: Saved Preset F{} as '{}'", slot_id, body.name));
+
+    HttpResponse::Ok().json(serde_json::json!({ 
+        "status": "success", 
+        "slot": slot_id, 
+        "name": body.name 
+    }))
+}
+
 /// Redirects the root path to the Swagger UI.
 async fn index() -> impl Responder {
     HttpResponse::Found()
@@ -195,6 +290,8 @@ pub fn start_api_server(
                 .route("/stops", web::get().to(get_stops))
                 .route("/stops/{stop_id}/channels/{channel_id}", web::post().to(update_stop_channel))
                 .route("/organ", web::get().to(get_organ_info))
+                .route("/presets/{slot_id}/load", web::post().to(load_preset))
+                .route("/presets/{slot_id}/save", web::post().to(save_preset))
         })
         .bind(("0.0.0.0", port));
 
