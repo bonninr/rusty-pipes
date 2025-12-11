@@ -2,11 +2,13 @@ use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
+use std::path::PathBuf;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::app_state::AppState;
 use crate::app::AppMessage;
+use crate::config;
 
 // --- Data Models ---
 
@@ -20,7 +22,6 @@ pub struct StopStatusResponse {
     active_channels: Vec<u8>,
 }
 
-// NEW: Add ToSchema
 #[derive(Deserialize, ToSchema)]
 pub struct ChannelUpdateRequest {
     /// True to enable the stop for this channel, False to disable
@@ -35,8 +36,50 @@ pub struct OrganInfoResponse {
 
 #[derive(Deserialize, ToSchema)]
 pub struct PresetSaveRequest {
-    /// The name to assign to this preset
     name: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ValueRequest {
+    value: f32,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ReverbRequest {
+    index: i32,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ReverbMixRequest {
+    mix: f32,
+}
+
+#[derive(Serialize, Clone, ToSchema)]
+pub struct ReverbEntry {
+    index: usize,
+    name: String,
+}
+
+#[derive(Serialize, Clone, ToSchema)]
+pub struct AudioSettingsResponse {
+    gain: f32,
+    polyphony: usize,
+    reverb_mix: f32,
+    active_reverb_index: Option<usize>,
+    is_recording_midi: bool,
+    is_recording_audio: bool,
+}
+
+#[derive(Serialize, Clone, ToSchema)]
+pub struct TremulantResponse {
+    id: String,
+    name: String,
+    active: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct TremulantSetRequest {
+    active: bool,
 }
 
 // --- Shared State ---
@@ -44,25 +87,44 @@ pub struct PresetSaveRequest {
 struct ApiData {
     app_state: Arc<Mutex<AppState>>,
     audio_tx: Sender<AppMessage>,
+    reverb_files: Arc<Vec<(String, PathBuf)>>,
 }
 
-// --- OpenAPI Documentation Struct ---
+// --- OpenAPI Documentation ---
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        get_stops, 
-        update_stop_channel,
         get_organ_info,
-        load_preset,
-        save_preset
+        get_stops, 
+        panic,
+        update_stop_channel,
+        load_preset, 
+        save_preset,
+        get_audio_settings,
+        set_gain,
+        set_polyphony,
+        start_stop_midi_recording,
+        start_stop_audio_recording,
+        get_reverbs,
+        set_reverb,
+        set_reverb_mix,
+        get_tremulants,
+        set_tremulant
     ),
     components(
         schemas(
             StopStatusResponse, 
             ChannelUpdateRequest, 
             OrganInfoResponse,
-            PresetSaveRequest
+            PresetSaveRequest,
+            ValueRequest,
+            ReverbRequest,
+            ReverbMixRequest,
+            ReverbEntry,
+            AudioSettingsResponse,
+            TremulantResponse,
+            TremulantSetRequest
         )
     ),
     tags(
@@ -73,36 +135,44 @@ struct ApiDoc;
 
 // --- Handlers ---
 
+/// Redirects to Swagger UI
+#[utoipa::path(get, path = "/", responses((status = 302, description = "Redirect to Swagger")))]
+async fn index() -> impl Responder {
+    HttpResponse::Found().append_header(("Location", "/swagger-ui/")).finish()
+}
+
+/// Returns information about the currently loaded organ.
 #[utoipa::path(
-    get,
-    path = "/organ",
-    tag = "General",
-    responses(
-        (status = 200, description = "Organ information", body = OrganInfoResponse)
-    )
+    get, path = "/organ", tag = "General",
+    responses((status = 200, body = OrganInfoResponse))
 )]
 async fn get_organ_info(data: web::Data<ApiData>) -> impl Responder {
     let state = data.app_state.lock().unwrap();
+    HttpResponse::Ok().json(OrganInfoResponse { name: state.organ.name.clone() })
+}
+
+/// Executes the MIDI Panic function (All Notes Off).
+#[utoipa::path(
+    post, path = "/panic", tag = "General",
+    responses((status = 200, description = "Panic executed"))
+)]
+async fn panic(data: web::Data<ApiData>) -> impl Responder {
+    let mut state = data.app_state.lock().unwrap();
     
-    let response = OrganInfoResponse {
-        name: state.organ.name.clone(),
-    };
+    // Send the signal to the audio engine
+    let _ = data.audio_tx.send(AppMessage::AllNotesOff);
     
-    HttpResponse::Ok().json(response)
+    state.add_midi_log("API: Executed Panic (All Notes Off)".into());
+    HttpResponse::Ok().json(serde_json::json!({"status": "success"}))
 }
 
 /// Returns a JSON list of all stops and their currently enabled virtual channels.
 #[utoipa::path(
-    get,
-    path = "/stops",
-    tag = "Stops",
-    responses(
-        (status = 200, description = "List of all stops and their active channels", body = Vec<StopStatusResponse>)
-    )
+    get, path = "/stops", tag = "Stops",
+    responses((status = 200, body = Vec<StopStatusResponse>))
 )]
 async fn get_stops(data: web::Data<ApiData>) -> impl Responder {
     let state = data.app_state.lock().unwrap();
-    
     let mut response_list = Vec::with_capacity(state.organ.stops.len());
     
     for (i, stop) in state.organ.stops.iter().enumerate() {
@@ -117,26 +187,18 @@ async fn get_stops(data: web::Data<ApiData>) -> impl Responder {
             active_channels,
         });
     }
-    
     HttpResponse::Ok().json(response_list)
 }
 
 /// Enables or disables a specific stop for a specific virtual MIDI channel.
 #[utoipa::path(
-    post,
-    path = "/stops/{stop_id}/channels/{channel_id}",
-    tag = "Stops",
+    post, path = "/stops/{stop_id}/channels/{channel_id}", tag = "Stops",
     request_body = ChannelUpdateRequest,
     params(
         ("stop_id" = usize, Path, description = "Index of the stop"),
         ("channel_id" = u8, Path, description = "Virtual MIDI Channel (0-15)")
     ),
-    responses(
-        (status = 200, description = "Channel updated successfully"),
-        (status = 400, description = "Invalid channel ID"),
-        (status = 404, description = "Stop index not found"),
-        (status = 500, description = "Internal application error")
-    )
+    responses((status = 200), (status = 404), (status = 400))
 )]
 async fn update_stop_channel(
     path: web::Path<(usize, u8)>,
@@ -144,92 +206,55 @@ async fn update_stop_channel(
     data: web::Data<ApiData>
 ) -> impl Responder {
     let (stop_index, channel_id) = path.into_inner();
-    
-    if channel_id > 15 {
-        return HttpResponse::BadRequest().body("Channel ID must be between 0 and 15");
-    }
+    if channel_id > 15 { return HttpResponse::BadRequest().body("Channel ID > 15"); }
 
     let mut state = data.app_state.lock().unwrap();
-
-    if stop_index >= state.organ.stops.len() {
-        return HttpResponse::NotFound().body(format!("Stop index {} not found", stop_index));
-    }
+    if stop_index >= state.organ.stops.len() { return HttpResponse::NotFound().finish(); }
 
     match state.set_stop_channel_state(stop_index, channel_id, body.active, &data.audio_tx) {
         Ok(_) => {
             let action = if body.active { "Enabled" } else { "Disabled" };
             state.add_midi_log(format!("API: {} Stop {} for Ch {}", action, stop_index, channel_id + 1));
-            
-            HttpResponse::Ok().json(serde_json::json!({
-                "status": "success", 
-                "stop_index": stop_index,
-                "channel": channel_id,
-                "active": body.active
-            }))
+            HttpResponse::Ok().json(serde_json::json!({ "status": "success" }))
         },
-        Err(e) => {
-            HttpResponse::InternalServerError().body(format!("Failed to update state: {}", e))
-        }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string())
     }
 }
 
-/// Recalls a stop mapping preset (equivalent to F1-F12).
+/// Recalls a stop mapping preset (1-12).
 #[utoipa::path(
-    post,
-    path = "/presets/{slot_id}/load",
-    tag = "Presets",
+    post, path = "/presets/{slot_id}/load", tag = "Presets",
     params(
         ("slot_id" = usize, Path, description = "Preset Slot ID (1-12)")
     ),
-    responses(
-        (status = 200, description = "Preset loaded successfully"),
-        (status = 400, description = "Invalid slot ID"),
-        (status = 404, description = "Preset is empty"),
-        (status = 500, description = "Internal application error")
-    )
+    responses((status = 200), (status = 404))
 )]
-async fn load_preset(
-    path: web::Path<usize>,
-    data: web::Data<ApiData>
-) -> impl Responder {
+async fn load_preset(path: web::Path<usize>, data: web::Data<ApiData>) -> impl Responder {
     let slot_id = path.into_inner();
-
-    // Validate 1-based index from URL
-    if !(1..=12).contains(&slot_id) {
-        return HttpResponse::BadRequest().body("Slot ID must be between 1 and 12");
-    }
+    if !(1..=12).contains(&slot_id) { return HttpResponse::BadRequest().body("Invalid slot"); }
 
     let mut state = data.app_state.lock().unwrap();
-    // Convert to 0-based index for internal logic
-    let internal_index = slot_id - 1;
-
-    match state.recall_preset(internal_index, &data.audio_tx) {
+    match state.recall_preset(slot_id - 1, &data.audio_tx) {
         Ok(_) => {
-            // Check if it actually loaded something or if the slot was empty
-            if state.presets[internal_index].is_some() {
-                state.add_midi_log(format!("API: Loaded Preset F{}", slot_id));
-                HttpResponse::Ok().json(serde_json::json!({ "status": "success", "slot": slot_id }))
-            } else {
-                HttpResponse::NotFound().body(format!("Preset slot F{} is empty", slot_id))
-            }
+             if state.presets[slot_id - 1].is_some() {
+                 state.add_midi_log(format!("API: Loaded Preset F{}", slot_id));
+                 HttpResponse::Ok().json(serde_json::json!({ "status": "success" }))
+             } else {
+                 HttpResponse::NotFound().body("Preset empty")
+             }
         },
-        Err(e) => HttpResponse::InternalServerError().body(format!("Error loading preset: {}", e))
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string())
     }
 }
 
-/// Saves the current stop mapping to a preset slot (equivalent to Shift+F1-F12).
+/// Saves the current mapping to a preset (1-12).
 #[utoipa::path(
-    post,
-    path = "/presets/{slot_id}/save",
-    tag = "Presets",
+    post, path = "/presets/{slot_id}/save", tag = "Presets",
     request_body = PresetSaveRequest,
     params(
         ("slot_id" = usize, Path, description = "Preset Slot ID (1-12)")
     ),
-    responses(
-        (status = 200, description = "Preset saved successfully"),
-        (status = 400, description = "Invalid slot ID")
-    )
+    responses((status = 200))
 )]
 async fn save_preset(
     path: web::Path<usize>,
@@ -237,29 +262,210 @@ async fn save_preset(
     data: web::Data<ApiData>
 ) -> impl Responder {
     let slot_id = path.into_inner();
-
-    if !(1..=12).contains(&slot_id) {
-        return HttpResponse::BadRequest().body("Slot ID must be between 1 and 12");
-    }
+    if !(1..=12).contains(&slot_id) { return HttpResponse::BadRequest().body("Invalid slot"); }
 
     let mut state = data.app_state.lock().unwrap();
-    let internal_index = slot_id - 1;
-
-    state.save_preset(internal_index, body.name.clone());
+    state.save_preset(slot_id - 1, body.name.clone());
     state.add_midi_log(format!("API: Saved Preset F{} as '{}'", slot_id, body.name));
-
-    HttpResponse::Ok().json(serde_json::json!({ 
-        "status": "success", 
-        "slot": slot_id, 
-        "name": body.name 
-    }))
+    HttpResponse::Ok().json(serde_json::json!({ "status": "success" }))
 }
 
-/// Redirects the root path to the Swagger UI.
-async fn index() -> impl Responder {
-    HttpResponse::Found()
-        .append_header(("Location", "/swagger-ui/"))
-        .finish()
+// --- Audio & Config Handlers ---
+
+/// Get current audio settings.
+#[utoipa::path(
+    get, path = "/audio/settings", tag = "Audio",
+    responses((status = 200, body = AudioSettingsResponse))
+)]
+async fn get_audio_settings(data: web::Data<ApiData>) -> impl Responder {
+    let state = data.app_state.lock().unwrap();
+    let resp = AudioSettingsResponse {
+        gain: state.gain,
+        polyphony: state.polyphony,
+        reverb_mix: state.reverb_mix,
+        active_reverb_index: state.selected_reverb_index,
+        is_recording_midi: state.is_recording_midi,
+        is_recording_audio: state.is_recording_audio,
+    };
+    HttpResponse::Ok().json(resp)
+}
+
+/// Set Master Gain (0.0 - 2.0).
+#[utoipa::path(
+    post, path = "/audio/gain", tag = "Audio",
+    request_body = ValueRequest,
+    responses((status = 200))
+)]
+async fn set_gain(body: web::Json<ValueRequest>, data: web::Data<ApiData>) -> impl Responder {
+    let mut state = data.app_state.lock().unwrap();
+    state.gain = body.value.clamp(0.0, 2.0);
+    let _ = data.audio_tx.send(AppMessage::SetGain(state.gain));
+    state.persist_settings();
+    HttpResponse::Ok().json(serde_json::json!({"status": "success", "gain": state.gain}))
+}
+
+/// Set Polyphony limit (minimum 1).
+#[utoipa::path(
+    post, path = "/audio/polyphony", tag = "Audio",
+    request_body = ValueRequest,
+    responses((status = 200))
+)]
+async fn set_polyphony(body: web::Json<ValueRequest>, data: web::Data<ApiData>) -> impl Responder {
+    let mut state = data.app_state.lock().unwrap();
+    state.polyphony = (body.value as usize).max(1);
+    let _ = data.audio_tx.send(AppMessage::SetPolyphony(state.polyphony));
+    state.persist_settings();
+    HttpResponse::Ok().json(serde_json::json!({"status": "success", "polyphony": state.polyphony}))
+}
+
+/// Start or Stop MIDI Recording.
+#[utoipa::path(
+    post, path = "/record/midi", tag = "Recording",
+    request_body = ChannelUpdateRequest, 
+    responses((status = 200))
+)]
+async fn start_stop_midi_recording(body: web::Json<ChannelUpdateRequest>, data: web::Data<ApiData>) -> impl Responder {
+    let mut state = data.app_state.lock().unwrap();
+    state.is_recording_midi = body.active;
+    if body.active {
+        let _ = data.audio_tx.send(AppMessage::StartMidiRecording);
+        state.add_midi_log("API: Started MIDI Recording".into());
+    } else {
+        let _ = data.audio_tx.send(AppMessage::StopMidiRecording);
+        state.add_midi_log("API: Stopped MIDI Recording".into());
+    }
+    HttpResponse::Ok().json(serde_json::json!({"status": "success", "recording_midi": state.is_recording_midi}))
+}
+
+/// Start or Stop Audio (WAV) Recording.
+#[utoipa::path(
+    post, path = "/record/audio", tag = "Recording",
+    request_body = ChannelUpdateRequest, 
+    responses((status = 200))
+)]
+async fn start_stop_audio_recording(body: web::Json<ChannelUpdateRequest>, data: web::Data<ApiData>) -> impl Responder {
+    let mut state = data.app_state.lock().unwrap();
+    state.is_recording_audio = body.active;
+    if body.active {
+        let _ = data.audio_tx.send(AppMessage::StartAudioRecording);
+        state.add_midi_log("API: Started Audio Recording".into());
+    } else {
+        let _ = data.audio_tx.send(AppMessage::StopAudioRecording);
+        state.add_midi_log("API: Stopped Audio Recording".into());
+    }
+    HttpResponse::Ok().json(serde_json::json!({"status": "success", "recording_audio": state.is_recording_audio}))
+}
+
+/// Get available Impulse Response (Reverb) files.
+#[utoipa::path(
+    get, path = "/audio/reverbs", tag = "Audio",
+    responses((status = 200, body = Vec<ReverbEntry>))
+)]
+async fn get_reverbs(data: web::Data<ApiData>) -> impl Responder {
+    let list: Vec<ReverbEntry> = data.reverb_files.iter().enumerate().map(|(i, (name, _))| {
+        ReverbEntry { index: i, name: name.clone() }
+    }).collect();
+    HttpResponse::Ok().json(list)
+}
+
+/// Set active Reverb by index (-1 to disable).
+#[utoipa::path(
+    post, path = "/audio/reverbs/select", tag = "Audio",
+    request_body = ReverbRequest,
+    responses((status = 200))
+)]
+async fn set_reverb(body: web::Json<ReverbRequest>, data: web::Data<ApiData>) -> impl Responder {
+    let idx = body.index;
+    let mut state = data.app_state.lock().unwrap();
+
+    if idx < 0 {
+        state.selected_reverb_index = None;
+        let _ = data.audio_tx.send(AppMessage::SetReverbWetDry(0.0));
+        state.persist_settings();
+        return HttpResponse::Ok().json(serde_json::json!({"status": "disabled"}));
+    }
+
+    let u_idx = idx as usize;
+    if u_idx >= data.reverb_files.len() {
+        return HttpResponse::BadRequest().body("Invalid reverb index");
+    }
+
+    let (name, path) = &data.reverb_files[u_idx];
+    state.selected_reverb_index = Some(u_idx);
+    let _ = data.audio_tx.send(AppMessage::SetReverbIr(path.clone()));
+    let _ = data.audio_tx.send(AppMessage::SetReverbWetDry(state.reverb_mix));
+    
+    state.persist_settings();
+    state.add_midi_log(format!("API: Reverb set to '{}'", name));
+    
+    HttpResponse::Ok().json(serde_json::json!({"status": "success", "reverb": name}))
+}
+
+/// Set Reverb Mix (0.0 - 1.0).
+#[utoipa::path(
+    post, path = "/audio/reverbs/mix", tag = "Audio",
+    request_body = ReverbMixRequest,
+    responses((status = 200))
+)]
+async fn set_reverb_mix(body: web::Json<ReverbMixRequest>, data: web::Data<ApiData>) -> impl Responder {
+    let mut state = data.app_state.lock().unwrap();
+    state.reverb_mix = body.mix.clamp(0.0, 1.0);
+    let _ = data.audio_tx.send(AppMessage::SetReverbWetDry(state.reverb_mix));
+    state.persist_settings();
+    HttpResponse::Ok().json(serde_json::json!({"status": "success", "mix": state.reverb_mix}))
+}
+
+/// Get list of Tremulants and their status.
+#[utoipa::path(
+    get, path = "/tremulants", tag = "Tremulants",
+    responses((status = 200, body = Vec<TremulantResponse>))
+)]
+async fn get_tremulants(data: web::Data<ApiData>) -> impl Responder {
+    let state = data.app_state.lock().unwrap();
+    let mut list = Vec::new();
+    
+    let mut trem_ids: Vec<_> = state.organ.tremulants.keys().collect();
+    trem_ids.sort();
+
+    for id in trem_ids {
+        let trem = &state.organ.tremulants[id];
+        let active = state.active_tremulants.contains(id);
+        list.push(TremulantResponse {
+            id: id.clone(),
+            name: trem.name.clone(),
+            active,
+        });
+    }
+    HttpResponse::Ok().json(list)
+}
+
+/// Enable/Disable a Tremulant by ID.
+#[utoipa::path(
+    post, path = "/tremulants/{trem_id}", tag = "Tremulants",
+    request_body = TremulantSetRequest,
+    params(
+        ("trem_id" = String, Path, description = "Tremulant ID")
+    ),
+    responses((status = 200), (status = 404))
+)]
+async fn set_tremulant(
+    path: web::Path<String>, 
+    body: web::Json<TremulantSetRequest>, 
+    data: web::Data<ApiData>
+) -> impl Responder {
+    let trem_id = path.into_inner();
+    let mut state = data.app_state.lock().unwrap();
+    
+    if !state.organ.tremulants.contains_key(&trem_id) {
+        return HttpResponse::NotFound().body("Tremulant ID not found");
+    }
+
+    state.set_tremulant_active(trem_id.clone(), body.active, &data.audio_tx);
+    
+    let action = if body.active { "Enabled" } else { "Disabled" };
+    state.add_midi_log(format!("API: {} Tremulant '{}'", action, trem_id));
+
+    HttpResponse::Ok().json(serde_json::json!({"status": "success"}))
 }
 
 // --- Server Launcher ---
@@ -269,12 +475,15 @@ pub fn start_api_server(
     audio_tx: Sender<AppMessage>,
     port: u16
 ) {
+    let reverb_files = Arc::new(config::get_available_ir_files());
+
     std::thread::spawn(move || {
         let sys = actix_web::rt::System::new();
         
         let server_data = web::Data::new(ApiData {
             app_state,
             audio_tx,
+            reverb_files,
         });
 
         let openapi = ApiDoc::openapi();
@@ -287,11 +496,28 @@ pub fn start_api_server(
                         .url("/api-docs/openapi.json", openapi.clone()),
                 )
                 .route("/", web::get().to(index))
+                // General
+                .route("/organ", web::get().to(get_organ_info))
+                .route("/panic", web::post().to(panic))
+                // Stops
                 .route("/stops", web::get().to(get_stops))
                 .route("/stops/{stop_id}/channels/{channel_id}", web::post().to(update_stop_channel))
-                .route("/organ", web::get().to(get_organ_info))
+                // Presets
                 .route("/presets/{slot_id}/load", web::post().to(load_preset))
                 .route("/presets/{slot_id}/save", web::post().to(save_preset))
+                // Audio
+                .route("/audio/settings", web::get().to(get_audio_settings))
+                .route("/audio/gain", web::post().to(set_gain))
+                .route("/audio/polyphony", web::post().to(set_polyphony))
+                .route("/audio/reverbs", web::get().to(get_reverbs))
+                .route("/audio/reverbs/select", web::post().to(set_reverb))
+                .route("/audio/reverbs/mix", web::post().to(set_reverb_mix))
+                // Recording
+                .route("/record/midi", web::post().to(start_stop_midi_recording))
+                .route("/record/audio", web::post().to(start_stop_audio_recording))
+                // Tremulants
+                .route("/tremulants", web::get().to(get_tremulants))
+                .route("/tremulants/{trem_id}", web::post().to(set_tremulant))
         })
         .bind(("0.0.0.0", port));
 
