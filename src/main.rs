@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use midir::MidiInput;
 
+mod api_rest;
 mod app;
 mod audio;
 mod config;
@@ -107,6 +108,10 @@ struct Args {
     /// Run in terminal UI (TUI) mode as a fallback
     #[arg(long)]
     tui: bool,
+
+    /// HTTP Port that the REST API server will listen on
+    #[arg(long, value_name = "API_PORT", default_value_t = 8080)]
+    api_server_port: u16,
 }
 
 #[cfg_attr(feature = "hotpath", hotpath::main(percentiles = [99]))]
@@ -388,6 +393,9 @@ fn main() -> Result<()> {
 
     // --- Create thread-safe AppState ---
     let app_state = Arc::new(Mutex::new(AppState::new(organ.clone(), config.gain, config.polyphony, active_layout)?));
+
+    // --- REST API SERVER ---
+    api_rest::start_api_server(app_state.clone(), audio_tx.clone(), args.api_server_port);
 
     // --- Spawn the dedicated MIDI logic thread ---
     let logic_app_state = Arc::clone(&app_state);
