@@ -17,7 +17,7 @@ Vierne - Organ Symphony No.2 - Cantabile - Frisach organ: [[FLAC](https://playsp
 Cesar Franck - Chorale No. 3 - Frisach organ: [[FLAC](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.flac)] [[OGG](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.ogg)]
 
 
-<img width="1690" height="1351" alt="image" src="https://github.com/user-attachments/assets/069fdda8-3ba5-4d9d-9b44-6a93a44d8893" />
+<img width="2510" height="1508" alt="image" src="https://github.com/user-attachments/assets/9a4d1c21-11e3-41a1-901b-274379b2ee32" />
 
 
 [![Watch the video](https://img.youtube.com/vi/Ewm-s5aoeLc/0.jpg)](https://www.youtube.com/watch?v=Ewm-s5aoeLc)
