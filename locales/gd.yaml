@@ -1,0 +1,254 @@
+# YAML localization file for Scottish Gaelic (gd)
+
+main:
+  title: "Rusty Pipes - Samhlaiche Oargan-pìoba Mas-fhìor v%{version}"
+  config_cancelled: "Rianachd air a chur dheth. A' fàgail."
+  loading_organ: "A' luchdachadh mìneachadh an oargain..."
+  loading_samples_fmt: "A' luchdachadh sampaill: [%{percent}] %{file}..."
+  loading_complete: "A' luchdachadh sampaill: [100%] Deiseil."
+  organ_loaded_fmt: "Oargan air a luchdachadh gu soirbheachail: %{name}"
+  found_stops_fmt: "Chaidh %{count} stop a lorg."
+  starting_audio: "A' tòiseachadh an einnsean fuaime..."
+  audio_running: "Einnsean fuaime a' ruith."
+  starting_midi_file: "A' tòiseachadh cluich faidhle MIDI: %{path}"
+  connecting_midi: "A' ceangal ri uidheam MIDI: %{name}"
+  no_midi_devices: "Chan eil uidheam MIDI an comas. A' ruith gun ion-chur MIDI."
+  shutting_down: "A' dùnadh..."
+  
+  list_devices_header: "Uidheaman Ion-chuir MIDI ri fhaighinn:"
+  list_devices_none: "  Cha deach uidheam MIDI a lorg."
+
+gui:
+  app_title_fmt: "Rusty Pipes - %{name}"
+  
+  footer_tip: "Leid: F1-F12 Ath-ghairm, Shift+F1-F12 Sàbhail, 'P' Clisgeadh, Saighdean Seòl, 1-0 Toglaich, E/R Ochdamh, +/- Meudachadh, [ / ] Polafonaidh"
+  recording_active: "A' CLÀRADH"
+  rec_midi_start: "⏺ Clàraich MIDI"
+  rec_midi_stop: "⏹ Stad MIDI"
+  rec_wav_start: "⏺ Clàraich WAV"
+  rec_wav_stop: "⏹ Stad WAV"
+
+  presets_heading: "Ro-shuidheachaidhean"
+  recall_label: "Ath-ghairm (F1-F12):"
+  save_label: "Sàbhail (Shift+F1-F12):"
+  default_preset_name_fmt: "Ro-shuidheachadh F%{num}"
+  tremulants_heading: "Critheachan"
+  no_tremulants: "Cha deach critheach a lorg."
+
+  audio_settings_heading: "Roghainnean Fuaime"
+  reverb_label: "Ath-fhuaim (Reverb):"
+  no_reverb: "Gun Ath-fhuaim"
+  reverb_mix_label: "Measgachadh Ath-fhuaim:"
+  master_gain_label: "Meudachadh Maighstir:"
+  vol_slider_text: "Fuaim"
+  gain_keys_hint: "Iuchraichean: +/-"
+  polyphony_label: "Polafonaidh:"
+  polyphony_keys_hint: "Iuchraichean: [ / ]"
+  
+  underrun_alert: "⚠ TEIP FUAIME (UNDERRUN) ⚠"
+  voices_fmt: "Guthan: %{voices}/%{poly}"
+  cpu_load_fmt: "Eallach CPU: %{load}%"
+
+  selected_stop_label: "Stop Taghte:"
+  no_selection: "Chan eil gin"
+  btn_all_channels: "A h-uile Seanail"
+  btn_no_channels: "Gun Seanail"
+  btn_panic: "CLISGEADH (A h-uile nòta dheth)"
+  panic_tooltip: "Stadaidh seo gach nòta a tha a' seinn"
+  no_stops_loaded: "Chan eil stop air a luchdachadh."
+
+  midi_log_heading: "Loga MIDI"
+  midi_activity_heading: "Gnìomhachd MIDI"
+
+  save_preset_title_fmt: "Sàbhail Ro-shuidheachadh F%{num}"
+  enter_name_prompt: "Cuir a-steach ainm airson an ro-shuidheachaidh:"
+  btn_cancel: "Sguir"
+  btn_save: "Sàbhail"
+
+errors:
+  midi_connect_fail: "Dh'fhàillig an ceangal ri %{name}: %{err}"
+  midi_fetch_fail: "Mearachd a' faighinn uidheaman MIDI: %{err}"
+  loading_ui_fail: "Dh'fhàillig luchdachadh an UI: %{err}"
+  recall_preset_fail: "MEARACHD ag ath-ghairm ro-shuidheachadh: %{err}"
+
+midi_config:
+  window_title_fmt: "Mapadh MIDI: %{name}"
+  heading: "Rianachd Seanail"
+  description: "Rèitich mar a thèid seanalan MIDI bhon uidheam seo a mhapadh gu seanalan taobh a-staigh an oargain."
+  mode_label: "Modh Mapaidh:"
+  mode_simple: "Simplidh"
+  mode_complex: "Iom-fhillte"
+  
+  simple_desc_1: "Anns a' Mhodh Shimplidh, thèid gach teachdaireachd MIDI bhon uidheam seo"
+  simple_desc_2: "a stiùireadh gu aon seanail targaid air an oargan."
+  target_channel_label: "Seanail Targaid:"
+  channel_fmt: "Seanail %{num}"
+  simple_hint: "Cleachd seo airson riaghladairean le meur-chlàr singilte."
+  
+  complex_desc: "Mapaich gach seanail ion-chuir sònraichte gu seanail targaid sònraichte."
+  col_input: "Seanail Ion-chuir"
+  col_target: "Seanail Targaid"
+  input_channel_fmt: "Ion-chur Seanail %{num}"
+  
+  btn_done: "Deiseil"
+
+midi_learn:
+  window_title_fmt: "Foghlam MIDI: %{name}"
+  description_1: "Rèitich mar a bhios tachartasan MIDI taobh a-muigh a' cumail smacht air an stop seo."
+  description_2: "Brùth 'Ionnsaich', an uairsin brùth iuchair air a' mheur-chlàr MIDI agad."
+  
+  col_internal_channel: "Seanail Taobh a-staigh"
+  col_enable_event: "Tachartas Comasachaidh"
+  col_disable_event: "Tachartas Neo-chomasachaidh"
+  col_actions: "Gnìomhan"
+  
+  channel_fmt: "Seanail %{num}"
+  status_listening: "Ag èisteachd..."
+  btn_learn: "Ionnsaich"
+  btn_clear: "Falamhaich"
+  
+  log_mapped_fmt: "Chaidh %{event} a mhapadh gu %{action}"
+  action_enable: "Cuir an comas"
+  action_disable: "Cuir à comas"
+
+config:
+  window_title: "Rianachd Rusty Pipes"
+  subtitle: "Indicia MMXXV"
+  
+  group_organ_file: "Faidhle Oargain:"
+  group_audio_device: "Uidheam Fuaime:"
+  group_sample_rate: "Reat Samplachaidh:"
+  group_midi_inputs: "Ion-chuir MIDI:"
+  group_midi_file: "Faidhle MIDI (Cluich):"
+  group_ir_file: "Ath-fhuaim (IR):"
+  group_reverb_mix: "Measgachadh Ath-fhuaim:"
+  group_gain: "Meudachadh:"
+  group_polyphony: "Polafonaidh:"
+  group_buffer: "Bufair Fuaime (frèamaichean):"
+  group_preload: "Ro-luchdachadh (frèamaichean):"
+  group_options: "Roghainnean:"
+  
+  tooltip_organ: "Tagh am faidhle oargan Hauptwerk (.organ no Organ_Hauptwerk_xml) ri luchdachadh."
+  tooltip_audio_device: "An t-uidheam a thèid a chleachdadh airson a' chlaistinn."
+  tooltip_sample_rate: "Am tricead aig an tèid an fhuaim a mheasgachadh. Cleachdaidh luachan nas àirde barrachd CPU."
+  tooltip_midi_inputs: "Tagh dè na h-uidheaman MIDI a thèid a chleachdadh gus an t-oargan a chluich."
+  tooltip_midi_file: "Tagh faidhle MIDI airson a chluich."
+  tooltip_ir_file: "Faidhle freagairt sparradh airson ath-fhuaim (WAV)."
+  tooltip_ir_folder: "Fosgail Pasgan Ath-fhuaim"
+  tooltip_reverb_mix: "Uiread de dh'ath-fhuaim ga chur an sàs. 0.0 = tioram (gun ath-fhuaim), 1.0 = fliuch (ath-fhuaim a-mhàin)."
+  tooltip_gain: "Meud iomlan na fuaime."
+  tooltip_polyphony: "An àireamh as motha de ghuthan aig an aon àm."
+  tooltip_buffer: "Àireamh de fhrèamaichean fuaime gach bufair. Lughdaichidh luachan àirde glitichean ach meudaichidh iad dàil."
+  tooltip_preload: "Thèid na ciad fhrèamaichean de gach sampall a ro-luchdachadh gu RAM."
+  tooltip_precache: "Cuir seo an comas gus gach sampall a luchdachadh gu tur gu RAM an àite a bhith gan sruthadh bhon diosg."
+  tooltip_convert: "Cuir seo an comas gus gach sampall a thionndadh gu 16-bit (sàbhaladh RAM)."
+  tooltip_tuning: "Cleachd gleusadh tùsail nan sampaill."
+  
+  chk_precache: "Ro-tasgadan Sampaill"
+  chk_convert: "Tionndaidh gu 16-bit"
+  chk_tuning: "Cleachd Gleusadh Tùsail"
+  
+  btn_browse: "Rannsaich..."
+  btn_clear: "Falamhaich"
+  btn_map: "⚙ Mapaich"
+  btn_quit: "Fàg"
+  btn_start: "Tòisich Rusty Pipes"
+  
+  status_no_devices: "Cha deach uidheam a lorg"
+  status_no_reverb: "Gun Ath-fhuaim"
+  status_default: "[ Bun-tomhas ]"
+  status_none: "Chan eil gin"
+  warn_select_organ: "Tagh Faidhle Oargain."
+  
+  picker_organ: "Tagh Faidhle Oargain"
+  picker_midi: "Tagh Faidhle MIDI (Roghainneil)"
+
+loading:
+  heading: "A' Luchdachadh Sampaill Oargain..."
+  window_title: "A' Luchdachadh..."
+  app_name: "Rusty Pipes a' Luchdachadh..."
+  status_init: "A' Tòiseachadh..."
+
+tui_config:
+  header_title: "Rianachd"
+  footer_nav: "Seòl: ↑/↓ | Enter: Tagh/Toglaich | S: Tòisich | Q: Fàg"
+  footer_midi: " Spàs: Toglaich | Enter: Rianachd | Esc: Air Ais "
+  
+  title_midi_devs: " Uidheaman MIDI "
+  title_select_audio: "Tagh Uidheam Fuaime (↑/↓, Enter, Esc)"
+  title_select_rate: "Tagh Reat Samplachaidh"
+  title_select_ir: "Tagh Freagairt Sparradh"
+  
+  prompt_reverb: "Cuir a-steach Measgachadh Ath-fhuaim (0.0 - 1.0)"
+  prompt_gain: "Cuir a-steach Meudachadh (0.0 - 1.0)"
+  prompt_poly: "Cuir a-steach Polafonaidh (1 - 1024)"
+  prompt_buffer: "Cuir a-steach Meud Bufair"
+  prompt_preload: "Cuir a-steach Frèamaichean Ro-luchdachadh"
+  prompt_generic: "Cuir a-steach Luach"
+
+  fmt_organ:       "Faidhle Oargain:  %{val}"
+  fmt_audio:       "Uidheam Fuaime:   %{val}"
+  fmt_rate:        "Reat Samplachaidh:%{val} Hz"
+  fmt_midi_devs:   "Ion-chuir MIDI:   %{count} an comas"
+  fmt_midi_file:   "Faidhle MIDI:     %{val}"
+  fmt_ir:          "Faidhle IR:       %{val}"
+  fmt_mix:         "Measgachadh:      %{val}"
+  fmt_gain:        "Meudachadh:       %{val}"
+  fmt_poly:        "Polafonaidh:      %{val}"
+  fmt_buffer:      "Bufair Fuaime:    %{val} frèamaichean"
+  fmt_preload:     "Ro-luchdachadh:   %{val} frèamaichean"
+  fmt_precache:    "Ro-tasgadan:      %{val}"
+  fmt_convert:     "Tionnd. gu 16-bit:%{val}"
+  fmt_tuning:      "Gleusadh Tùsail:  %{val}"
+  
+  val_on: "AIR"
+  val_off: "DHETH"
+
+tui_picker:
+  header_title_fmt: "%{title} (q gus fhàgail)"
+  current_path_fmt: "Slighe Làithreach: %{path}"
+  entries_title: "Nithean"
+  footer_nav: "Seòl: ↑/↓/PgUp/PgDn | Enter/→: Tagh | ←/Bksp: Suas | q: Fàg"
+  
+  err_read_dir: "Mearachd a' leughadh eòlaire: %{err}"
+  err_generic: "Mearachd: %{err}"
+
+tui_midi_learn:
+  hdr_internal: "Taobh a-staigh"
+  hdr_action: "Gnìomh"
+  
+  fmt_ch_short: "Sean %{num}"
+  cell_dash: "-"
+  
+  footer_help: "Saighdean: Seòl | Enter: Ionnsaich/Falamhaich | Esc: Dùin"
+
+tui_midi:
+  title_fmt: " Rèitich Mapadh: %{name} "
+  footer: " Enter: Deasaich/Toglaich | ↑/↓: Luach | Esc: Air Ais "
+  
+  mode_simple: "Simplidh (Gach Ion-chur -> Aon Targaid)"
+  mode_complex: "Iom-fhillte (Mapadh gach Seanail)"
+  
+  lbl_mode: "Modh: %{val}"
+  lbl_target: "Seanail Targaid: %{ch}"
+  lbl_complex: "Ion-chur Sean %{input} -> Targaid Sean %{out}"
+  
+  suffix_editing: "%{val} <A' Deasachadh>"
+
+tui:
+  status_rec_midi_wav: " [CLÀR MIDI+WAV] "
+  status_rec_midi: " [CLÀR MIDI] "
+  status_rec_wav: " [CLÀR WAV] "
+  
+  status_bar_fmt: "%{rec}CPU: %{cpu}% | Meud: %{gain}% | Guthan: %{active}/%{poly} | [Q]Fàg [P]Clisgeadh +/-:Meud E/R:Ochd [/]:Pola F1-12:Ath-gh Shift+F1-12:Sàbh [I]:Foghlam"
+  
+  err_underrun: "⚠ TEIP FUAIME (UNDERRUN) ⚠"
+  
+  save_title: "Sàbhail Ro-shuidheachadh"
+  save_header_fmt: "Sàbhail Ro-shuidheachadh F%{num}"
+  save_prompt: "Cuir a-steach ainm:"
+  save_footer: "Brùth [Enter] gus a shàbhaladh, [Esc] gus a chur dheth"
+  
+  no_stops: "Chan eil stop air a luchdachadh."
+  midi_log_title: "Loga MIDI"
+  piano_roll_title: "Piano Roll"

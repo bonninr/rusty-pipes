@@ -1,0 +1,254 @@
+# YAML localization file for Indonesian (id)
+
+main:
+  title: "Rusty Pipes - Simulator Organ Pipa Virtual v%{version}"
+  config_cancelled: "Konfigurasi dibatalkan. Keluar."
+  loading_organ: "Memuat definisi organ..."
+  loading_samples_fmt: "Memuat Sampel: [%{percent}] %{file}..."
+  loading_complete: "Memuat Sampel: [100%] Selesai."
+  organ_loaded_fmt: "Berhasil memuat organ: %{name}"
+  found_stops_fmt: "Ditemukan %{count} stop."
+  starting_audio: "Memulai mesin audio..."
+  audio_running: "Mesin audio berjalan."
+  starting_midi_file: "Memulai pemutaran file MIDI: %{path}"
+  connecting_midi: "Menghubungkan ke perangkat MIDI: %{name}"
+  no_midi_devices: "Tidak ada perangkat MIDI yang aktif. Berjalan tanpa input MIDI."
+  shutting_down: "Mematikan..."
+  
+  list_devices_header: "Perangkat Input MIDI yang Tersedia:"
+  list_devices_none: "  Tidak ada perangkat MIDI ditemukan."
+
+gui:
+  app_title_fmt: "Rusty Pipes - %{name}"
+  
+  footer_tip: "Tip: F1-F12 Panggil, Shift+F1-F12 Simpan, 'P' Panik, Panah Navigasi, 1-0 Beralih, E/R Oktaf, +/- Gain, [ / ] Polifoni"
+  recording_active: "MEREKAM"
+  rec_midi_start: "⏺ Rekam MIDI"
+  rec_midi_stop: "⏹ Stop MIDI"
+  rec_wav_start: "⏺ Rekam WAV"
+  rec_wav_stop: "⏹ Stop WAV"
+
+  presets_heading: "Preset"
+  recall_label: "Panggil (F1-F12):"
+  save_label: "Simpan (Shift+F1-F12):"
+  default_preset_name_fmt: "Preset F%{num}"
+  tremulants_heading: "Tremulant"
+  no_tremulants: "Tidak ada tremulant ditemukan."
+
+  audio_settings_heading: "Pengaturan Audio"
+  reverb_label: "Gema (Reverb):"
+  no_reverb: "Tanpa Reverb"
+  reverb_mix_label: "Campuran Reverb:"
+  master_gain_label: "Gain Utama:"
+  vol_slider_text: "Vol"
+  gain_keys_hint: "Tombol: +/-"
+  polyphony_label: "Polifoni:"
+  polyphony_keys_hint: "Tombol: [ / ]"
+  
+  underrun_alert: "⚠ AUDIO UNDERRUN (Terputus) ⚠"
+  voices_fmt: "Suara: %{voices}/%{poly}"
+  cpu_load_fmt: "Beban CPU: %{load}%"
+
+  selected_stop_label: "Stop Terpilih:"
+  no_selection: "Tidak Ada"
+  btn_all_channels: "Semua Saluran"
+  btn_no_channels: "Tanpa Saluran"
+  btn_panic: "PANIK (Matikan Nada)"
+  panic_tooltip: "Hentikan semua nada yang berbunyi"
+  no_stops_loaded: "Tidak ada stop dimuat."
+
+  midi_log_heading: "Log MIDI"
+  midi_activity_heading: "Aktivitas MIDI"
+
+  save_preset_title_fmt: "Simpan Preset F%{num}"
+  enter_name_prompt: "Masukkan nama untuk preset:"
+  btn_cancel: "Batal"
+  btn_save: "Simpan"
+
+errors:
+  midi_connect_fail: "Gagal terhubung ke %{name}: %{err}"
+  midi_fetch_fail: "Gagal mengambil perangkat MIDI: %{err}"
+  loading_ui_fail: "Gagal memuat UI: %{err}"
+  recall_preset_fail: "ERROR memanggil preset: %{err}"
+
+midi_config:
+  window_title_fmt: "Pemetaan MIDI: %{name}"
+  heading: "Konfigurasi Saluran"
+  description: "Konfigurasikan bagaimana saluran MIDI dari perangkat ini dipetakan ke saluran internal organ."
+  mode_label: "Mode Pemetaan:"
+  mode_simple: "Sederhana"
+  mode_complex: "Kompleks"
+  
+  simple_desc_1: "Dalam Mode Sederhana, semua pesan MIDI yang masuk dari perangkat ini"
+  simple_desc_2: "diarahkan ke satu saluran target pada organ."
+  target_channel_label: "Saluran Target:"
+  channel_fmt: "Saluran %{num}"
+  simple_hint: "Gunakan ini untuk pengontrol keyboard tunggal."
+  
+  complex_desc: "Petakan setiap saluran input tertentu ke saluran target tertentu."
+  col_input: "Saluran Input"
+  col_target: "Saluran Target"
+  input_channel_fmt: "Input Saluran %{num}"
+  
+  btn_done: "Selesai"
+
+midi_learn:
+  window_title_fmt: "Belajar MIDI: %{name}"
+  description_1: "Konfigurasikan bagaimana peristiwa MIDI eksternal mengontrol stop ini."
+  description_2: "Klik 'Belajar', lalu tekan tombol pada keyboard MIDI Anda."
+  
+  col_internal_channel: "Saluran Internal"
+  col_enable_event: "Event Aktifkan"
+  col_disable_event: "Event Nonaktifkan"
+  col_actions: "Aksi"
+  
+  channel_fmt: "Saluran %{num}"
+  status_listening: "Mendengarkan..."
+  btn_learn: "Belajar"
+  btn_clear: "Bersihkan"
+  
+  log_mapped_fmt: "Memetakan %{event} ke %{action}"
+  action_enable: "Aktifkan"
+  action_disable: "Nonaktifkan"
+
+config:
+  window_title: "Konfigurasi Rusty Pipes"
+  subtitle: "Indicia MMXXV"
+  
+  group_organ_file: "File Organ:"
+  group_audio_device: "Perangkat Audio:"
+  group_sample_rate: "Sample Rate:"
+  group_midi_inputs: "Input MIDI:"
+  group_midi_file: "File MIDI (Putar):"
+  group_ir_file: "Reverb (IR):"
+  group_reverb_mix: "Campuran Reverb:"
+  group_gain: "Gain:"
+  group_polyphony: "Polifoni:"
+  group_buffer: "Buffer Audio (frame):"
+  group_preload: "Preload (frame):"
+  group_options: "Opsi:"
+  
+  tooltip_organ: "Pilih file organ Hauptwerk (.organ atau Organ_Hauptwerk_xml) untuk dimuat."
+  tooltip_audio_device: "Perangkat yang akan digunakan untuk output audio."
+  tooltip_sample_rate: "Frekuensi pencampuran audio. Nilai yang lebih tinggi menggunakan lebih banyak CPU."
+  tooltip_midi_inputs: "Pilih perangkat MIDI yang akan digunakan untuk mengontrol organ."
+  tooltip_midi_file: "Pilih file MIDI untuk diputar."
+  tooltip_ir_file: "File respons impuls reverb konvolusi (WAV)."
+  tooltip_ir_folder: "Buka Folder Reverb"
+  tooltip_reverb_mix: "Jumlah reverb yang diterapkan. 0.0 = kering (tanpa reverb), 1.0 = basah (hanya reverb)."
+  tooltip_gain: "Volume output keseluruhan."
+  tooltip_polyphony: "Jumlah suara simultan maksimum."
+  tooltip_buffer: "Jumlah frame audio per buffer. Nilai yang lebih tinggi mengurangi gangguan tetapi meningkatkan latensi."
+  tooltip_preload: "Beberapa frame pertama dari setiap sampel akan dimuat sebelumnya ke RAM."
+  tooltip_precache: "Aktifkan ini untuk memuat semua sampel sepenuhnya ke RAM alih-alih streaming dari disk."
+  tooltip_convert: "Aktifkan ini untuk mengonversi semua sampel ke 16-bit (hemat RAM)."
+  tooltip_tuning: "Gunakan penyetelan asli dari sampel."
+  
+  chk_precache: "Pre-cache Sampel"
+  chk_convert: "Konversi ke 16-bit"
+  chk_tuning: "Gunakan Penyetelan Asli"
+  
+  btn_browse: "Telusuri..."
+  btn_clear: "Bersihkan"
+  btn_map: "⚙ Peta"
+  btn_quit: "Keluar"
+  btn_start: "Mulai Rusty Pipes"
+  
+  status_no_devices: "Tidak ada perangkat ditemukan"
+  status_no_reverb: "Tanpa Reverb"
+  status_default: "[ Default ]"
+  status_none: "Tidak Ada"
+  warn_select_organ: "Silakan pilih File Organ."
+  
+  picker_organ: "Pilih File Organ"
+  picker_midi: "Pilih File MIDI (Opsional)"
+
+loading:
+  heading: "Memuat Sampel Organ..."
+  window_title: "Memuat..."
+  app_name: "Rusty Pipes Memuat..."
+  status_init: "Menginisialisasi..."
+
+tui_config:
+  header_title: "Konfigurasi"
+  footer_nav: "Nav: ↑/↓ | Enter: Pilih/Beralih | S: Mulai | Q: Keluar"
+  footer_midi: " Spasi: Beralih | Enter: Konfig | Esc: Kembali "
+  
+  title_midi_devs: " Perangkat MIDI "
+  title_select_audio: "Pilih Perangkat Audio (↑/↓, Enter, Esc)"
+  title_select_rate: "Pilih Sample Rate"
+  title_select_ir: "Pilih Respons Impuls"
+  
+  prompt_reverb: "Masukkan Campuran Reverb (0.0 - 1.0)"
+  prompt_gain: "Masukkan Gain (0.0 - 1.0)"
+  prompt_poly: "Masukkan Polifoni (1 - 1024)"
+  prompt_buffer: "Masukkan Ukuran Buffer"
+  prompt_preload: "Masukkan Frame Preload"
+  prompt_generic: "Masukkan Nilai"
+
+  fmt_organ:       "File Organ:       %{val}"
+  fmt_audio:       "Perangkat Audio:  %{val}"
+  fmt_rate:        "Sample Rate:      %{val} Hz"
+  fmt_midi_devs:   "Input MIDI:       %{count} aktif"
+  fmt_midi_file:   "File MIDI:        %{val}"
+  fmt_ir:          "File IR Reverb:   %{val}"
+  fmt_mix:         "Campuran Reverb:  %{val}"
+  fmt_gain:        "Gain:             %{val}"
+  fmt_poly:        "Polifoni:         %{val}"
+  fmt_buffer:      "Buffer Audio:     %{val} frame"
+  fmt_preload:     "Preload:          %{val} frame"
+  fmt_precache:    "Pre-cache:        %{val}"
+  fmt_convert:     "Konv. 16-bit:     %{val}"
+  fmt_tuning:      "Penyetelan Asli:  %{val}"
+  
+  val_on: "NYALA"
+  val_off: "MATI"
+
+tui_picker:
+  header_title_fmt: "%{title} (q untuk keluar)"
+  current_path_fmt: "Jalur Saat Ini: %{path}"
+  entries_title: "Entri"
+  footer_nav: "Nav: ↑/↓/PgUp/PgDn | Enter/→: Pilih | ←/Bksp: Naik | q: Keluar"
+  
+  err_read_dir: "Gagal membaca direktori: %{err}"
+  err_generic: "Error: %{err}"
+
+tui_midi_learn:
+  hdr_internal: "Internal"
+  hdr_action: "Aksi"
+  
+  fmt_ch_short: "Sal %{num}"
+  cell_dash: "-"
+  
+  footer_help: "Panah: Navigasi | Enter: Belajar/Bersihkan | Esc: Tutup"
+
+tui_midi:
+  title_fmt: " Konfigurasi Pemetaan: %{name} "
+  footer: " Enter: Edit/Beralih | ↑/↓: Nilai | Esc: Kembali "
+  
+  mode_simple: "Sederhana (Semua Input -> Satu Target)"
+  mode_complex: "Kompleks (Pemetaan per Saluran)"
+  
+  lbl_mode: "Mode: %{val}"
+  lbl_target: "Saluran Target: %{ch}"
+  lbl_complex: "Input Sal %{input} -> Target Sal %{out}"
+  
+  suffix_editing: "%{val} <Mengedit>"
+
+tui:
+  status_rec_midi_wav: " [REK MIDI+WAV] "
+  status_rec_midi: " [REK MIDI] "
+  status_rec_wav: " [REK WAV] "
+  
+  status_bar_fmt: "%{rec}CPU: %{cpu}% | Gain: %{gain}% | Suara: %{active}/%{poly} | [Q]Keluar [P]anik +/-:Gain E/R:Okt [/]:Poli F1-12:Panggil Shift+F1-12:Simpan [I]:MIDI Belajar"
+  
+  err_underrun: "⚠ AUDIO UNDERRUN (Terputus) ⚠"
+  
+  save_title: "Simpan Preset"
+  save_header_fmt: "Simpan Preset F%{num}"
+  save_prompt: "Masukkan nama:"
+  save_footer: "Tekan [Enter] untuk menyimpan, [Esc] untuk batal"
+  
+  no_stops: "Tidak ada stop dimuat."
+  midi_log_title: "Log MIDI"
+  piano_roll_title: "Piano Roll"

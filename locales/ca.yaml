@@ -1,0 +1,254 @@
+# YAML localization file for Catalan (ca)
+
+main:
+  title: "Rusty Pipes - Simulador d'Orgue de Tub Virtual v%{version}"
+  config_cancelled: "Configuració cancel·lada. Sortint."
+  loading_organ: "Carregant definició de l'orgue..."
+  loading_samples_fmt: "Carregant mostres: [%{percent}] %{file}..."
+  loading_complete: "Carregant mostres: [100%] Complet."
+  organ_loaded_fmt: "Orgue carregat correctament: %{name}"
+  found_stops_fmt: "S'han trobat %{count} registres."
+  starting_audio: "Iniciant motor d'àudio..."
+  audio_running: "Motor d'àudio en execució."
+  starting_midi_file: "Iniciant reproducció de fitxer MIDI: %{path}"
+  connecting_midi: "Connectant al dispositiu MIDI: %{name}"
+  no_midi_devices: "Cap dispositiu MIDI habilitat. Executant sense entrada MIDI."
+  shutting_down: "Tancant..."
+  
+  list_devices_header: "Dispositius d'Entrada MIDI Disponibles:"
+  list_devices_none: "  No s'han trobat dispositius MIDI."
+
+gui:
+  app_title_fmt: "Rusty Pipes - %{name}"
+  
+  footer_tip: "Consell: F1-F12 Carregar, Shift+F1-F12 Desar, 'P' Pànic, Fletxes Navegar, 1-0 Commutar, E/R Octava, +/- Guany, [ / ] Polifonia"
+  recording_active: "ENREGISTRANT"
+  rec_midi_start: "⏺ Enr. MIDI"
+  rec_midi_stop: "⏹ Stop MIDI"
+  rec_wav_start: "⏺ Enr. WAV"
+  rec_wav_stop: "⏹ Stop WAV"
+
+  presets_heading: "Preestablerts"
+  recall_label: "Carregar (F1-F12):"
+  save_label: "Desar (Shift+F1-F12):"
+  default_preset_name_fmt: "Preestablert F%{num}"
+  tremulants_heading: "Tremolants"
+  no_tremulants: "No s'han trobat tremolants."
+
+  audio_settings_heading: "Configuració d'Àudio"
+  reverb_label: "Reverberació:"
+  no_reverb: "Sense Reverb"
+  reverb_mix_label: "Mescla Reverb:"
+  master_gain_label: "Guany Mestre:"
+  vol_slider_text: "Vol"
+  gain_keys_hint: "Tecles: +/-"
+  polyphony_label: "Polifonia:"
+  polyphony_keys_hint: "Tecles: [ / ]"
+  
+  underrun_alert: "⚠ TALL D'ÀUDIO (UNDERRUN) ⚠"
+  voices_fmt: "Veus: %{voices}/%{poly}"
+  cpu_load_fmt: "Càrrega CPU: %{load}%"
+
+  selected_stop_label: "Registre Seleccionat:"
+  no_selection: "Cap"
+  btn_all_channels: "Tots els Canals"
+  btn_no_channels: "Cap Canal"
+  btn_panic: "PÀNIC (Apagar Notes)"
+  panic_tooltip: "Atura totes les notes que sonen"
+  no_stops_loaded: "No hi ha registres carregats."
+
+  midi_log_heading: "Registre MIDI"
+  midi_activity_heading: "Activitat MIDI"
+
+  save_preset_title_fmt: "Desar Preestablert F%{num}"
+  enter_name_prompt: "Introdueix un nom per al preestablert:"
+  btn_cancel: "Cancel·lar"
+  btn_save: "Desar"
+
+errors:
+  midi_connect_fail: "Error en connectar a %{name}: %{err}"
+  midi_fetch_fail: "Error en obtenir dispositius MIDI: %{err}"
+  loading_ui_fail: "Error en carregar la UI: %{err}"
+  recall_preset_fail: "ERROR en carregar preestablert: %{err}"
+
+midi_config:
+  window_title_fmt: "Mapeig MIDI: %{name}"
+  heading: "Configuració de Canals"
+  description: "Configura com els canals MIDI d'aquest dispositiu s'assignen als canals interns de l'orgue."
+  mode_label: "Mode de Mapeig:"
+  mode_simple: "Simple"
+  mode_complex: "Complex"
+  
+  simple_desc_1: "En Mode Simple, tots els missatges MIDI entrants d'aquest dispositiu"
+  simple_desc_2: "s'envien a un únic canal de destí a l'orgue."
+  target_channel_label: "Canal de Destí:"
+  channel_fmt: "Canal %{num}"
+  simple_hint: "Utilitza això per a controladors d'un sol teclat."
+  
+  complex_desc: "Assigna cada canal d'entrada específic a un canal de destí específic."
+  col_input: "Canal Entrada"
+  col_target: "Canal Destí"
+  input_channel_fmt: "Entrada Canal %{num}"
+  
+  btn_done: "Fet"
+
+midi_learn:
+  window_title_fmt: "Aprendre MIDI: %{name}"
+  description_1: "Configura com els esdeveniments MIDI externs controlen aquest registre."
+  description_2: "Fes clic a 'Aprendre', després prem una tecla al teu teclat MIDI."
+  
+  col_internal_channel: "Canal Intern"
+  col_enable_event: "Esdeveniment Activar"
+  col_disable_event: "Esdeveniment Desactivar"
+  col_actions: "Accions"
+  
+  channel_fmt: "Canal %{num}"
+  status_listening: "Escoltant..."
+  btn_learn: "Aprendre"
+  btn_clear: "Netejar"
+  
+  log_mapped_fmt: "Mapejat %{event} a %{action}"
+  action_enable: "Activar"
+  action_disable: "Desactivar"
+
+config:
+  window_title: "Configuració Rusty Pipes"
+  subtitle: "Indicia MMXXV"
+  
+  group_organ_file: "Fitxer d'Orgue:"
+  group_audio_device: "Dispositiu d'Àudio:"
+  group_sample_rate: "Freqüència de Mostreig:"
+  group_midi_inputs: "Entrades MIDI:"
+  group_midi_file: "Fitxer MIDI (Reprod.):"
+  group_ir_file: "Reverb (IR):"
+  group_reverb_mix: "Mescla Reverb:"
+  group_gain: "Guany:"
+  group_polyphony: "Polifonia:"
+  group_buffer: "Búfer d'Àudio (marcs):"
+  group_preload: "Precàrrega (marcs):"
+  group_options: "Opcions:"
+  
+  tooltip_organ: "Selecciona el fitxer d'orgue Hauptwerk (.organ o Organ_Hauptwerk_xml) per carregar."
+  tooltip_audio_device: "El dispositiu que s'utilitzarà per a la sortida d'àudio."
+  tooltip_sample_rate: "La freqüència a la qual es barrejarà l'àudio. Valors més alts utilitzen més CPU."
+  tooltip_midi_inputs: "Selecciona quins dispositius MIDI s'utilitzaran per controlar l'orgue."
+  tooltip_midi_file: "Selecciona un fitxer MIDI per reproduir."
+  tooltip_ir_file: "Fitxer de resposta a l'impuls per a reverberació per convolució (WAV)."
+  tooltip_ir_folder: "Obrir Carpeta de Reverb"
+  tooltip_reverb_mix: "Quantitat de reverberació aplicada. 0.0 = sec (sense reverb), 1.0 = humit (només reverb)."
+  tooltip_gain: "Volum general de sortida."
+  tooltip_polyphony: "Nombre màxim de veus simultànies."
+  tooltip_buffer: "Nombre de marcs d'àudio per búfer. Valors més alts redueixen talls però augmenten la latència."
+  tooltip_preload: "Els primers marcs de cada mostra es precarregaran a la RAM."
+  tooltip_precache: "Activa això per carregar completament totes les mostres a la RAM en lloc de reproduir-les des del disc."
+  tooltip_convert: "Activa això per convertir totes les mostres a 16 bits (estalvi de RAM)."
+  tooltip_tuning: "Utilitza l'afinació original de les mostres."
+  
+  chk_precache: "Pre-caché de Mostres"
+  chk_convert: "Convertir a 16-bit"
+  chk_tuning: "Utilitzar Afinació Original"
+  
+  btn_browse: "Navegar..."
+  btn_clear: "Netejar"
+  btn_map: "⚙ Mapejar"
+  btn_quit: "Sortir"
+  btn_start: "Iniciar Rusty Pipes"
+  
+  status_no_devices: "No s'han trobat dispositius"
+  status_no_reverb: "Sense Reverb"
+  status_default: "[ Per Defecte ]"
+  status_none: "Cap"
+  warn_select_organ: "Si us plau, selecciona un Fitxer d'Orgue."
+  
+  picker_organ: "Seleccionar Fitxer d'Orgue"
+  picker_midi: "Seleccionar Fitxer MIDI (Opcional)"
+
+loading:
+  heading: "Carregant Mostres de l'Orgue..."
+  window_title: "Carregant..."
+  app_name: "Rusty Pipes Carregant..."
+  status_init: "Inicialitzant..."
+
+tui_config:
+  header_title: "Configuració"
+  footer_nav: "Nav: ↑/↓ | Enter: Selec/Commutar | S: Iniciar | Q: Sortir"
+  footer_midi: " Espai: Commutar | Enter: Config | Esc: Enrere "
+  
+  title_midi_devs: " Dispositius MIDI "
+  title_select_audio: "Selec. Disp. Àudio (↑/↓, Enter, Esc)"
+  title_select_rate: "Selec. Freqüència Mostreig"
+  title_select_ir: "Selec. Resposta Impuls"
+  
+  prompt_reverb: "Introdueix Mescla Reverb (0.0 - 1.0)"
+  prompt_gain: "Introdueix Guany (0.0 - 1.0)"
+  prompt_poly: "Introdueix Polifonia (1 - 1024)"
+  prompt_buffer: "Introdueix Mida Búfer"
+  prompt_preload: "Introdueix Marcs Precàrrega"
+  prompt_generic: "Introdueix Valor"
+
+  fmt_organ:       "Fitxer Orgue:     %{val}"
+  fmt_audio:       "Disp. Àudio:      %{val}"
+  fmt_rate:        "Freq. Mostreig:   %{val} Hz"
+  fmt_midi_devs:   "Entrades MIDI:    %{count} activades"
+  fmt_midi_file:   "Fitxer MIDI:      %{val}"
+  fmt_ir:          "Fitxer IR Reverb: %{val}"
+  fmt_mix:         "Mescla Reverb:    %{val}"
+  fmt_gain:        "Guany:            %{val}"
+  fmt_poly:        "Polifonia:        %{val}"
+  fmt_buffer:      "Búfer Àudio:      %{val} marcs"
+  fmt_preload:     "Precàrrega:       %{val} marcs"
+  fmt_precache:    "Pre-caché:        %{val}"
+  fmt_convert:     "Conv. 16-bit:     %{val}"
+  fmt_tuning:      "Afinació Orig.:   %{val}"
+  
+  val_on: "ON"
+  val_off: "OFF"
+
+tui_picker:
+  header_title_fmt: "%{title} (q per sortir)"
+  current_path_fmt: "Ruta Actual: %{path}"
+  entries_title: "Elements"
+  footer_nav: "Nav: ↑/↓/PgUp/PgDn | Enter/→: Selec | ←/Bksp: Amunt | q: Sortir"
+  
+  err_read_dir: "Error llegint directori: %{err}"
+  err_generic: "Error: %{err}"
+
+tui_midi_learn:
+  hdr_internal: "Intern"
+  hdr_action: "Acció"
+  
+  fmt_ch_short: "Can %{num}"
+  cell_dash: "-"
+  
+  footer_help: "Fletxes: Navegar | Enter: Aprendre/Netejar | Esc: Tancar"
+
+tui_midi:
+  title_fmt: " Configurar Mapeig: %{name} "
+  footer: " Enter: Editar/Commutar | ↑/↓: Valor | Esc: Enrere "
+  
+  mode_simple: "Simple (Totes Entrades -> Un Destí)"
+  mode_complex: "Complex (Mapeig per Canal)"
+  
+  lbl_mode: "Mode: %{val}"
+  lbl_target: "Canal Destí: %{ch}"
+  lbl_complex: "Entrada Can %{input} -> Destí Can %{out}"
+  
+  suffix_editing: "%{val} <Editant>"
+
+tui:
+  status_rec_midi_wav: " [REC MIDI+WAV] "
+  status_rec_midi: " [REC MIDI] "
+  status_rec_wav: " [REC WAV] "
+  
+  status_bar_fmt: "%{rec}CPU: %{cpu}% | Guany: %{gain}% | Veus: %{active}/%{poly} | [Q]Sortir [P]ànic +/-:Guany E/R:Oct [/]:Poli F1-12:Carregar Shift+F1-12:Desar [I]:MIDI Learn"
+  
+  err_underrun: "⚠ TALL D'ÀUDIO (UNDERRUN) ⚠"
+  
+  save_title: "Desar Preestablert"
+  save_header_fmt: "Desar Preestablert F%{num}"
+  save_prompt: "Introdueix un nom:"
+  save_footer: "Prem [Enter] per desar, [Esc] per cancel·lar"
+  
+  no_stops: "No hi ha registres carregats."
+  midi_log_title: "Registre MIDI"
+  piano_roll_title: "Piano Roll"

@@ -1,0 +1,254 @@
+# Yaml localization file for Esperanto (eo)
+
+main:
+  title: "Rusty Pipes - Virtuala Orgen-Simulilo v%{version}"
+  config_cancelled: "Agordo nuligita. Elirante."
+  loading_organ: "Ŝarĝante orgen-difinon..."
+  loading_samples_fmt: "Ŝarĝante specimenojn: [%{percent}] %{file}..."
+  loading_complete: "Ŝarĝante specimenojn: [100%] Kompleta."
+  organ_loaded_fmt: "Sukcese ŝarĝis orgenon: %{name}"
+  found_stops_fmt: "Trovis %{count} registrojn."
+  starting_audio: "Startigante aŭd-motoron..."
+  audio_running: "Aŭd-motoro funkcias."
+  starting_midi_file: "Komencante ludadon de MIDI-dosiero: %{path}"
+  connecting_midi: "Konektante al MIDI-aparato: %{name}"
+  no_midi_devices: "Neniu MIDI-aparato ebligita. Rulante sen MIDI-enigo."
+  shutting_down: "Malŝaltante..."
+  
+  list_devices_header: "Disponeblaj MIDI-enigaj aparatoj:"
+  list_devices_none: "  Neniu MIDI-aparato trovita."
+
+gui:
+  app_title_fmt: "Rusty Pipes - %{name}"
+  
+  footer_tip: "Konsilo: F1-F12 Revoki, Shift+F1-F12 Konservi, 'P' Paniko, Sagoj Navigi, 1-0 Baskuli, E/R Oktavo, +/- Gajno, [ / ] Polifonio"
+  recording_active: "REGISTRANTE"
+  rec_midi_start: "⏺ Reg MIDI"
+  rec_midi_stop: "⏹ Stop MIDI"
+  rec_wav_start: "⏺ Reg WAV"
+  rec_wav_stop: "⏹ Stop WAV"
+
+  presets_heading: "Antaŭagordoj"
+  recall_label: "Revoki (F1-F12):"
+  save_label: "Konservi (Shift+F1-F12):"
+  default_preset_name_fmt: "Antaŭagordo F%{num}"
+  tremulants_heading: "Tremoliloj"
+  no_tremulants: "Neniu tremolilo trovita."
+
+  audio_settings_heading: "Aŭd-Agordoj"
+  reverb_label: "Reversono (Reverb):"
+  no_reverb: "Sen Reversono"
+  reverb_mix_label: "Miksaĵo de Reversono:"
+  master_gain_label: "Ĉefa Gajno:"
+  vol_slider_text: "Vol"
+  gain_keys_hint: "Klavoj: +/-"
+  polyphony_label: "Polifonio:"
+  polyphony_keys_hint: "Klavoj: [ / ]"
+  
+  underrun_alert: "⚠ AŬDA SUBFLUO (UNDERRUN) ⚠"
+  voices_fmt: "Voĉoj: %{voices}/%{poly}"
+  cpu_load_fmt: "CPU-Ŝarĝo: %{load}%"
+
+  selected_stop_label: "Elektita Registro:"
+  no_selection: "Neniu"
+  btn_all_channels: "Ĉiuj Kanaloj"
+  btn_no_channels: "Neniu Kanalo"
+  btn_panic: "PANIKO (Ĉiuj Notoj For)"
+  panic_tooltip: "Haltigas ĉiujn sonantajn notojn"
+  no_stops_loaded: "Neniu registro ŝarĝita."
+
+  midi_log_heading: "MIDI-Loglibro"
+  midi_activity_heading: "MIDI-Aktiveco"
+
+  save_preset_title_fmt: "Konservi Antaŭagordon F%{num}"
+  enter_name_prompt: "Tajpu nomon por la antaŭagordo:"
+  btn_cancel: "Nuligi"
+  btn_save: "Konservi"
+
+errors:
+  midi_connect_fail: "Malsukcesis konekti al %{name}: %{err}"
+  midi_fetch_fail: "Eraro dum ricevado de MIDI-aparatoj: %{err}"
+  loading_ui_fail: "Ŝarĝado de UI malsukcesis: %{err}"
+  recall_preset_fail: "ERARO dum revoko de antaŭagordo: %{err}"
+
+midi_config:
+  window_title_fmt: "MIDI-Mapado: %{name}"
+  heading: "Kanala Agordo"
+  description: "Agordu kiel MIDI-kanaloj de ĉi tiu aparato mapas al la internaj kanaloj de la orgeno."
+  mode_label: "Map-Reĝimo:"
+  mode_simple: "Simpla"
+  mode_complex: "Kompleksa"
+  
+  simple_desc_1: "En Simpla Reĝimo, ĉiuj MIDI-mesaĝoj de ĉi tiu aparato"
+  simple_desc_2: "estas direktitaj al unuopa cel-kanalo en la orgeno."
+  target_channel_label: "Cel-Kanalo:"
+  channel_fmt: "Kanalo %{num}"
+  simple_hint: "Uzu ĉi tion por unuopaj klavaroj."
+  
+  complex_desc: "Mapu ĉiun specifan enig-kanalon al specifa cel-kanalo."
+  col_input: "Enig-Kanalo"
+  col_target: "Cel-Kanalo"
+  input_channel_fmt: "Enig-Kanalo %{num}"
+  
+  btn_done: "Farita"
+
+midi_learn:
+  window_title_fmt: "MIDI-Lernado: %{name}"
+  description_1: "Agordu kiel eksteraj MIDI-eventoj regas ĉi tiun registron."
+  description_2: "Alklaku 'Lerni', tiam premu klavon sur via MIDI-klavaro."
+  
+  col_internal_channel: "Interna Kanalo"
+  col_enable_event: "Ebliga Evento"
+  col_disable_event: "Malebliga Evento"
+  col_actions: "Agoj"
+  
+  channel_fmt: "Kanalo %{num}"
+  status_listening: "Aŭskultante..."
+  btn_learn: "Lerni"
+  btn_clear: "Vakigi"
+  
+  log_mapped_fmt: "Mapis %{event} al %{action}"
+  action_enable: "Ebligi"
+  action_disable: "Malebligi"
+
+config:
+  window_title: "Agordo de Rusty Pipes"
+  subtitle: "Indicia MMXXV"
+  
+  group_organ_file: "Orgen-Dosiero:"
+  group_audio_device: "Aŭd-Aparato:"
+  group_sample_rate: "Specimena Ofteco:"
+  group_midi_inputs: "MIDI-Enigoj:"
+  group_midi_file: "MIDI-Dosiero (Ludado):"
+  group_ir_file: "Reversono (IR):"
+  group_reverb_mix: "Miksaĵo de Reversono:"
+  group_gain: "Gajno:"
+  group_polyphony: "Polifonio:"
+  group_buffer: "Aŭd-Bufro (kadroj):"
+  group_preload: "Antaŭŝarĝo (kadroj):"
+  group_options: "Opcioj:"
+  
+  tooltip_organ: "Elektu la Hauptwerk-orgenan dosieron (.organ aŭ Organ_Hauptwerk_xml) por ŝarĝi."
+  tooltip_audio_device: "La aparato uzota por aŭd-eligo."
+  tooltip_sample_rate: "La ofteco je kiu la aŭdio estos miksita. Pli altaj valoroj uzas pli da CPU."
+  tooltip_midi_inputs: "Elektu kiujn MIDI-aparatojn uzi por ludi la orgenon."
+  tooltip_midi_file: "Elektu MIDI-dosieron por ludi."
+  tooltip_ir_file: "Dosiero de impulsa respondo por konvolucia reversono (WAV)."
+  tooltip_ir_folder: "Malfermi Dosierujon de Reversono"
+  tooltip_reverb_mix: "Kvanto de reversono aplikata. 0.0 = seka (neniu reversono), 1.0 = malseka (nur reversono)."
+  tooltip_gain: "Ĝenerala eliga laŭteco."
+  tooltip_polyphony: "Maksimuma nombro de samtempaj voĉoj."
+  tooltip_buffer: "Nombro de aŭd-kadroj por bufro. Pli altaj valoroj reduktas problemojn sed pliigas latentecon."
+  tooltip_preload: "La unuaj kadroj de ĉiu specimeno estos antaŭŝarĝitaj en RAM."
+  tooltip_precache: "Ebligu ĉi tion por plene ŝarĝi ĉiujn specimenojn en RAM anstataŭ elsendi ilin de disko."
+  tooltip_convert: "Ebligu ĉi tion por konverti ĉiujn specimenojn al 16-bita (ŝparas RAM)."
+  tooltip_tuning: "Uzu la originalan agordon de la specimenoj."
+  
+  chk_precache: "Antaŭ-kaŝmemori Specimenojn"
+  chk_convert: "Konverti al 16-bita"
+  chk_tuning: "Uzi Originalan Agordon"
+  
+  btn_browse: "Foliumi..."
+  btn_clear: "Vakigi"
+  btn_map: "⚙ Mapi"
+  btn_quit: "Forlasi"
+  btn_start: "Starti Rusty Pipes"
+  
+  status_no_devices: "Neniu aparato trovita"
+  status_no_reverb: "Sen Reversono"
+  status_default: "[ Defaŭlta ]"
+  status_none: "Neniu"
+  warn_select_organ: "Bonvolu elekti Orgen-Dosieron."
+  
+  picker_organ: "Elekti Orgen-Dosieron"
+  picker_midi: "Elekti MIDI-Dosieron (Laŭvola)"
+
+loading:
+  heading: "Ŝarĝante Orgen-Specimenojn..."
+  window_title: "Ŝarĝante..."
+  app_name: "Rusty Pipes Ŝarĝante..."
+  status_init: "Komencante..."
+
+tui_config:
+  header_title: "Agordo"
+  footer_nav: "Nav: ↑/↓ | Eniro: Elekti/Baskuli | S: Starti | Q: Forlasi"
+  footer_midi: " Spaco: Baskuli | Eniro: Agordi | Esc: Reen "
+  
+  title_midi_devs: " MIDI-Aparatoj "
+  title_select_audio: "Elektu Aŭd-Aparaton (↑/↓, Eniro, Esc)"
+  title_select_rate: "Elektu Specimenan Oftecon"
+  title_select_ir: "Elektu Impulsan Respondon"
+  
+  prompt_reverb: "Enigu Miksaĵon de Reversono (0.0 - 1.0)"
+  prompt_gain: "Enigu Gajnon (0.0 - 1.0)"
+  prompt_poly: "Enigu Polifonion (1 - 1024)"
+  prompt_buffer: "Enigu Bufron-Grandecon"
+  prompt_preload: "Enigu Antaŭŝarĝajn Kadrojn"
+  prompt_generic: "Enigu Valoron"
+
+  fmt_organ:       "Orgen-Dosiero:    %{val}"
+  fmt_audio:       "Aŭd-Aparato:      %{val}"
+  fmt_rate:        "Specimena Ofteco: %{val} Hz"
+  fmt_midi_devs:   "MIDI-Enigoj:      %{count} ebligitaj"
+  fmt_midi_file:   "MIDI-Dosiero:     %{val}"
+  fmt_ir:          "IR-Dosiero:       %{val}"
+  fmt_mix:         "Miksaĵo de Rev:   %{val}"
+  fmt_gain:        "Gajno:            %{val}"
+  fmt_poly:        "Polifonio:        %{val}"
+  fmt_buffer:      "Aŭd-Bufro:        %{val} kadroj"
+  fmt_preload:     "Antaŭŝarĝo:       %{val} kadroj"
+  fmt_precache:    "Antaŭ-kaŝmemoro:  %{val}"
+  fmt_convert:     "Konv. al 16-bita: %{val}"
+  fmt_tuning:      "Orig. Agordo:     %{val}"
+  
+  val_on: "ON"
+  val_off: "OFF"
+
+tui_picker:
+  header_title_fmt: "%{title} (q por forlasi)"
+  current_path_fmt: "Nuna Vojo: %{path}"
+  entries_title: "Eroj"
+  footer_nav: "Nav: ↑/↓/PgUp/PgDn | Eniro/→: Elekti | ←/Bksp: Supren | q: Forlasi"
+  
+  err_read_dir: "Eraro legante dosierujon: %{err}"
+  err_generic: "Eraro: %{err}"
+
+tui_midi_learn:
+  hdr_internal: "Interna"
+  hdr_action: "Ago"
+  
+  fmt_ch_short: "Kan %{num}"
+  cell_dash: "-"
+  
+  footer_help: "Sagoj: Navigi | Eniro: Lerni/Vakigi | Esc: Fermi"
+
+tui_midi:
+  title_fmt: " Agordi Mapadon: %{name} "
+  footer: " Eniro: Redakti/Baskuli | ↑/↓: Valoro | Esc: Reen "
+  
+  mode_simple: "Simpla (Ĉiuj Enigoj -> Unu Celo)"
+  mode_complex: "Kompleksa (Mapado laŭ Kanalo)"
+  
+  lbl_mode: "Reĝimo: %{val}"
+  lbl_target: "Cel-Kanalo: %{ch}"
+  lbl_complex: "Enig-Kan %{input} -> Cel-Kan %{out}"
+  
+  suffix_editing: "%{val} <Redaktante>"
+
+tui:
+  status_rec_midi_wav: " [REG MIDI+WAV] "
+  status_rec_midi: " [REG MIDI] "
+  status_rec_wav: " [REG WAV] "
+  
+  status_bar_fmt: "%{rec}CPU: %{cpu}% | Gajno: %{gain}% | Voĉoj: %{active}/%{poly} | [Q]Forlasi [P]aniko +/-:Gajno E/R:Okt [/]:Pol F1-12:Revoki Shift+F1-12:Konservi [I]:Lerni"
+  
+  err_underrun: "⚠ AŬDA SUBFLUO (UNDERRUN) ⚠"
+  
+  save_title: "Konservi Antaŭagordon"
+  save_header_fmt: "Konservi Antaŭagordon F%{num}"
+  save_prompt: "Enigu nomon:"
+  save_footer: "Premu [Eniro] por konservi, [Esc] por nuligi"
+  
+  no_stops: "Neniu registro ŝarĝita."
+  midi_log_title: "MIDI-Loglibro"
+  piano_roll_title: "Piano Roll"

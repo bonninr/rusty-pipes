@@ -1,0 +1,254 @@
+# YAML localization file for Irish (ga)
+
+main:
+  title: "Rusty Pipes - Insamhlóir Orgáin Píopa Fíorúil v%{version}"
+  config_cancelled: "Cumraíocht curtha ar ceal. Ag scor."
+  loading_organ: "Sainmhíniú orgáin á luchtú..."
+  loading_samples_fmt: "Samplaí á luchtú: [%{percent}] %{file}..."
+  loading_complete: "Samplaí á luchtú: [100%] Críochnaithe."
+  organ_loaded_fmt: "D'éirigh leis an orgán a luchtú: %{name}"
+  found_stops_fmt: "Aimsíodh %{count} stop."
+  starting_audio: "Inneall fuaime á thosú..."
+  audio_running: "Inneall fuaime ag rith."
+  starting_midi_file: "Ag tosú ag seinm comhad MIDI: %{path}"
+  connecting_midi: "Ag nascadh le gléas MIDI: %{name}"
+  no_midi_devices: "Níl aon ghléas MIDI cumasaithe. Ag rith gan ionchur MIDI."
+  shutting_down: "Ag múchadh..."
+  
+  list_devices_header: "Gléasanna Ionchuir MIDI ar Fáil:"
+  list_devices_none: "  Níor aimsíodh aon ghléas MIDI."
+
+gui:
+  app_title_fmt: "Rusty Pipes - %{name}"
+  
+  footer_tip: "Leid: F1-F12 Aisghairm, Shift+F1-F12 Sábháil, 'P' Scaoll, Saigheada Nascleanúint, 1-0 Scoránaigh, E/R Ochtabh, +/- Gnóthachan, [ / ] Polafónacht"
+  recording_active: "AG TAIFEADADH"
+  rec_midi_start: "⏺ Taifead MIDI"
+  rec_midi_stop: "⏹ Stop MIDI"
+  rec_wav_start: "⏺ Taifead WAV"
+  rec_wav_stop: "⏹ Stop WAV"
+
+  presets_heading: "Réamhshocruithe"
+  recall_label: "Aisghairm (F1-F12):"
+  save_label: "Sábháil (Shift+F1-F12):"
+  default_preset_name_fmt: "Réamhshocrú F%{num}"
+  tremulants_heading: "Creatháin"
+  no_tremulants: "Níor aimsíodh aon chreathán."
+
+  audio_settings_heading: "Socruithe Fuaime"
+  reverb_label: "Athshondas (Reverb):"
+  no_reverb: "Gan Athshondas"
+  reverb_mix_label: "Meascadh Athshondais:"
+  master_gain_label: "Máistir-Ghnóthachan:"
+  vol_slider_text: "Iml"
+  gain_keys_hint: "Eochracha: +/-"
+  polyphony_label: "Polafónacht:"
+  polyphony_keys_hint: "Eochracha: [ / ]"
+  
+  underrun_alert: "⚠ TEIP FUAIME (UNDERRUN) ⚠"
+  voices_fmt: "Guthanna: %{voices}/%{poly}"
+  cpu_load_fmt: "Ualach LAP: %{load}%"
+
+  selected_stop_label: "Stop Roghnaithe:"
+  no_selection: "Faic"
+  btn_all_channels: "Gach Cainéal"
+  btn_no_channels: "Gan Cainéal"
+  btn_panic: "SCAOLL (Gach Nóta As)"
+  panic_tooltip: "Stopann sé gach nóta atá ag seinm"
+  no_stops_loaded: "Níl aon stop luchtaithe."
+
+  midi_log_heading: "Loga MIDI"
+  midi_activity_heading: "Gníomhaíocht MIDI"
+
+  save_preset_title_fmt: "Sábháil Réamhshocrú F%{num}"
+  enter_name_prompt: "Cuir isteach ainm don réamhshocrú:"
+  btn_cancel: "Cealaigh"
+  btn_save: "Sábháil"
+
+errors:
+  midi_connect_fail: "Theip ar nascadh le %{name}: %{err}"
+  midi_fetch_fail: "Earráid ag fáil gléasanna MIDI: %{err}"
+  loading_ui_fail: "Theip ar luchtú an Chomhéadain: %{err}"
+  recall_preset_fail: "EARRÁID ag aisghairm réamhshocrú: %{err}"
+
+midi_config:
+  window_title_fmt: "Mapáil MIDI: %{name}"
+  heading: "Cumraíocht Cainéal"
+  description: "Cumraigh conas a mhapáiltear cainéil MIDI ón ngléas seo chuig cainéil inmheánacha an orgáin."
+  mode_label: "Mód Mapála:"
+  mode_simple: "Simplí"
+  mode_complex: "Coimpléascach"
+  
+  simple_desc_1: "Sa Mhód Simplí, seoltar gach teachtaireacht MIDI isteach ón ngléas seo"
+  simple_desc_2: "chuig sprioc-chainéal amháin ar an orgán."
+  target_channel_label: "Sprioc-Chainéal:"
+  channel_fmt: "Cainéal %{num}"
+  simple_hint: "Úsáid é seo do rialaitheoirí méarchláir aonair."
+  
+  complex_desc: "Mapáil gach cainéal ionchuir ar leith chuig sprioc-chainéal ar leith."
+  col_input: "Cainéal Ionchuir"
+  col_target: "Sprioc-Chainéal"
+  input_channel_fmt: "Cainéal Ionchuir %{num}"
+  
+  btn_done: "Déanta"
+
+midi_learn:
+  window_title_fmt: "Foghlaim MIDI: %{name}"
+  description_1: "Cumraigh conas a rialaíonn imeachtaí MIDI seachtracha an stop seo."
+  description_2: "Cliceáil 'Foghlaim', ansin brúigh eochair ar do mhéarchlár MIDI."
+  
+  col_internal_channel: "Cainéal Inmheánach"
+  col_enable_event: "Imeacht Cumasaithe"
+  col_disable_event: "Imeacht Díchumasaithe"
+  col_actions: "Gníomhartha"
+  
+  channel_fmt: "Cainéal %{num}"
+  status_listening: "Ag éisteacht..."
+  btn_learn: "Foghlaim"
+  btn_clear: "Glan"
+  
+  log_mapped_fmt: "Mapáladh %{event} chuig %{action}"
+  action_enable: "Cumasaigh"
+  action_disable: "Díchumasaigh"
+
+config:
+  window_title: "Cumraíocht Rusty Pipes"
+  subtitle: "Indicia MMXXV"
+  
+  group_organ_file: "Comhad Orgáin:"
+  group_audio_device: "Gléas Fuaime:"
+  group_sample_rate: "Ráta Samplála:"
+  group_midi_inputs: "Ionchuir MIDI:"
+  group_midi_file: "Comhad MIDI (Seinm):"
+  group_ir_file: "Athshondas (IR):"
+  group_reverb_mix: "Meascadh Athshondais:"
+  group_gain: "Gnóthachan:"
+  group_polyphony: "Polafónacht:"
+  group_buffer: "Maolán Fuaime (frámaí):"
+  group_preload: "Réamh-luchtú (frámaí):"
+  group_options: "Roghanna:"
+  
+  tooltip_organ: "Roghnaigh an comhad orgáin Hauptwerk (.organ nó Organ_Hauptwerk_xml) le luchtú."
+  tooltip_audio_device: "An gléas a úsáidfear le haghaidh aschur fuaime."
+  tooltip_sample_rate: "An minicíocht ag a meascfar an fhuaim. Úsáideann luachanna níos airde níos mó LAP."
+  tooltip_midi_inputs: "Roghnaigh na gléasanna MIDI a úsáidfear chun an t-orgán a rialú."
+  tooltip_midi_file: "Roghnaigh comhad MIDI le seinm."
+  tooltip_ir_file: "Comhad freagartha ríog le haghaidh athshondas comhfhilleadh (WAV)."
+  tooltip_ir_folder: "Oscail Fillteán Athshondais"
+  tooltip_reverb_mix: "Méid an athshondais curtha i bhfeidhm. 0.0 = tirim (gan athshondas), 1.0 = fliuch (athshondas amháin)."
+  tooltip_gain: "Toirt aschuir iomlán."
+  tooltip_polyphony: "Uasmhéid guthanna comhuaineacha."
+  tooltip_buffer: "Líon na bhfrámaí fuaime in aghaidh an mhaoláin. Laghdaíonn luachanna níos airde glitches ach méadaíonn siad aga moille."
+  tooltip_preload: "Déanfar na chéad chúpla fráma de gach sampla a réamh-luchtú isteach sa RAM."
+  tooltip_precache: "Cumasaigh é seo chun gach sampla a luchtú go hiomlán isteach sa RAM in áit iad a shruthú ón diosca."
+  tooltip_convert: "Cumasaigh é seo chun gach sampla a thiontú go 16-giotán (spárálann RAM)."
+  tooltip_tuning: "Bain úsáid as tiúnadh bunaidh na samplaí."
+  
+  chk_precache: "Réamh-thaisce Samplaí"
+  chk_convert: "Tiontaigh go 16-giotán"
+  chk_tuning: "Bain Úsáid as Tiúnadh Bunaidh"
+  
+  btn_browse: "Brabhsáil..."
+  btn_clear: "Glan"
+  btn_map: "⚙ Mapáil"
+  btn_quit: "Scoir"
+  btn_start: "Tosaigh Rusty Pipes"
+  
+  status_no_devices: "Níor aimsíodh aon ghléas"
+  status_no_reverb: "Gan Athshondas"
+  status_default: "[ Réamhshocrú ]"
+  status_none: "Faic"
+  warn_select_organ: "Roghnaigh Comhad Orgáin le do thoil."
+  
+  picker_organ: "Roghnaigh Comhad Orgáin"
+  picker_midi: "Roghnaigh Comhad MIDI (Roghnach)"
+
+loading:
+  heading: "Samplaí Orgáin á Luchtú..."
+  window_title: "Á Luchtú..."
+  app_name: "Rusty Pipes á Luchtú..."
+  status_init: "Á Thúsú..."
+
+tui_config:
+  header_title: "Cumraíocht"
+  footer_nav: "Nas: ↑/↓ | Enter: Roghnaigh/Scoránaigh | S: Tosaigh | Q: Scoir"
+  footer_midi: " Spás: Scoránaigh | Enter: Cumraigh | Esc: Ar Ais "
+  
+  title_midi_devs: " Gléasanna MIDI "
+  title_select_audio: "Roghnaigh Gléas Fuaime (↑/↓, Enter, Esc)"
+  title_select_rate: "Roghnaigh Ráta Samplála"
+  title_select_ir: "Roghnaigh Freagairt Ríog"
+  
+  prompt_reverb: "Cuir isteach Meascadh Athshondais (0.0 - 1.0)"
+  prompt_gain: "Cuir isteach Gnóthachan (0.0 - 1.0)"
+  prompt_poly: "Cuir isteach Polafónacht (1 - 1024)"
+  prompt_buffer: "Cuir isteach Méid Maoláin"
+  prompt_preload: "Cuir isteach Frámaí Réamh-luchtaithe"
+  prompt_generic: "Cuir isteach Luach"
+
+  fmt_organ:       "Comhad Orgáin:    %{val}"
+  fmt_audio:       "Gléas Fuaime:     %{val}"
+  fmt_rate:        "Ráta Samplála:    %{val} Hz"
+  fmt_midi_devs:   "Ionchuir MIDI:    %{count} cumasaithe"
+  fmt_midi_file:   "Comhad MIDI:      %{val}"
+  fmt_ir:          "Comhad IR Athsh:  %{val}"
+  fmt_mix:         "Meascadh Athsh:   %{val}"
+  fmt_gain:        "Gnóthachan:       %{val}"
+  fmt_poly:        "Polafónacht:      %{val}"
+  fmt_buffer:      "Maolán Fuaime:    %{val} fráma"
+  fmt_preload:     "Réamh-luchtú:     %{val} fráma"
+  fmt_precache:    "Réamh-thaisce:    %{val}"
+  fmt_convert:     "Tiont. go 16-giot:%{val}"
+  fmt_tuning:      "Tiúnadh Bunaidh:  %{val}"
+  
+  val_on: "AR SIÚL"
+  val_off: "AS"
+
+tui_picker:
+  header_title_fmt: "%{title} (q chun scoir)"
+  current_path_fmt: "Cosán Reatha: %{path}"
+  entries_title: "Míreanna"
+  footer_nav: "Nas: ↑/↓/PgUp/PgDn | Enter/→: Roghnaigh | ←/Bksp: Suas | q: Scoir"
+  
+  err_read_dir: "Earráid ag léamh eolaire: %{err}"
+  err_generic: "Earráid: %{err}"
+
+tui_midi_learn:
+  hdr_internal: "Inmheánach"
+  hdr_action: "Gníomh"
+  
+  fmt_ch_short: "Cai %{num}"
+  cell_dash: "-"
+  
+  footer_help: "Saigheada: Nascleanúint | Enter: Foghlaim/Glan | Esc: Dún"
+
+tui_midi:
+  title_fmt: " Cumraigh Mapáil: %{name} "
+  footer: " Enter: Cuir in Eagar/Scoránaigh | ↑/↓: Luach | Esc: Ar Ais "
+  
+  mode_simple: "Simplí (Gach Ionchur -> Sprioc Amháin)"
+  mode_complex: "Coimpléascach (Mapáil de réir Cainéil)"
+  
+  lbl_mode: "Mód: %{val}"
+  lbl_target: "Sprioc-Chainéal: %{ch}"
+  lbl_complex: "Ionchur Cai %{input} -> Sprioc Cai %{out}"
+  
+  suffix_editing: "%{val} <Á Chur in Eagar>"
+
+tui:
+  status_rec_midi_wav: " [TAIF MIDI+WAV] "
+  status_rec_midi: " [TAIF MIDI] "
+  status_rec_wav: " [TAIF WAV] "
+  
+  status_bar_fmt: "%{rec}LAP: %{cpu}% | Gnóth: %{gain}% | Guthanna: %{active}/%{poly} | [Q]Scoir [P]Scaoll +/-:Gnóth E/R:Ocht [/]:Pola F1-12:Aisghairm Shift+F1-12:Sábháil [I]:MIDI Foghlaim"
+  
+  err_underrun: "⚠ TEIP FUAIME (UNDERRUN) ⚠"
+  
+  save_title: "Sábháil Réamhshocrú"
+  save_header_fmt: "Sábháil Réamhshocrú F%{num}"
+  save_prompt: "Cuir isteach ainm:"
+  save_footer: "Brúigh [Enter] chun sábháil, [Esc] chun cealú"
+  
+  no_stops: "Níl aon stop luchtaithe."
+  midi_log_title: "Loga MIDI"
+  piano_roll_title: "Piano Roll"

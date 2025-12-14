@@ -1,0 +1,254 @@
+# YAML localization file for Klingon (tlh)
+
+main:
+  title: "Rusty Pipes - 'o'rghan Hew v%{version}"
+  config_cancelled: "choHmey qIl. jImev."
+  loading_organ: "'o'rghan tetlh lI'..."
+  loading_samples_fmt: "nagh beQ lI': [%{percent}] %{file}..."
+  loading_complete: "nagh beQ lI': [100%] pItlh."
+  organ_loaded_fmt: "'o'rghan lI'ta': %{name}"
+  found_stops_fmt: "%{count} Dolmey tu'lu'."
+  starting_audio: "QoywI' Qu' tagh..."
+  audio_running: "QoywI' Qu' vang."
+  starting_midi_file: "MIDI teywI' ghem tagh: %{path}"
+  connecting_midi: "MIDI jan rar: %{name}"
+  no_midi_devices: "MIDI janmey tu'be'. MIDI rarHa'."
+  shutting_down: "mevtaH..."
+  
+  list_devices_header: "MIDI RarwI'mey:"
+  list_devices_none: "  MIDI janmey tu'be'."
+
+gui:
+  app_title_fmt: "Rusty Pipes - %{name}"
+  
+  footer_tip: "Tip: F1-F12 qaw, Shift+F1-F12 pol, 'P' Huj, Arrow SeH, 1-0 choH, E/R Octave, +/- HoS, [ / ] rogh"
+  recording_active: "QON"
+  rec_midi_start: "⏺ MIDI qon"
+  rec_midi_stop: "⏹ MIDI mev"
+  rec_wav_start: "⏺ WAV qon"
+  rec_wav_stop: "⏹ WAV mev"
+
+  presets_heading: "ghun"
+  recall_label: "qaw (F1-F12):"
+  save_label: "pol (Shift+F1-F12):"
+  default_preset_name_fmt: "ghun F%{num}"
+  tremulants_heading: "Qommey"
+  no_tremulants: "Qom tu'be'."
+
+  audio_settings_heading: "QoywI' choHmey"
+  reverb_label: "Qoyqa' (Reverb):"
+  no_reverb: "Qoyqa' pagh"
+  reverb_mix_label: "Qoyqa' DuD:"
+  master_gain_label: "HoS'a' (Gain):"
+  vol_slider_text: "HoS"
+  gain_keys_hint: "yu'mey: +/-"
+  polyphony_label: "rogh (Polyphony):"
+  polyphony_keys_hint: "yu'mey: [ / ]"
+  
+  underrun_alert: "⚠ QOYWI' QAGH ⚠"
+  voices_fmt: "ghoghmey: %{voices}/%{poly}"
+  cpu_load_fmt: "CPU Qap: %{load}%"
+
+  selected_stop_label: "Dol wIv:"
+  no_selection: "pagh"
+  btn_all_channels: "Hoch QIn"
+  btn_no_channels: "QIn pagh"
+  btn_panic: "HUJ (mevHoch)"
+  panic_tooltip: "Hoch QoywI' mev"
+  no_stops_loaded: "Dol lI'be'."
+
+  midi_log_heading: "MIDI QIn"
+  midi_activity_heading: "MIDI vang"
+
+  save_preset_title_fmt: "ghun F%{num} pol"
+  enter_name_prompt: "ghun pong per:"
+  btn_cancel: "qIl"
+  btn_save: "pol"
+
+errors:
+  midi_connect_fail: "%{name} rar laHbe': %{err}"
+  midi_fetch_fail: "MIDI jan Qagh: %{err}"
+  loading_ui_fail: "De' 'agh Qagh: %{err}"
+  recall_preset_fail: "ghun qaw Qagh: %{err}"
+
+midi_config:
+  window_title_fmt: "MIDI Mung: %{name}"
+  heading: "QIn choH"
+  description: "MIDI QInmey chIl."
+  mode_label: "Mung mIw:"
+  mode_simple: "nap"
+  mode_complex: "Qatlh"
+  
+  simple_desc_1: "mIw nap, Hoch MIDI QInmey"
+  simple_desc_2: "wa' QInDaq joss."
+  target_channel_label: "QIn DoH:"
+  channel_fmt: "QIn %{num}"
+  simple_hint: "wa' nItlhjan."
+  
+  complex_desc: "wa' QInDaq wa' QIn."
+  col_input: "QIn 'el"
+  col_target: "QIn DoH"
+  input_channel_fmt: "QIn 'el %{num}"
+  
+  btn_done: "pItlh"
+
+midi_learn:
+  window_title_fmt: "MIDI Ghoj: %{name}"
+  description_1: "MIDI Hu' Dol SeH."
+  description_2: "'Ghoj' yI'uy, vaj MIDI yI'uy."
+  
+  col_internal_channel: "QIn qoD"
+  col_enable_event: "wanI' chu'"
+  col_disable_event: "wanI' Qotlh"
+  col_actions: "vang"
+  
+  channel_fmt: "QIn %{num}"
+  status_listening: "Qoy..."
+  btn_learn: "Ghoj"
+  btn_clear: "teq"
+  
+  log_mapped_fmt: "%{event} %{action} mung"
+  action_enable: "chu'"
+  action_disable: "Qotlh"
+
+config:
+  window_title: "Rusty Pipes choH"
+  subtitle: "Indicia MMXXV"
+  
+  group_organ_file: "'o'rghan teywI':"
+  group_audio_device: "QoywI' jan:"
+  group_sample_rate: "He' Soj:"
+  group_midi_inputs: "MIDI 'el:"
+  group_midi_file: "MIDI teywI' (Ghem):"
+  group_ir_file: "Qoyqa' (IR):"
+  group_reverb_mix: "Qoyqa' DuD:"
+  group_gain: "HoS:"
+  group_polyphony: "rogh:"
+  group_buffer: "Buffer (frames):"
+  group_preload: "Preload (frames):"
+  group_options: "DuH:"
+  
+  tooltip_organ: "Hauptwerk 'o'rghan teywI' yIwIv."
+  tooltip_audio_device: "QoywI' jan."
+  tooltip_sample_rate: "CPU HoS lo'."
+  tooltip_midi_inputs: "MIDI jan wIv."
+  tooltip_midi_file: "MIDI teywI' wIv."
+  tooltip_ir_file: "Qoyqa' teywI' (WAV)."
+  tooltip_ir_folder: "Qoyqa' ngaSwI' poS"
+  tooltip_reverb_mix: "Qoyqa' mI'. 0.0 = QaD, 1.0 = yIQ."
+  tooltip_gain: "HoS'a'."
+  tooltip_polyphony: "rogh mI' 'a'."
+  tooltip_buffer: "Buffer wa'."
+  tooltip_preload: "RAM lI'."
+  tooltip_precache: "RAMDaq lI' Hoch."
+  tooltip_convert: "16-bit choH."
+  tooltip_tuning: "'o'rghan prm."
+  
+  chk_precache: "RAMDaq lI'"
+  chk_convert: "16-bit choH"
+  chk_tuning: "prm lo'"
+  
+  btn_browse: "nej..."
+  btn_clear: "teq"
+  btn_map: "⚙ Mung"
+  btn_quit: "mev"
+  btn_start: "Rusty Pipes tagh"
+  
+  status_no_devices: "jan pagh"
+  status_no_reverb: "Qoyqa' pagh"
+  status_default: "[ motlh ]"
+  status_none: "pagh"
+  warn_select_organ: "'o'rghan teywI' yIwIv."
+  
+  picker_organ: "'o'rghan teywI' yIwIv"
+  picker_midi: "MIDI teywI' yIwIv"
+
+loading:
+  heading: "nagh beQ lI'..."
+  window_title: "lI'..."
+  app_name: "Rusty Pipes lI'..."
+  status_init: "tagh..."
+
+tui_config:
+  header_title: "choH"
+  footer_nav: "Nav: ↑/↓ | Enter: wIv/choH | S: tagh | Q: mev"
+  footer_midi: " Space: choH | Enter: choH | Esc: DoH "
+  
+  title_midi_devs: " MIDI jan "
+  title_select_audio: "QoywI' jan wIv (↑/↓, Enter, Esc)"
+  title_select_rate: "He' Soj wIv"
+  title_select_ir: "Qoyqa' wIv"
+  
+  prompt_reverb: "Qoyqa' DuD (0.0 - 1.0)"
+  prompt_gain: "HoS (0.0 - 1.0)"
+  prompt_poly: "rogh (1 - 1024)"
+  prompt_buffer: "Buffer yIper"
+  prompt_preload: "Preload yIper"
+  prompt_generic: "mI' yIper"
+
+  fmt_organ:       "'o'rghan teywI': %{val}"
+  fmt_audio:       "QoywI' jan:      %{val}"
+  fmt_rate:        "He' Soj:         %{val} Hz"
+  fmt_midi_devs:   "MIDI 'el:        %{count} chu'"
+  fmt_midi_file:   "MIDI teywI':     %{val}"
+  fmt_ir:          "Qoyqa' IR:       %{val}"
+  fmt_mix:         "Qoyqa' DuD:      %{val}"
+  fmt_gain:        "HoS:             %{val}"
+  fmt_poly:        "rogh:            %{val}"
+  fmt_buffer:      "Buffer:          %{val} frames"
+  fmt_preload:     "Preload:         %{val} frames"
+  fmt_precache:    "RAM lI':         %{val}"
+  fmt_convert:     "16-bit choH:     %{val}"
+  fmt_tuning:      "prm lo':         %{val}"
+  
+  val_on: "CHU'"
+  val_off: "QOTLH"
+
+tui_picker:
+  header_title_fmt: "%{title} (q mev)"
+  current_path_fmt: "He: %{path}"
+  entries_title: "De'"
+  footer_nav: "Nav: ↑/↓/PgUp/PgDn | Enter/→: wIv | ←/Bksp: Dung | q: mev"
+  
+  err_read_dir: "He Qagh: %{err}"
+  err_generic: "Qagh: %{err}"
+
+tui_midi_learn:
+  hdr_internal: "qoD"
+  hdr_action: "vang"
+  
+  fmt_ch_short: "QIn %{num}"
+  cell_dash: "-"
+  
+  footer_help: "Nav: SeH | Enter: Ghoj/teq | Esc: SoQ"
+
+tui_midi:
+  title_fmt: " Mung choH: %{name} "
+  footer: " Enter: choH | ↑/↓: mI' | Esc: DoH "
+  
+  mode_simple: "nap (Hoch -> wa')"
+  mode_complex: "Qatlh (Hoch -> Hoch)"
+  
+  lbl_mode: "mIw: %{val}"
+  lbl_target: "QIn DoH: %{ch}"
+  lbl_complex: "'el %{input} -> DoH %{out}"
+  
+  suffix_editing: "%{val} <choH>"
+
+tui:
+  status_rec_midi_wav: " [QON MIDI+WAV] "
+  status_rec_midi: " [QON MIDI] "
+  status_rec_wav: " [QON WAV] "
+  
+  status_bar_fmt: "%{rec}CPU: %{cpu}% | HoS: %{gain}% | rogh: %{active}/%{poly} | [Q]mev [P]HUJ +/-:HoS E/R:Oct [/]:rogh F1-12:qaw Shift+F1-12:pol [I]:Ghoj"
+  
+  err_underrun: "⚠ QOYWI' QAGH ⚠"
+  
+  save_title: "ghun pol"
+  save_header_fmt: "ghun F%{num} pol"
+  save_prompt: "pong yIper:"
+  save_footer: "[Enter] pol, [Esc] qIl"
+  
+  no_stops: "Dol lI'be'."
+  midi_log_title: "MIDI QIn"
+  piano_roll_title: "Piano Roll"

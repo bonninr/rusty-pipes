@@ -1,0 +1,254 @@
+# YAML localization file for Latin (la)
+
+main:
+  title: "Rusty Pipes - Simulator Organi Fistulati Virtualis v%{version}"
+  config_cancelled: "Configuratio cancellata. Exitus."
+  loading_organ: "Definitio organi oneratur..."
+  loading_samples_fmt: "Exempla onerantur: [%{percent}] %{file}..."
+  loading_complete: "Exempla onerantur: [100%] Completum."
+  organ_loaded_fmt: "Organum feliciter oneratum: %{name}"
+  found_stops_fmt: "Inventa sunt %{count} registra."
+  starting_audio: "Machina auditionis incipit..."
+  audio_running: "Machina auditionis currit."
+  starting_midi_file: "Incipit ludus fasciculi MIDI: %{path}"
+  connecting_midi: "Connectens ad instrumentum MIDI: %{name}"
+  no_midi_devices: "Nulla instrumenta MIDI habilitata. Currens sine input MIDI."
+  shutting_down: "Claudens..."
+  
+  list_devices_header: "Instrumenta Input MIDI Disponibilia:"
+  list_devices_none: "  Nulla instrumenta MIDI inventa sunt."
+
+gui:
+  app_title_fmt: "Rusty Pipes - %{name}"
+  
+  footer_tip: "Consilium: F1-F12 Revocare, Shift+F1-F12 Servare, 'P' Pavor, Sagittae Navigare, 1-0 Commutare, E/R Octava, +/- Lucrum, [ / ] Polyphonia"
+  recording_active: "PERSCRIBENS"
+  rec_midi_start: "⏺ Rec MIDI"
+  rec_midi_stop: "⏹ Stop MIDI"
+  rec_wav_start: "⏺ Rec WAV"
+  rec_wav_stop: "⏹ Stop WAV"
+
+  presets_heading: "Praescripta"
+  recall_label: "Revocare (F1-F12):"
+  save_label: "Servare (Shift+F1-F12):"
+  default_preset_name_fmt: "Praescriptum F%{num}"
+  tremulants_heading: "Tremulantes"
+  no_tremulants: "Nulli tremulantes inventi sunt."
+
+  audio_settings_heading: "Constitutiones Auditionis"
+  reverb_label: "Resonantia (Reverb):"
+  no_reverb: "Sine Resonantia"
+  reverb_mix_label: "Mixtura Resonantiae:"
+  master_gain_label: "Lucrum Magistri:"
+  vol_slider_text: "Vol"
+  gain_keys_hint: "Claves: +/-"
+  polyphony_label: "Polyphonia:"
+  polyphony_keys_hint: "Claves: [ / ]"
+  
+  underrun_alert: "⚠ DEFECTUS AUDITIONIS (UNDERRUN) ⚠"
+  voices_fmt: "Voces: %{voices}/%{poly}"
+  cpu_load_fmt: "Onus CPU: %{load}%"
+
+  selected_stop_label: "Registrum Selectum:"
+  no_selection: "Nullum"
+  btn_all_channels: "Omnes Canales"
+  btn_no_channels: "Nulli Canales"
+  btn_panic: "PAVOR (Omnes Notae Off)"
+  panic_tooltip: "Sistit omnes notas sonantes"
+  no_stops_loaded: "Nulla registra onerata sunt."
+
+  midi_log_heading: "Acta MIDI"
+  midi_activity_heading: "Activitas MIDI"
+
+  save_preset_title_fmt: "Servare Praescriptum F%{num}"
+  enter_name_prompt: "Inscribe nomen praescripti:"
+  btn_cancel: "Cancellare"
+  btn_save: "Servare"
+
+errors:
+  midi_connect_fail: "Connexio ad %{name} defecit: %{err}"
+  midi_fetch_fail: "Error in recipiendo instrumenta MIDI: %{err}"
+  loading_ui_fail: "Oneratio UI defecit: %{err}"
+  recall_preset_fail: "ERROR in revocando praescriptum: %{err}"
+
+midi_config:
+  window_title_fmt: "Mappa MIDI: %{name}"
+  heading: "Configuratio Canalium"
+  description: "Configura quomodo canales MIDI ab hoc instrumento ad canales internos organi dirigantur."
+  mode_label: "Modus Mappae:"
+  mode_simple: "Simplex"
+  mode_complex: "Complexus"
+  
+  simple_desc_1: "In Modo Simplici, omnes nuntii MIDI intrantes ab hoc instrumento"
+  simple_desc_2: "diriguntur ad unum canalem destinationis in organo."
+  target_channel_label: "Canalis Destinationis:"
+  channel_fmt: "Canalis %{num}"
+  simple_hint: "Utere hoc pro clavile singulari."
+  
+  complex_desc: "Mappa quemque canalem input specificum ad canalem destinationis specificum."
+  col_input: "Canalis Input"
+  col_target: "Canalis Destinationis"
+  input_channel_fmt: "Input Canalis %{num}"
+  
+  btn_done: "Factum"
+
+midi_learn:
+  window_title_fmt: "Discere MIDI: %{name}"
+  description_1: "Configura quomodo eventus MIDI externi hoc registrum regant."
+  description_2: "Preme 'Discere', deinde preme clavem in clavile MIDI tuo."
+  
+  col_internal_channel: "Canalis Internus"
+  col_enable_event: "Eventus Activare"
+  col_disable_event: "Eventus Deactivare"
+  col_actions: "Actiones"
+  
+  channel_fmt: "Canalis %{num}"
+  status_listening: "Audiens..."
+  btn_learn: "Discere"
+  btn_clear: "Purgare"
+  
+  log_mapped_fmt: "Mappatum %{event} ad %{action}"
+  action_enable: "Activare"
+  action_disable: "Deactivare"
+
+config:
+  window_title: "Configuratio Rusty Pipes"
+  subtitle: "Indicia MMXXV"
+  
+  group_organ_file: "Plica Organi:"
+  group_audio_device: "Instrumentum Auditionis:"
+  group_sample_rate: "Frequentia Exemplorum:"
+  group_midi_inputs: "Input MIDI:"
+  group_midi_file: "Plica MIDI (Ludere):"
+  group_ir_file: "Resonantia (IR):"
+  group_reverb_mix: "Mixtura Resonantiae:"
+  group_gain: "Lucrum:"
+  group_polyphony: "Polyphonia:"
+  group_buffer: "Buffer Auditionis (framea):"
+  group_preload: "Prae-onerare (framea):"
+  group_options: "Optiones:"
+  
+  tooltip_organ: "Selige plicam organi Hauptwerk (.organ vel Organ_Hauptwerk_xml) onerandam."
+  tooltip_audio_device: "Instrumentum quod ad output auditionis adhibebitur."
+  tooltip_sample_rate: "Frequentia qua auditio miscebitur. Altiores valores plus CPU consumunt."
+  tooltip_midi_inputs: "Selige quae instrumenta MIDI ad organum ludendum adhibebuntur."
+  tooltip_midi_file: "Selige plicam MIDI ad ludendum."
+  tooltip_ir_file: "Plica responsi impulsus pro resonantia convolutionis (WAV)."
+  tooltip_ir_folder: "Aperire Folder Resonantiae"
+  tooltip_reverb_mix: "Quantitas resonantiae applicata. 0.0 = siccus (sine resonantia), 1.0 = humidus (solum resonantia)."
+  tooltip_gain: "Volumen output totum."
+  tooltip_polyphony: "Numerus maximus vocum simul sonantium."
+  tooltip_buffer: "Numerus frameorum auditionis per buffer. Altiores valores singultus minuunt sed latentiam augent."
+  tooltip_preload: "Prima framea cuiusque exempli in RAM prae-onerabuntur."
+  tooltip_precache: "Habilita hoc ad omnia exempla plene in RAM oneranda, non de disco fluminea."
+  tooltip_convert: "Habilita hoc ad omnia exempla in 16-bit convertenda (parcimonia RAM)."
+  tooltip_tuning: "Utere temperatura originali exemplorum."
+  
+  chk_precache: "Prae-cache Exempla"
+  chk_convert: "Convertere ad 16-bit"
+  chk_tuning: "Utere Temperatura Originali"
+  
+  btn_browse: "Navigare..."
+  btn_clear: "Purgare"
+  btn_map: "⚙ Mappa"
+  btn_quit: "Exire"
+  btn_start: "Incipere Rusty Pipes"
+  
+  status_no_devices: "Nulla instrumenta inventa"
+  status_no_reverb: "Sine Resonantia"
+  status_default: "[ Defalta ]"
+  status_none: "Nullum"
+  warn_select_organ: "Quaeso selige Plicam Organi."
+  
+  picker_organ: "Seligere Plicam Organi"
+  picker_midi: "Seligere Plicam MIDI (Optionale)"
+
+loading:
+  heading: "Exempla Organi Onerantur..."
+  window_title: "Onerans..."
+  app_name: "Rusty Pipes Onerat..."
+  status_init: "Initians..."
+
+tui_config:
+  header_title: "Configuratio"
+  footer_nav: "Nav: ↑/↓ | Enter: Selige/Commuta | S: Incipere | Q: Exire"
+  footer_midi: " Spatium: Commuta | Enter: Config | Esc: Retro "
+  
+  title_midi_devs: " Instrumenta MIDI "
+  title_select_audio: "Selige Instr. Auditionis (↑/↓, Enter, Esc)"
+  title_select_rate: "Selige Freq. Exemplorum"
+  title_select_ir: "Selige Responsum Impulsus"
+  
+  prompt_reverb: "Inscribe Mixturam Resonantiae (0.0 - 1.0)"
+  prompt_gain: "Inscribe Lucrum (0.0 - 1.0)"
+  prompt_poly: "Inscribe Polyphoniam (1 - 1024)"
+  prompt_buffer: "Inscribe Magnitudinem Buffer"
+  prompt_preload: "Inscribe Framea Prae-onerationis"
+  prompt_generic: "Inscribe Valorem"
+
+  fmt_organ:       "Plica Organi:     %{val}"
+  fmt_audio:       "Instr. Auditionis:%{val}"
+  fmt_rate:        "Freq. Exemplorum: %{val} Hz"
+  fmt_midi_devs:   "Input MIDI:       %{count} habilitata"
+  fmt_midi_file:   "Plica MIDI:       %{val}"
+  fmt_ir:          "Plica IR Reson:   %{val}"
+  fmt_mix:         "Mixtura Reson:    %{val}"
+  fmt_gain:        "Lucrum:           %{val}"
+  fmt_poly:        "Polyphonia:       %{val}"
+  fmt_buffer:      "Buffer Audit:     %{val} framea"
+  fmt_preload:     "Prae-oneratio:    %{val} framea"
+  fmt_precache:    "Prae-cache:       %{val}"
+  fmt_convert:     "Conv. ad 16-bit:  %{val}"
+  fmt_tuning:      "Temp. Originalis: %{val}"
+  
+  val_on: "ACCENSUM"
+  val_off: "EXTINCTUM"
+
+tui_picker:
+  header_title_fmt: "%{title} (q ad exeundum)"
+  current_path_fmt: "Iter Currens: %{path}"
+  entries_title: "Elementa"
+  footer_nav: "Nav: ↑/↓/PgUp/PgDn | Enter/→: Selige | ←/Bksp: Sursum | q: Exire"
+  
+  err_read_dir: "Error legendi directorium: %{err}"
+  err_generic: "Error: %{err}"
+
+tui_midi_learn:
+  hdr_internal: "Internus"
+  hdr_action: "Actio"
+  
+  fmt_ch_short: "Can %{num}"
+  cell_dash: "-"
+  
+  footer_help: "Sagittae: Navigare | Enter: Discere/Purgare | Esc: Claudere"
+
+tui_midi:
+  title_fmt: " Configurare Mappam: %{name} "
+  footer: " Enter: Edere/Commutare | ↑/↓: Valor | Esc: Retro "
+  
+  mode_simple: "Simplex (Omnia Input -> Una Destinatio)"
+  mode_complex: "Complexus (Mappa per Canalem)"
+  
+  lbl_mode: "Modus: %{val}"
+  lbl_target: "Canalis Dest.: %{ch}"
+  lbl_complex: "Input Can %{input} -> Dest Can %{out}"
+  
+  suffix_editing: "%{val} <Edens>"
+
+tui:
+  status_rec_midi_wav: " [REC MIDI+WAV] "
+  status_rec_midi: " [REC MIDI] "
+  status_rec_wav: " [REC WAV] "
+  
+  status_bar_fmt: "%{rec}CPU: %{cpu}% | Lucrum: %{gain}% | Voces: %{active}/%{poly} | [Q]Exire [P]avor +/-:Lucr E/R:Oct [/]:Poly F1-12:Revoc Shift+F1-12:Serv [I]:MIDI Discere"
+  
+  err_underrun: "⚠ DEFECTUS AUDITIONIS (UNDERRUN) ⚠"
+  
+  save_title: "Servare Praescriptum"
+  save_header_fmt: "Servare Praescriptum F%{num}"
+  save_prompt: "Inscribe nomen:"
+  save_footer: "Preme [Enter] ad servandum, [Esc] ad cancellandum"
+  
+  no_stops: "Nulla registra onerata sunt."
+  midi_log_title: "Acta MIDI"
+  piano_roll_title: "Piano Roll"
