@@ -8,13 +8,17 @@ Rusty Pipes is a digital organ instrument compatible with GrandOrgue sample sets
 
 Music samples:
 
-Bach - Praeludium in E Minor BWV 548 - Frisach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Bach-Praeludium-in-e-minor-BWV548.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Bach-Praeludium-in-e-minor-BWV548.ogg)]
+Bach - Praeludium in E Minor BWV 548 - Friesach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Bach-Praeludium-in-e-minor-BWV548.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Bach-Praeludium-in-e-minor-BWV548.ogg)]
 
-Vierne - Organ Syphony No.2 - Allegro - Friesach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Allegro.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Allegro.ogg)]
+Vierne - Organ Symphony No.2 - Allegro - Friesach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Allegro.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Allegro.ogg)]
 
-Vierne - Organ Symphony No.2 - Cantabile - Frisach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.ogg)]
+Vierne - Organ Symphony No.2 - Scherzo - Friesach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Scherzo.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Scherzo.ogg)]
 
-Cesar Franck - Chorale No. 3 - Frisach organ: [[FLAC](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.flac)] [[OGG](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.ogg)]
+Vierne - Organ Symphony No.2 - Cantabile - Friesach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Cantabile.ogg)]
+
+Vierne - Organ Symphony No.2 - Finale  - Friesach organ: [[FLAC](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Finale.flac)] [[OGG](https://playspoon.com/files/RustyPipes-Vierne-Symphony-No2-Finale.ogg)]
+
+Cesar Franck - Chorale No. 3 - Friesach organ: [[FLAC](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.flac)] [[OGG](https://playspoon.com/files/RustyPipes-CesarFrank-ChoraleNo3.ogg)]
 
 
 <img width="2510" height="1508" alt="image" src="https://github.com/user-attachments/assets/9a4d1c21-11e3-41a1-901b-274379b2ee32" />
