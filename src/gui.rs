@@ -1001,9 +1001,15 @@ impl EguiApp {
                         .desired_width(250.0);
                     let response = ui.add(text_edit);
 
-                    // Auto-focus the text input when the window opens
-                    if !response.has_focus() {
+                    // Only request focus if the name is empty (fresh open)
+                    // (Prevents focus stealing that makes buttons unclickable)
+                    if self.preset_save_name.is_empty() && !response.has_focus() {
                         response.request_focus();
+                    }
+                    
+                    // Handle Keys
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        self.show_preset_save_modal = false;
                     }
                     
                     ui.add_space(10.0);
@@ -1013,11 +1019,11 @@ impl EguiApp {
                             self.show_preset_save_modal = false;
                         }
                         
-                        // Check for 'Enter' key or button click
-                        let save_triggered = ui.button(t!("gui.btn_save")).clicked() ||
-                                    (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                        // Check for 'Enter' key OR 'Save' click
+                        let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        let save_clicked = ui.button(t!("gui.btn_save")).clicked();
 
-                        if save_triggered {
+                        if save_clicked || enter_pressed {
                             if !self.preset_save_name.is_empty() {
                                 self.app_state.lock().unwrap().save_preset(
                                     self.preset_save_slot, 
@@ -1027,16 +1033,10 @@ impl EguiApp {
                             }
                         }
                     });
-
-                    // If 'Enter' was pressed, close the modal
-                    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        self.show_preset_save_modal = false;
-                    }
-
                 });
             });
         
-        // If the user clicked the 'X' button on the window
+        // Sync the internal state if the user clicked the window's 'X' button
         if !is_open {
             self.show_preset_save_modal = false;
         }
