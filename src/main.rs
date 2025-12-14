@@ -115,15 +115,24 @@ struct Args {
     /// HTTP Port that the REST API server will listen on
     #[arg(long, value_name = "API_PORT", default_value_t = 8080)]
     api_server_port: u16,
+
+    /// Force a specific language/locale (e.g., "en", "de", "nl-BE")
+    #[arg(long, value_name = "LANG")]
+    lang: Option<String>,
 }
 
 #[cfg_attr(feature = "hotpath", hotpath::main(percentiles = [99]))]
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Detect system locale and set it for rust-i18n
-    let system_locale = sys_locale::get_locale().unwrap_or_else(|| String::from("en-US"));
-    rust_i18n::set_locale(&system_locale);
+    // --- Setup Locale ---
+    // Priority: 1. CLI Argument, 2. System Locale, 3. Fallback "en-US"
+    let locale_to_use = args.lang.clone().unwrap_or_else(|| {
+        sys_locale::get_locale().unwrap_or_else(|| String::from("en-US"))
+    });
+    
+    // Set the locale for rust-i18n
+    rust_i18n::set_locale(&locale_to_use);
 
     // --- Setup logging ---
     let log_level = match args.log_level {
