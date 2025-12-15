@@ -282,6 +282,8 @@ Options:
           Run in terminal UI (TUI) mode as a fallback
       --api-server-port <API_PORT>
           HTTP Port that the REST API server will listen on [default: 8080]
+      --lang <LANG>
+          Force a specific language/locale (e.g., "en", "de", "nl-BE")
   -h, --help
           Print help
   -V, --version
@@ -360,3 +362,34 @@ Please be reasonable and ask for permission before popping balloons in churches.
 If you're using yay or paru, try this:
 
 ```ZSTD_SYS_USE_PKG_CONFIG=1 yay -S rusty-pipes```
+
+### Q: Which languages are supported?
+
+* English (en)
+* German (de)
+* French (fr)
+* Italian (it)
+* Spanish (es)
+* Catalan (ca)
+* Czech (cs)
+* Danish (da)
+* Finnish (fi)
+* Irish (ga)
+* Scottish Gaelic (gd)
+* Hungarian (hu)
+* Indonesian (id)
+* Japanese (ja)
+* Korean (ko)
+* Norwegian Bokmål (nb)
+* Dutch (nl)
+* Flemish (nl-BE)
+* Polish (pl)
+* Portugese (pt)
+* Romanian (ro)
+* Russian (ru)
+* Swedish (sv)
+* Ukrainian (uk)
+* Chinese (Simplified) (zh-CN)
+* Chinese (Traditional) (zh-TW)
+* Latin (la)
+* Klingon (tlh)
