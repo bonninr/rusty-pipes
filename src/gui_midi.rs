@@ -111,7 +111,7 @@ impl MidiMappingWindow {
                     });
             });
             ui.add_space(10.0);
-            ui.label(egui::RichText::new("Use this for single-keyboard controllers.").italics().weak());
+            ui.label(egui::RichText::new(t!("midi_config.simple_hint")).italics().weak());
         });
     }
 
