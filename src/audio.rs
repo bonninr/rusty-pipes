@@ -810,8 +810,7 @@ fn spawn_audio_processing_thread<P>(
 
                 // Subtractive Volume Modulation
                 let am_swing = trem_def.amp_mod_depth * 0.01 * TREMULANT_AM_BOOST;
-                let lfo_01 = (sine_val + 1.0) * 0.5; // 0.0 to 1.0
-                let active_am = 1.0 - (am_swing * (1.0 - lfo_01));
+                let active_am = 1.0 + (sine_val * am_swing * 0.5);
                 let final_am = 1.0 + (active_am - 1.0) * inertia;
 
                 for wc_group in organ.windchest_groups.values() {
