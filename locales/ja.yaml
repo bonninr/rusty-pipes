@@ -40,7 +40,6 @@ gui:
   no_reverb: "リバーブなし"
   reverb_mix_label: "リバーブミックス:"
   master_gain_label: "マスターゲイン:"
-  vol_slider_text: "音量"
   gain_keys_hint: "キー: +/-"
   polyphony_label: "同時発音数:"
   polyphony_keys_hint: "キー: [ / ]"

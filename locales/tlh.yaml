@@ -40,7 +40,6 @@ gui:
   no_reverb: "Qoyqa' pagh"
   reverb_mix_label: "Qoyqa' DuD:"
   master_gain_label: "HoS'a' (Gain):"
-  vol_slider_text: "HoS"
   gain_keys_hint: "yu'mey: +/-"
   polyphony_label: "rogh (Polyphony):"
   polyphony_keys_hint: "yu'mey: [ / ]"

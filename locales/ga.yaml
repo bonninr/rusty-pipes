@@ -40,7 +40,6 @@ gui:
   no_reverb: "Gan Athshondas"
   reverb_mix_label: "Meascadh Athshondais:"
   master_gain_label: "Máistir-Ghnóthachan:"
-  vol_slider_text: "Iml"
   gain_keys_hint: "Eochracha: +/-"
   polyphony_label: "Polafónacht:"
   polyphony_keys_hint: "Eochracha: [ / ]"

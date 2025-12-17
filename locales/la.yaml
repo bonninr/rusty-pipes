@@ -40,7 +40,6 @@ gui:
   no_reverb: "Sine Resonantia"
   reverb_mix_label: "Mixtura Resonantiae:"
   master_gain_label: "Lucrum Magistri:"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Claves: +/-"
   polyphony_label: "Polyphonia:"
   polyphony_keys_hint: "Claves: [ / ]"

@@ -40,7 +40,6 @@ gui:
   no_reverb: "Nincs Zengetés"
   reverb_mix_label: "Zengetés Mix:"
   master_gain_label: "Fő Erősítés (Gain):"
-  vol_slider_text: "Hangerő"
   gain_keys_hint: "Gombok: +/-"
   polyphony_label: "Polifónia:"
   polyphony_keys_hint: "Gombok: [ / ]"

@@ -40,7 +40,6 @@ gui:
   no_reverb: "Sem Reverb"
   reverb_mix_label: "Mix de Reverb:"
   master_gain_label: "Ganho Mestre:"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Teclas: +/-"
   polyphony_label: "Polifonia:"
   polyphony_keys_hint: "Teclas: [ / ]"

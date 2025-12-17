@@ -40,7 +40,6 @@ gui:
   no_reverb: "Žádný dozvuk"
   reverb_mix_label: "Mix dozvuku:"
   master_gain_label: "Hlavní zisk (Gain):"
-  vol_slider_text: "Hlas."
   gain_keys_hint: "Klávesy: +/-"
   polyphony_label: "Polyfonie:"
   polyphony_keys_hint: "Klávesy: [ / ]"

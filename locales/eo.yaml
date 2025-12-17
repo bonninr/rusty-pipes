@@ -40,7 +40,6 @@ gui:
   no_reverb: "Sen Reversono"
   reverb_mix_label: "Miksaĵo de Reversono:"
   master_gain_label: "Ĉefa Gajno:"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Klavoj: +/-"
   polyphony_label: "Polifonio:"
   polyphony_keys_hint: "Klavoj: [ / ]"

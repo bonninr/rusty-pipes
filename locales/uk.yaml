@@ -40,7 +40,6 @@ gui:
   no_reverb: "Без реверберації"
   reverb_mix_label: "Мікс реверберації:"
   master_gain_label: "Головне підсилення (Gain):"
-  vol_slider_text: "Гучн."
   gain_keys_hint: "Клавіші: +/-"
   polyphony_label: "Поліфонія:"
   polyphony_keys_hint: "Клавіші: [ / ]"

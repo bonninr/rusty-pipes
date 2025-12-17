@@ -40,7 +40,6 @@ gui:
   no_reverb: "Gun Ath-fhuaim"
   reverb_mix_label: "Measgachadh Ath-fhuaim:"
   master_gain_label: "Meudachadh Maighstir:"
-  vol_slider_text: "Fuaim"
   gain_keys_hint: "Iuchraichean: +/-"
   polyphony_label: "Polafonaidh:"
   polyphony_keys_hint: "Iuchraichean: [ / ]"

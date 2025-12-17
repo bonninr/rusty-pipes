@@ -40,7 +40,6 @@ gui:
   no_reverb: "Geen Galm"
   reverb_mix_label: "Galm Mix:"
   master_gain_label: "Hoofdversterking:"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Toetsen: +/-"
   polyphony_label: "Polyfonie:"
   polyphony_keys_hint: "Toetsen: [ / ]"

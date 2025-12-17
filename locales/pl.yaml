@@ -40,7 +40,6 @@ gui:
   no_reverb: "Bez Pogłosu"
   reverb_mix_label: "Mix Pogłosu:"
   master_gain_label: "Główne Wzmocnienie:"
-  vol_slider_text: "Głoś"
   gain_keys_hint: "Klawisze: +/-"
   polyphony_label: "Polifonia:"
   polyphony_keys_hint: "Klawisze: [ / ]"

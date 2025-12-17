@@ -40,7 +40,6 @@ gui:
   no_reverb: "Nessun Riverbero"
   reverb_mix_label: "Mix Riverbero:"
   master_gain_label: "Guadagno Master:"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Tasti: +/-"
   polyphony_label: "Polifonia:"
   polyphony_keys_hint: "Tasti: [ / ]"

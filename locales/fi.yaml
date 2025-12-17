@@ -40,7 +40,6 @@ gui:
   no_reverb: "Ei kaikua"
   reverb_mix_label: "Kaikusekoitus (Mix):"
   master_gain_label: "Päävoimakkuus (Gain):"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Näppäimet: +/-"
   polyphony_label: "Polyfonia:"
   polyphony_keys_hint: "Näppäimet: [ / ]"

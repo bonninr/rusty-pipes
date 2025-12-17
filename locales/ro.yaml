@@ -40,7 +40,6 @@ gui:
   no_reverb: "Fără Reverb"
   reverb_mix_label: "Mix Reverb:"
   master_gain_label: "Câștig Principal (Gain):"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Taste: +/-"
   polyphony_label: "Polifonie:"
   polyphony_keys_hint: "Taste: [ / ]"

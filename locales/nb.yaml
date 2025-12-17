@@ -40,7 +40,6 @@ gui:
   no_reverb: "Ingen Romklang"
   reverb_mix_label: "Romklang Mix:"
   master_gain_label: "Master Gain:"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Taster: +/-"
   polyphony_label: "Polyfoni:"
   polyphony_keys_hint: "Taster: [ / ]"

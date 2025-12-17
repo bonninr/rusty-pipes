@@ -40,7 +40,6 @@ gui:
   no_reverb: "리버브 없음"
   reverb_mix_label: "리버브 믹스:"
   master_gain_label: "마스터 게인:"
-  vol_slider_text: "볼륨"
   gain_keys_hint: "키: +/-"
   polyphony_label: "동시 발음수:"
   polyphony_keys_hint: "키: [ / ]"

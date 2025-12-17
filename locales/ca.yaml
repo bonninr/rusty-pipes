@@ -40,7 +40,6 @@ gui:
   no_reverb: "Sense Reverb"
   reverb_mix_label: "Mescla Reverb:"
   master_gain_label: "Guany Mestre:"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Tecles: +/-"
   polyphony_label: "Polifonia:"
   polyphony_keys_hint: "Tecles: [ / ]"

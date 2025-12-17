@@ -40,7 +40,6 @@ gui:
   no_reverb: "Tanpa Reverb"
   reverb_mix_label: "Campuran Reverb:"
   master_gain_label: "Gain Utama:"
-  vol_slider_text: "Vol"
   gain_keys_hint: "Tombol: +/-"
   polyphony_label: "Polifoni:"
   polyphony_keys_hint: "Tombol: [ / ]"

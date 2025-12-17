@@ -40,7 +40,6 @@ gui:
   no_reverb: "无混响"
   reverb_mix_label: "混响混合:"
   master_gain_label: "主增益 (Gain):"
-  vol_slider_text: "音量"
   gain_keys_hint: "按键: +/-"
   polyphony_label: "复音数 (Polyphony):"
   polyphony_keys_hint: "按键: [ / ]"
