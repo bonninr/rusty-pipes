@@ -380,52 +380,62 @@ impl EguiApp {
         });
     }
     
-    #[cfg_attr(feature = "hotpath", hotpath::measure)]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_footer(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("footer").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label(t!("gui.footer_tip"));
-                ui.separator();
-                
-                // NEW: Recording Controls
-                let (is_rec_midi, is_rec_audio) = {
-                    let state = self.app_state.lock().unwrap();
-                    (state.is_recording_midi, state.is_recording_audio)
-                };
 
-                // MIDI Rec
-                let midi_btn_text = if is_rec_midi { t!("gui.rec_midi_stop") } else { t!("gui.rec_midi_start") };
-                let midi_btn = egui::Button::new(midi_btn_text)
-                    .fill(if is_rec_midi { egui::Color32::RED } else { egui::Color32::from_gray(60) });
-                
-                if ui.add(midi_btn).clicked() {
-                    let new_state = !is_rec_midi;
-                    self.app_state.lock().unwrap().is_recording_midi = new_state;
-                    if new_state {
-                        let _ = self.audio_tx.send(AppMessage::StartMidiRecording);
-                    } else {
-                        let _ = self.audio_tx.send(AppMessage::StopMidiRecording);
+                // Right-aligned controls
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    
+                    let (is_rec_midi, is_rec_audio) = {
+                        let state = self.app_state.lock().unwrap();
+                        (state.is_recording_midi, state.is_recording_audio)
+                    };
+
+                    // Audio Record Button (Visually the Right-most item)
+                    let audio_btn_text = if is_rec_audio { t!("gui.rec_wav_stop") } else { t!("gui.rec_wav_start") };
+                    let audio_btn = egui::Button::new(audio_btn_text)
+                        .fill(if is_rec_audio { egui::Color32::RED } else { egui::Color32::from_gray(60) });
+
+                    if ui.add(audio_btn).clicked() {
+                        let new_state = !is_rec_audio;
+                        self.app_state.lock().unwrap().is_recording_audio = new_state;
+                        if new_state {
+                            let _ = self.audio_tx.send(AppMessage::StartAudioRecording);
+                        } else {
+                            let _ = self.audio_tx.send(AppMessage::StopAudioRecording);
+                        }
                     }
-                }
 
-                // Audio Rec
-                let audio_btn_text = if is_rec_audio { t!("gui.rec_wav_stop") } else { t!("gui.rec_wav_start") };
-                let audio_btn = egui::Button::new(audio_btn_text)
-                    .fill(if is_rec_audio { egui::Color32::RED } else { egui::Color32::from_gray(60) });
+                    ui.add_space(5.0); // Spacing between the buttons
 
-                if ui.add(audio_btn).clicked() {
-                    let new_state = !is_rec_audio;
-                    self.app_state.lock().unwrap().is_recording_audio = new_state;
-                    if new_state {
-                        let _ = self.audio_tx.send(AppMessage::StartAudioRecording);
-                    } else {
-                        let _ = self.audio_tx.send(AppMessage::StopAudioRecording);
+                    // MIDI Record Button (Visually to the left of Audio Btn)
+                    let midi_btn_text = if is_rec_midi { t!("gui.rec_midi_stop") } else { t!("gui.rec_midi_start") };
+                    let midi_btn = egui::Button::new(midi_btn_text)
+                        .fill(if is_rec_midi { egui::Color32::RED } else { egui::Color32::from_gray(60) });
+                    
+                    if ui.add(midi_btn).clicked() {
+                        let new_state = !is_rec_midi;
+                        self.app_state.lock().unwrap().is_recording_midi = new_state;
+                        if new_state {
+                            let _ = self.audio_tx.send(AppMessage::StartMidiRecording);
+                        } else {
+                            let _ = self.audio_tx.send(AppMessage::StopMidiRecording);
+                        }
                     }
-                }
-                
-                if is_rec_midi || is_rec_audio {
-                    ui.label(egui::RichText::new(t!("gui.recording_active")).color(egui::Color32::RED).strong());
-                }
+                    
+                    // Recording Label (Visually to the left of MIDI Btn)
+                    if is_rec_midi || is_rec_audio {
+                        ui.add_space(5.0);
+                        ui.label(egui::RichText::new(t!("gui.recording_active")).color(egui::Color32::RED).strong());
+                    }
+                    
+                    // Separator (Visually separates the right group from the empty space)
+                    ui.add_space(5.0);
+                    ui.separator();
+                });
             });
         });
     }
@@ -810,7 +820,7 @@ impl EguiApp {
         });
     }
 
-    #[cfg_attr(feature = "hotpath", hotpath::measure)]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn draw_stop_list_columns(&mut self, ui: &mut egui::Ui, organ: Arc<Organ>, stop_channels: HashMap<usize, BTreeSet<u8>>) {
         let num_cols = 3;
         let stops: Vec<_> = organ.stops.clone();
@@ -870,10 +880,17 @@ impl EguiApp {
                             let available_width = ui.available_width();
                             let spacing = ui.spacing().item_spacing.x;
                             
-                            // Check if we have room for 16 buttons side-by-side.
-                            // Assuming ~24px minimum per button: 16 * 24 = 384px.
-                            let breakpoint = 380.0;
-                            let is_wide = available_width > breakpoint;
+                            // We want to fit 16 buttons. 
+                            // Let's assume a minimum comfortable button width (e.g., 20px) plus spacing.
+                            // 16 buttons * 20px + 15 spaces * 4px ≈ 380px.
+                            // If we have less than that, we wrap to 2 rows.
+                            
+                            // Calculate required width for 16 buttons in one row
+                            let min_btn_width = 20.0;
+                            let required_width_single_row = (16.0 * min_btn_width) + (18.0 * spacing);
+
+                            // Add a small buffer (e.g. 10px) to prevent edge-hugging
+                            let is_wide = available_width > (required_width_single_row + 10.0);
 
                             // Calculate exact button width to fill the space perfectly
                             let buttons_per_row = if is_wide { 16.0 } else { 8.0 };
