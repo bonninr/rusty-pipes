@@ -626,21 +626,23 @@ impl EguiApp {
                         ui.add_space(10.0);
 
                         // --- Polyphony Control ---
-                        ui.label(t!("gui.polyphony_label"));
                         ui.horizontal(|ui| {
-                            let poly_btn_size = egui::vec2(40.0, 25.0);
-                    
-                            if ui.add_sized(poly_btn_size, egui::Button::new("-16")).clicked() {
-                                self.app_state.lock().unwrap().modify_polyphony(-16, &self.audio_tx);
-                            }
+                            // Label on the left, with toolip
+                            ui.label(t!("gui.polyphony_label"))
+                                .on_hover_text(t!("gui.polyphony_keys_hint"));
 
-                            ui.label(egui::RichText::new(format!("{}", polyphony)).strong().size(16.0));
-
-                            if ui.add_sized(poly_btn_size, egui::Button::new("+16")).clicked() {
-                                self.app_state.lock().unwrap().modify_polyphony(16, &self.audio_tx);
-                            }
+                            // Push everything else to the right
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let poly_btn_size = egui::vec2(25.0, 20.0);
+                                if ui.add_sized(poly_btn_size, egui::Button::new("+")).clicked() {
+                                    self.app_state.lock().unwrap().modify_polyphony(16, &self.audio_tx);
+                                }
+                                ui.label(egui::RichText::new(format!("{}", polyphony)).strong());
+                                if ui.add_sized(poly_btn_size, egui::Button::new("-")).clicked() {
+                                    self.app_state.lock().unwrap().modify_polyphony(-16, &self.audio_tx);
+                                }
+                            });
                         });
-                        ui.label(egui::RichText::new(t!("gui.polyphony_keys_hint")).small().weak());
 
                         ui.separator();
                 
