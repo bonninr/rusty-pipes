@@ -48,6 +48,7 @@ pub enum TuiMessage {
     MidiNoteOff(u8, u8),
     /// (channel)
     MidiChannelNotesOff(u8),
+    MidiPlaybackFinished,
 }
 
 /// Holds information about a currently playing note.

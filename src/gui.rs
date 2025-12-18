@@ -6,7 +6,7 @@ use std::time::{Instant, Duration};
 use std::{
     sync::{
         mpsc::Sender,
-        Arc, Mutex
+        Arc, Mutex,
     },
     path::PathBuf,
     collections::{VecDeque, HashMap, BTreeSet},
@@ -14,7 +14,7 @@ use std::{
 use rust_i18n::t;
 
 use crate::{
-    app::AppMessage,
+    app::{AppMessage, TuiMessage},
     app_state::{AppState, Preset},
     organ::Organ,
     input::MusicCommand,
@@ -25,6 +25,7 @@ use crate::{
 pub struct EguiApp {
     app_state: Arc<Mutex<AppState>>,
     audio_tx: Sender<AppMessage>,
+    tui_tx: Sender<TuiMessage>,
 
     // Need to hold the connection to keep it alive
     _midi_connection: Vec<MidiInputConnection<()>>,
@@ -47,6 +48,7 @@ pub struct EguiApp {
 /// Runs the main GUI loop.
 pub fn run_gui_loop(
     audio_tx: Sender<AppMessage>,
+    tui_tx: Sender<TuiMessage>,
     app_state: Arc<Mutex<AppState>>,
     organ: Arc<Organ>,
     midi_connection: Vec<MidiInputConnection<()>>,
@@ -72,6 +74,7 @@ pub fn run_gui_loop(
     let egui_app = EguiApp {
         app_state,
         audio_tx,
+        tui_tx,
         _midi_connection: midi_connection, // Store the connection
         selected_stop_index,
         stop_list_scroll_offset: 0.0,
@@ -437,255 +440,340 @@ impl EguiApp {
         egui::SidePanel::right("preset_panel")
             .default_width(250.0)
             .show(ctx, |ui| {
-                ui.heading(t!("gui.presets_heading"));
-                ui.add_space(5.0);
+                egui::ScrollArea::vertical()
+                    .id_salt("sidebar_main_scroll") // Unique ID helps egui track scroll position
+                    .show(ui, |ui| {
+                        ui.heading(t!("gui.presets_heading"));
+                        ui.add_space(5.0);
 
-                let spacing = ui.spacing().item_spacing.x;
-                let btn_size = egui::vec2(
-                    (ui.available_width() - spacing) / 2.0, 
-                    20.0
-                );
+                        let spacing = ui.spacing().item_spacing.x;
+                        let btn_size = egui::vec2(
+                            (ui.available_width() - spacing) / 2.0, 
+                            20.0
+                        );
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.label(t!("gui.recall_label"));
-                    
-                    egui::Grid::new("preset_recall_grid")
-                        .num_columns(2)
-                        .spacing([spacing, 5.0])
-                        .show(ui, |ui| {
-                            for i in 0..12 {
-                                let (text, is_loaded) = presets[i].as_ref().map_or_else(
-                                    || (format!("F{}", i + 1), false),
-                                    |p| (format!("F{}: {}", i + 1, p.name.clone()), true),
-                                );
+                        ui.label(t!("gui.recall_label"));
 
-                                if ui.add_sized(btn_size, egui::Button::new(text)).clicked() {
-                                    if is_loaded {
-                                        let mut app_state = self.app_state.lock().unwrap();
-                                        if let Err(e) = app_state.recall_preset(i, &self.audio_tx) {
-                                            app_state.add_midi_log(
-                                                t!("errors.recall_preset_fail", err = e).to_string(),
-                                            );
+                        egui::Grid::new("preset_recall_grid")
+                            .num_columns(2)
+                            .spacing([spacing, 5.0])
+                            .show(ui, |ui| {
+                                for i in 0..12 {
+                                    let (text, is_loaded) = presets[i].as_ref().map_or_else(
+                                        || (format!("F{}", i + 1), false),
+                                        |p| (format!("F{}: {}", i + 1, p.name.clone()), true),
+                                    );
+
+                                    if ui.add_sized(btn_size, egui::Button::new(text)).clicked() {
+                                        if is_loaded {
+                                            let mut app_state = self.app_state.lock().unwrap();
+                                            if let Err(e) = app_state.recall_preset(i, &self.audio_tx) {
+                                                app_state.add_midi_log(
+                                                    t!("errors.recall_preset_fail", err = e).to_string(),
+                                                );
+                                            }
                                         }
                                     }
+                                    if (i + 1) % 2 == 0 {
+                                        ui.end_row();
+                                    }
                                 }
-                                if (i + 1) % 2 == 0 {
-                                    ui.end_row();
+                            });
+                
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+
+                        ui.label(t!("gui.save_label"));
+                        egui::Grid::new("preset_save_grid")
+                            .num_columns(2)
+                            .spacing([spacing, 5.0])
+                            .show(ui, |ui| {
+                                for i in 0..12 {
+                                    let text = format!("F{}", i + 1);
+                                    if ui.add_sized(btn_size, egui::Button::new(text)).clicked() {
+                                        self.preset_save_slot = i;
+                                        self.preset_save_name = presets[i].as_ref().map_or_else(
+                                            || t!("gui.default_preset_name_fmt", num = i + 1).to_string(),
+                                            |p| p.name.clone(),
+                                        );
+                                        self.show_preset_save_modal = true;
+                                    }
+                                    if (i + 1) % 2 == 0 {
+                                        ui.end_row();
+                                    }
                                 }
-                            }
-                        });
+                            });
+
+                        ui.separator();
+                        ui.heading(t!("gui.tremulants_heading"));
+                        ui.add_space(5.0);
+
+                        let mut trem_ids: Vec<_> = organ.tremulants.keys().collect();
+                        trem_ids.sort();
+
+                        if trem_ids.is_empty() {
+                            ui.label(egui::RichText::new(t!("gui.no_tremulants")).weak());
+                        } else {
+                            egui::Grid::new("tremulant_grid")
+                                .num_columns(2)
+                                .spacing([spacing, 5.0])
+                                .show(ui, |ui| {
+                                    for (i, trem_id) in trem_ids.iter().enumerate() {
+                                        let trem = &organ.tremulants[*trem_id];
+                                        let is_active = self
+                                            .app_state
+                                            .lock()
+                                            .unwrap()
+                                            .active_tremulants
+                                            .contains(*trem_id);
+
+                                        let button_text = if is_active {
+                                            egui::RichText::new(&trem.name).color(egui::Color32::GREEN)
+                                        } else {
+                                            egui::RichText::new(&trem.name)
+                                        };
+
+                                        if ui.add_sized(btn_size, egui::Button::new(button_text)).clicked() {
+                                            let mut state = self.app_state.lock().unwrap();
+                                            state.set_tremulant_active(
+                                                trem_id.to_string(),
+                                                !is_active,
+                                                &self.audio_tx,
+                                            );
+                                        }
+                                        if (i + 1) % 2 == 0 {
+                                            ui.end_row();
+                                        }
+                                    }
+                                });
+                        }
                     
-                    ui.add_space(10.0);
-                    ui.separator();
-                    ui.add_space(10.0);
+                        ui.separator();
+                        ui.heading(t!("gui.audio_settings_heading"));
+                        ui.add_space(5.0);
 
-                    ui.label(t!("gui.save_label"));
-                    egui::Grid::new("preset_save_grid")
-                        .num_columns(2)
-                        .spacing([spacing, 5.0])
-                        .show(ui, |ui| {
-                            for i in 0..12 {
-                                let text = format!("F{}", i + 1);
-                                if ui.add_sized(btn_size, egui::Button::new(text)).clicked() {
-                                    self.preset_save_slot = i;
-                                    self.preset_save_name = presets[i].as_ref().map_or_else(
-                                        || t!("gui.default_preset_name_fmt", num = i + 1).to_string(),
-                                        |p| p.name.clone(),
-                                    );
-                                    self.show_preset_save_modal = true;
-                                }
-                                if (i + 1) % 2 == 0 {
-                                    ui.end_row();
-                                }
-                            }
-                        });
-                });
+                        // Get current values
+                        let (mut gain, polyphony, selected_reverb_index, mut reverb_mix) = {
+                            let state = self.app_state.lock().unwrap();
+                        (state.gain, state.polyphony, state.selected_reverb_index, state.reverb_mix)
+                        };
 
-                ui.separator();
-                ui.heading(t!("gui.tremulants_heading"));
-                ui.add_space(5.0);
+                        ui.label(t!("gui.reverb_label"));
+                        let current_name: String = selected_reverb_index
+                            .and_then(|i| self.reverb_files.get(i))
+                            .map(|(n, _)| n.clone())
+                            .unwrap_or_else(|| t!("gui.no_reverb").to_string());
 
-                let mut trem_ids: Vec<_> = organ.tremulants.keys().collect();
-                trem_ids.sort();
-
-                if trem_ids.is_empty() {
-                    ui.label(egui::RichText::new(t!("gui.no_tremulants")).weak());
-                } else {
-                    egui::Grid::new("tremulant_grid")
-                        .num_columns(2)
-                        .spacing([spacing, 5.0])
-                        .show(ui, |ui| {
-                            for (i, trem_id) in trem_ids.iter().enumerate() {
-                                let trem = &organ.tremulants[*trem_id];
-                                let is_active = self
-                                    .app_state
-                                    .lock()
-                                    .unwrap()
-                                    .active_tremulants
-                                    .contains(*trem_id);
-
-                                let button_text = if is_active {
-                                    egui::RichText::new(&trem.name).color(egui::Color32::GREEN)
-                                } else {
-                                    egui::RichText::new(&trem.name)
-                                };
-
-                                if ui.add_sized(btn_size, egui::Button::new(button_text)).clicked() {
+                        egui::ComboBox::from_id_salt("runtime_reverb_combo")
+                            .width(ui.available_width()) 
+                            .selected_text(current_name)
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(selected_reverb_index.is_none(), t!("gui.no_reverb")).clicked() {
+                                    let _ = self.audio_tx.send(AppMessage::SetReverbWetDry(0.0));
                                     let mut state = self.app_state.lock().unwrap();
-                                    state.set_tremulant_active(
-                                        trem_id.to_string(),
-                                        !is_active,
-                                        &self.audio_tx,
-                                    );
+                                    state.selected_reverb_index = None;
+                                    state.reverb_mix = 0.0;
+                                    state.persist_settings();
                                 }
-                                if (i + 1) % 2 == 0 {
-                                    ui.end_row();
+
+                                for (i, (name, path)) in self.reverb_files.iter().enumerate() {
+                                    if ui.selectable_label(selected_reverb_index == Some(i), name).clicked() {
+                                        let _ = self.audio_tx.send(AppMessage::SetReverbIr(path.clone()));
+                                        let mut state = self.app_state.lock().unwrap();
+                                        state.selected_reverb_index = Some(i);
+                                        state.persist_settings();
+                                    }
                                 }
-                            }
-                        });
-                }
-                    
-                ui.separator();
-                ui.heading(t!("gui.audio_settings_heading"));
-                ui.add_space(5.0);
+                            });
 
-            // Get current values
-                let (mut gain, polyphony, selected_reverb_index, mut reverb_mix) = {
-                    let state = self.app_state.lock().unwrap();
-                (state.gain, state.polyphony, state.selected_reverb_index, state.reverb_mix)
-                };
+                        ui.add_space(10.0);
 
-                ui.label(t!("gui.reverb_label"));
-                let current_name: String = selected_reverb_index
-                    .and_then(|i| self.reverb_files.get(i))
-                    .map(|(n, _)| n.clone())
-                    .unwrap_or_else(|| t!("gui.no_reverb").to_string());
+                        // Update the style locally for this frame.
+                        // Subtract ~50px to leave room for the value text (e.g. "1.00").
+                        ui.spacing_mut().slider_width = ui.available_width() - 50.0;
 
-                egui::ComboBox::from_id_salt("runtime_reverb_combo")
-                    .width(ui.available_width()) 
-                    .selected_text(current_name)
-                    .show_ui(ui, |ui| {
-                        if ui.selectable_label(selected_reverb_index.is_none(), t!("gui.no_reverb")).clicked() {
-                            let _ = self.audio_tx.send(AppMessage::SetReverbWetDry(0.0));
+                        ui.label(t!("gui.reverb_mix_label"));
+                        if ui.add(egui::Slider::new(&mut reverb_mix, 0.0..=1.0).show_value(true)).changed() {
                             let mut state = self.app_state.lock().unwrap();
-                            state.selected_reverb_index = None;
-                            state.reverb_mix = 0.0;
+                            state.reverb_mix = reverb_mix;
+                            let _ = self.audio_tx.send(AppMessage::SetReverbWetDry(reverb_mix));
                             state.persist_settings();
                         }
 
-                        for (i, (name, path)) in self.reverb_files.iter().enumerate() {
-                            if ui.selectable_label(selected_reverb_index == Some(i), name).clicked() {
-                                let _ = self.audio_tx.send(AppMessage::SetReverbIr(path.clone()));
-                                let mut state = self.app_state.lock().unwrap();
-                                state.selected_reverb_index = Some(i);
-                                state.persist_settings();
-                            }
+                        ui.add_space(10.0);
+
+                        ui.label(t!("gui.master_gain_label"));
+                        if ui.add(egui::Slider::new(&mut gain, 0.0..=2.0).show_value(true)).changed() {
+                            let mut state = self.app_state.lock().unwrap();
+                            state.gain = gain;
+                            let _ = self.audio_tx.send(AppMessage::SetGain(gain));
+                            state.persist_settings();
                         }
-                    });
 
-                ui.add_space(10.0);
+                        ui.label(egui::RichText::new(t!("gui.gain_keys_hint")).small().weak());
 
-                // Update the style locally for this frame.
-                // Subtract ~50px to leave room for the value text (e.g. "1.00").
-                ui.spacing_mut().slider_width = ui.available_width() - 50.0;
+                        ui.add_space(10.0);
 
-                ui.label(t!("gui.reverb_mix_label"));
-                if ui.add(egui::Slider::new(&mut reverb_mix, 0.0..=1.0).show_value(true)).changed() {
-                    let mut state = self.app_state.lock().unwrap();
-                    state.reverb_mix = reverb_mix;
-                    let _ = self.audio_tx.send(AppMessage::SetReverbWetDry(reverb_mix));
-                    state.persist_settings();
-                }
-
-                ui.add_space(10.0);
-
-                ui.label(t!("gui.master_gain_label"));
-                if ui.add(egui::Slider::new(&mut gain, 0.0..=2.0).show_value(true)).changed() {
-                    let mut state = self.app_state.lock().unwrap();
-                    state.gain = gain;
-                    let _ = self.audio_tx.send(AppMessage::SetGain(gain));
-                    state.persist_settings();
-                }
-
-                ui.label(egui::RichText::new(t!("gui.gain_keys_hint")).small().weak());
-
-                ui.add_space(10.0);
-
-                // --- Polyphony Control ---
-                ui.label(t!("gui.polyphony_label"));
-                ui.horizontal(|ui| {
-                    let poly_btn_size = egui::vec2(40.0, 25.0);
+                        // --- Polyphony Control ---
+                        ui.label(t!("gui.polyphony_label"));
+                        ui.horizontal(|ui| {
+                            let poly_btn_size = egui::vec2(40.0, 25.0);
                     
-                    if ui.add_sized(poly_btn_size, egui::Button::new("-16")).clicked() {
-                        self.app_state.lock().unwrap().modify_polyphony(-16, &self.audio_tx);
+                            if ui.add_sized(poly_btn_size, egui::Button::new("-16")).clicked() {
+                                self.app_state.lock().unwrap().modify_polyphony(-16, &self.audio_tx);
+                            }
+
+                            ui.label(egui::RichText::new(format!("{}", polyphony)).strong().size(16.0));
+
+                            if ui.add_sized(poly_btn_size, egui::Button::new("+16")).clicked() {
+                                self.app_state.lock().unwrap().modify_polyphony(16, &self.audio_tx);
+                            }
+                        });
+                        ui.label(egui::RichText::new(t!("gui.polyphony_keys_hint")).small().weak());
+
+                        ui.separator();
+                
+                        // --- MIDI File Player Section ---
+                        ui.heading("MIDI Player");
+                        ui.add_space(5.0);
+
+                        // Prepare Data
+                        let (is_playing, has_file, filename_display) = {
+                            let state = self.app_state.lock().unwrap();
+                            let raw_name = state.midi_file_path.as_ref()
+                                .and_then(|p| p.file_name())
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| "No file selected".to_string());
+                            
+                            let display = if raw_name.len() > 26 {
+                                // Truncate: first 12 ... last 14 = 26 chars total (including ...)
+                                format!("{}...{}", &raw_name[0..12], &raw_name[raw_name.len()-14..])
+                            } else {
+                                raw_name
+                            };
+                            
+                            (state.is_midi_file_playing, state.midi_file_path.is_some(), display)
+                        };
+
+                        // Buttons Row (Open | Play/Stop)
+                        ui.horizontal(|ui| {
+                            let spacing = ui.spacing().item_spacing.x;
+                            // Calculate width to fit exactly 2 buttons
+                            let btn_width = (ui.available_width() - spacing) / 2.0; 
+                            // Enforce same height (e.g., 25.0)
+                            let player_btn_size = egui::vec2(btn_width, 25.0); 
+
+                            // --- OPEN BUTTON ---
+                            if ui.add_sized(player_btn_size, egui::Button::new("📂 Open")).clicked() {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .add_filter("MIDI", &["mid", "midi"])
+                                    .pick_file() 
+                                {
+                                    let mut state = self.app_state.lock().unwrap();
+                                    state.midi_file_path = Some(path);
+                                    if state.is_midi_file_playing {
+                                        state.midi_file_stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                }
+                            }
+
+                            // Play/Stop button
+                            if is_playing {
+                                if ui.add_sized(player_btn_size, egui::Button::new("⏹ Stop").fill(egui::Color32::RED)).clicked() {
+                                     self.app_state.lock().unwrap().midi_file_stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
+                                     let _ = self.audio_tx.send(AppMessage::AllNotesOff);
+                                }
+                            } else {
+                                // We use add_enabled so the button looks disabled if no file is selected
+                                ui.add_enabled_ui(has_file, |ui| {
+                                    if ui.add_sized(player_btn_size, egui::Button::new("▶ Play")).clicked() {
+                                        let mut state = self.app_state.lock().unwrap();
+                                        if let Some(path) = state.midi_file_path.clone() {
+                                            state.is_midi_file_playing = true;
+                                            state.midi_file_stop_signal.store(false, std::sync::atomic::Ordering::Relaxed);
+                                            
+                                            let stop_sig = state.midi_file_stop_signal.clone();
+                                            let tui_tx_clone = self.tui_tx.clone();
+                                            
+                                            if let Err(e) = crate::midi::play_midi_file(path, tui_tx_clone, stop_sig) {
+                                                state.add_midi_log(format!("Error playing MIDI: {}", e));
+                                                state.is_midi_file_playing = false;
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        });
+
+                        // Filename Label Row (Below buttons)
+                        ui.add_space(2.0);
+                        // Center the filename text relative to the panel width
+                        ui.vertical_centered(|ui| {
+                            ui.label(egui::RichText::new(filename_display).weak().italics());
+                        });
+
+                        ui.separator();
+
+
+                        // --- Underrun Indicator ---
+                        let is_underrun = {
+                            let state = self.app_state.lock().unwrap();
+                            if let Some(last) = state.last_underrun {
+                            // Light up if underrun happened in the last 200ms
+                                last.elapsed() < Duration::from_millis(200)
+                            } else {
+                                false
+                            }
+                        };
+
+                        let (active_voice_count, polyphony, cpu_load) = {
+                            let state = self.app_state.lock().unwrap();
+                            (state.active_voice_count, state.polyphony, state.cpu_load)
+                        };
+
+                        let status_btn_size = egui::vec2(ui.available_width(), 30.0);
+
+                        if is_underrun {
+                            ui.add_sized(
+                                status_btn_size,
+                                egui::Button::new(
+                                    egui::RichText::new(t!("gui.underrun_alert"))
+                                        .color(egui::Color32::WHITE)
+                                        .strong(),
+                                )
+                                .fill(egui::Color32::RED),
+                            );
+                        } else {
+                            ui.add_sized(
+                                status_btn_size,
+                                egui::Button::new(
+                                    egui::RichText::new(t!("gui.voices_fmt", voices = active_voice_count, poly = polyphony))
+                                        .color(egui::Color32::GREEN)
+                                        .strong(),
+                                )
+                                .fill(egui::Color32::from_gray(40))
+                                .frame(false),
+                            );
+                        }
+
+                        ui.add_space(5.0);
+                        ui.separator();
+
+                        // --- CPU Load Bar ---
+                        ui.label(t!("gui.cpu_load_fmt", load = format!("{:.1}", cpu_load * 100.0)));
+
+                        let load_color = if cpu_load < 0.5 {
+                            egui::Color32::GREEN
+                        } else if cpu_load < 0.9 {
+                            egui::Color32::YELLOW
+                        } else {
+                            egui::Color32::RED
+                        };
+
+                        ui.add(egui::ProgressBar::new(cpu_load).fill(load_color).animate(false));
                     }
-
-                    ui.label(egui::RichText::new(format!("{}", polyphony)).strong().size(16.0));
-
-                    if ui.add_sized(poly_btn_size, egui::Button::new("+16")).clicked() {
-                        self.app_state.lock().unwrap().modify_polyphony(16, &self.audio_tx);
-                    }
-                });
-                ui.label(egui::RichText::new(t!("gui.polyphony_keys_hint")).small().weak());
-
-                ui.add_space(15.0);
-
-                // --- Underrun Indicator ---
-                let is_underrun = {
-                    let state = self.app_state.lock().unwrap();
-                    if let Some(last) = state.last_underrun {
-                    // Light up if underrun happened in the last 200ms
-                        last.elapsed() < Duration::from_millis(200)
-                    } else {
-                        false
-                    }
-                };
-
-                let (active_voice_count, polyphony, cpu_load) = {
-                    let state = self.app_state.lock().unwrap();
-                    (state.active_voice_count, state.polyphony, state.cpu_load)
-                };
-
-                let status_btn_size = egui::vec2(ui.available_width(), 30.0);
-
-                if is_underrun {
-                    ui.add_sized(
-                        status_btn_size,
-                        egui::Button::new(
-                            egui::RichText::new(t!("gui.underrun_alert"))
-                                .color(egui::Color32::WHITE)
-                                .strong(),
-                        )
-                        .fill(egui::Color32::RED),
-                    );
-                } else {
-                    ui.add_sized(
-                        status_btn_size,
-                        egui::Button::new(
-                            egui::RichText::new(t!("gui.voices_fmt", voices = active_voice_count, poly = polyphony))
-                                .color(egui::Color32::GREEN)
-                                .strong(),
-                        )
-                        .fill(egui::Color32::from_gray(40))
-                        .frame(false),
-                    );
-                }
-
-                ui.add_space(15.0);
-                ui.separator();
-
-                // --- CPU Load Bar ---
-                ui.label(t!("gui.cpu_load_fmt", load = format!("{:.1}", cpu_load * 100.0)));
-
-                let load_color = if cpu_load < 0.5 {
-                    egui::Color32::GREEN
-                } else if cpu_load < 0.9 {
-                    egui::Color32::YELLOW
-                } else {
-                    egui::Color32::RED
-                };
-
-                ui.add(egui::ProgressBar::new(cpu_load).fill(load_color).animate(false));
+                );
             });
     }
 

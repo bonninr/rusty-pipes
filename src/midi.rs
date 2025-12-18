@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::path::PathBuf;
 use std::fs;
 use std::thread::{self, JoinHandle};
@@ -151,6 +152,7 @@ fn parse_and_send(message: &[u8], tui_tx: &Sender<TuiMessage>, channel: u8) {
 pub fn play_midi_file(
     path: PathBuf,
     tui_tx: Sender<TuiMessage>,
+    stop_signal: Arc<AtomicBool>,
 ) -> Result<JoinHandle<()>> {
 
     let handle = thread::spawn(move || {
@@ -192,14 +194,17 @@ pub fn play_midi_file(
         let mut track_next_event_times: Vec<u32> = vec![0; tracks.len()];
         let mut global_ticks: u32 = 0;
 
-        // Delay playback for 3 seconds to allow user to prepare
-        let _ = tui_tx.send(TuiMessage::MidiLog("Playback will start in 3 seconds...".into()));
-        thread::sleep(Duration::from_secs(3));
-
         let _ = tui_tx.send(TuiMessage::MidiLog(format!("Starting playback of {}...", path.display())));
 
         // Start the playback loop
         loop {
+
+            if stop_signal.load(Ordering::Relaxed) {
+                let _ = tui_tx.send(TuiMessage::MidiLog("Playback stopped by user.".into()));
+                let _ = tui_tx.send(TuiMessage::TuiAllNotesOff);
+                break;
+            }
+
             let mut next_event_tick = u32::MAX;
             let mut next_track_idx = None;
 
@@ -289,6 +294,7 @@ pub fn play_midi_file(
         }
         
         let _ = tui_tx.send(TuiMessage::MidiLog("Playback finished.".into()));
+        let _ = tui_tx.send(TuiMessage::MidiPlaybackFinished);
     });
 
     Ok(handle)

@@ -446,45 +446,55 @@ fn main() -> Result<()> {
         log::info!("MIDI logic thread shutting down.");
     });
 
-    // --- Start MIDI input ---
+    // --- Start MIDI ---
     let _midi_file_thread: Option<JoinHandle<()>>;
+
+    if let Some(path) = config.midi_file {
+        if tui_mode { println!("{}", t!("main.starting_midi_file", path = path.display())); }
+        
+        // Update state
+        {
+            let mut state = app_state.lock().unwrap();
+            state.midi_file_path = Some(path.clone());
+            state.is_midi_file_playing = true;
+        }
+
+        // We need access to the stop signal from state
+        let stop_signal = app_state.lock().unwrap().midi_file_stop_signal.clone();
+
+        midi::play_midi_file(path, tui_tx.clone(), stop_signal)?;
+    }
+
     // We store multiple connections to keep them alive
     let mut midi_connections = Vec::new(); 
 
-    if let Some(path) = config.midi_file {
-        // --- Play from MIDI file ---
-        if tui_mode { println!("{}", t!("main.starting_midi_file", path = path.display())); }
-        _midi_file_thread = Some(midi::play_midi_file(path, tui_tx.clone())?);
-    } else {
-        // --- Use live MIDI input (Multiple Devices) ---
-        // Iterate over the configured active devices
-        if !config.active_midi_devices.is_empty() {
-            for (port, dev_config) in config.active_midi_devices {
-                let client_name = format!("Rusty Pipes - {}", dev_config.name);
+    // --- Use live MIDI input (Multiple Devices) ---
+    // Iterate over the configured active devices
+    if !config.active_midi_devices.is_empty() {
+        for (port, dev_config) in config.active_midi_devices {
+            let client_name = format!("Rusty Pipes - {}", dev_config.name);
                 
-                // Create a new client for each connection (midir consumes the client on connect)
-                match MidiInput::new(&client_name) {
-                    Ok(client) => {
-                        if tui_mode { println!("{}", t!("main.connecting_midi", name = dev_config.name)); }
+            // Create a new client for each connection (midir consumes the client on connect)
+            match MidiInput::new(&client_name) {
+                Ok(client) => {
+                    if tui_mode { println!("{}", t!("main.connecting_midi", name = dev_config.name)); }
                         
-                        match connect_to_midi(client, &port, &dev_config.name, &tui_tx, dev_config.clone(), Arc::clone(&shared_midi_recorder)) {
-                            Ok(conn) => {
-                                midi_connections.push(conn);
-                                app_state.lock().unwrap().add_midi_log(format!("Connected: {}", dev_config.name));
-                            },
-                            Err(e) => {
-                                log::error!("Failed to connect to {}: {}", dev_config.name, e);
-                                app_state.lock().unwrap().add_midi_log(t!("errors.midi_connect_fail", name = dev_config.name, err = e).to_string());
-                            }
+                    match connect_to_midi(client, &port, &dev_config.name, &tui_tx, dev_config.clone(), Arc::clone(&shared_midi_recorder)) {
+                        Ok(conn) => {
+                            midi_connections.push(conn);
+                            app_state.lock().unwrap().add_midi_log(format!("Connected: {}", dev_config.name));
+                        },
+                        Err(e) => {
+                            log::error!("Failed to connect to {}: {}", dev_config.name, e);
+                            app_state.lock().unwrap().add_midi_log(t!("errors.midi_connect_fail", name = dev_config.name, err = e).to_string());
                         }
-                    },
-                    Err(e) => log::error!("Failed to create MIDI client for {}: {}", dev_config.name, e),
-                }
+                    }
+                },
+                Err(e) => log::error!("Failed to create MIDI client for {}: {}", dev_config.name, e),
             }
-        } else if tui_mode {
-            println!("{}", t!("main.no_midi_devices"));
         }
-        _midi_file_thread = None;
+    } else if tui_mode {
+        println!("{}", t!("main.no_midi_devices"));
     }
 
     // --- Run the TUI or GUI on the main thread ---
@@ -497,6 +507,7 @@ fn main() -> Result<()> {
         log::info!("Starting GUI...");
         gui::run_gui_loop(
             audio_tx,
+            tui_tx,
             Arc::clone(&app_state),
             organ,
             midi_connections, // Pass the Vector of connections

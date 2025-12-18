@@ -7,6 +7,7 @@ use std::{
     io::{BufReader, BufWriter},
     path::PathBuf,
     sync::{mpsc::Sender, Arc, Mutex},
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 use crate::{
@@ -94,6 +95,9 @@ pub struct AppState {
     pub midi_control_map: MidiControlMap,
     // Stores the last raw midi event received and when, used by the Learn UI
     pub last_midi_event_received: Option<(MidiEventSpec, Instant)>,
+    pub midi_file_path: Option<PathBuf>,
+    pub is_midi_file_playing: bool,
+    pub midi_file_stop_signal: Arc<AtomicBool>,
 }
 
 pub fn get_preset_file_path() -> PathBuf {
@@ -139,6 +143,9 @@ impl AppState {
             is_recording_audio: false,
             midi_control_map,
             last_midi_event_received: None,
+            midi_file_path: None,
+            is_midi_file_playing: false,
+            midi_file_stop_signal: Arc::new(AtomicBool::new(false)),
         })
     }
     
@@ -309,6 +316,11 @@ impl AppState {
             TuiMessage::TuiNoteOn(note, channel, start_time) => self.handle_tui_note_on(note, channel, start_time),
             TuiMessage::TuiNoteOff(note, channel, end_time) => self.handle_tui_note_off(note, channel, end_time),
             TuiMessage::TuiAllNotesOff => self.handle_tui_all_notes_off(),
+            TuiMessage::MidiPlaybackFinished => {
+                self.is_midi_file_playing = false;
+                self.midi_file_stop_signal.store(false, Ordering::Relaxed);
+                self.handle_tui_all_notes_off();
+            }
         }
         Ok(())
     }
