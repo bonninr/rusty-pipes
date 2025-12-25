@@ -190,6 +190,38 @@ jobs:
           path: |
             ./artifacts
 
+  build-msi:
+    name: Build Windows MSI
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ./target
+          key: msi-cargo-registry-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install cargo-wix
+        run: cargo install cargo-wix
+
+      - name: Build MSI
+        run: |
+          if [ ! -d "wix" ]; then
+            echo "Wix configuration not found, initializing defaults..."
+            cargo wix init
+          fi
+          cargo wix --release --nocapture
+
+      - name: Archive MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-msi
+          path: target/wix/*.msi
+
   build-deb:
     needs: test
     runs-on: ubuntu-latest
@@ -224,7 +256,7 @@ jobs:
 
   deploy:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [flatpak, build, build-deb]
+    needs: [flatpak, build, build-deb, build-msi]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -246,4 +278,5 @@ jobs:
             ./artifacts/*/*.tar.gz
             ./artifacts/*/*.zip
             ./artifacts/*/*.deb
+            ./artifacts/*/*.msi
             ./*.flatpak
