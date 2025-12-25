@@ -214,7 +214,7 @@ jobs:
             echo "Wix configuration not found, initializing defaults..."
             cargo wix init
           fi
-          cargo wix --release --nocapture
+          cargo wix
 
       - name: Archive MSI
         uses: actions/upload-artifact@v4
