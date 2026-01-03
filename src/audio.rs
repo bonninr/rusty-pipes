@@ -247,28 +247,32 @@ fn spawn_audio_processing_thread<P>(
 
             // Voice Processing Loop
             for (voice_id, voice) in voices.iter_mut() {
-                if voice.is_fading_out && voice.fade_level <= 0.0001 { voices_to_remove.push(*voice_id); continue; }
-                
+                if voice.is_fading_out && voice.fade_level <= 0.0001 {
+                    voices_to_remove.push(*voice_id);
+                    continue;
+                }
+
                 // Calculate Tremulant Impact
                 let (trem_start_am, trem_end_am) = if let Some(wc_id) = &voice.windchest_group_id {
                     let start = *prev_windchest_mods.get(wc_id).unwrap_or(&1.0);
                     let end = *current_windchest_mods.get(wc_id).unwrap_or(&1.0);
                     (start, end)
-                } else { (1.0, 1.0) };
+                } else {
+                    (1.0, 1.0)
+                };
 
-                let pitch_start = 1.0 + (trem_start_am - 1.0) * 0.1; 
+                let pitch_start = 1.0 + (trem_start_am - 1.0) * 0.1;
                 let pitch_end = 1.0 + (trem_end_am - 1.0) * 0.1;
                 let avg_pitch = (pitch_start + pitch_end) * 0.5;
-                
+
                 // Buffer Management (Lazy Compaction)
                 let needed_frames_float = buffer_size_frames as f32 * avg_pitch;
-                let needed_frames = needed_frames_float.ceil() as usize + 2; 
+                let needed_frames = needed_frames_float.ceil() as usize + 2; // +2 for interpolation safety
                 let needed_samples = needed_frames * CHANNEL_COUNT;
 
                 // If the buffer is getting too full/fragmented, compact it now.
                 // We keep valid data from buffer_start_idx onwards.
                 if voice.buffer_start_idx + needed_samples > voice.input_buffer.capacity() {
-                    // Move valid data to the start of the buffer
                     let remaining = voice.input_buffer.len() - voice.buffer_start_idx;
                     voice.input_buffer.copy_within(voice.buffer_start_idx.., 0);
                     voice.input_buffer.truncate(remaining);
@@ -277,83 +281,96 @@ fn spawn_audio_processing_thread<P>(
 
                 // Fill Buffer
                 let available = voice.consumer.occupied_len() / CHANNEL_COUNT;
-                let to_read = available.min(needed_frames * 2); 
-                
+                let to_read = available.min(needed_frames * 2);
+
                 if to_read > 0 {
                     let read_samples = to_read * CHANNEL_COUNT;
-                    if scratch_read_buffer.len() < read_samples { scratch_read_buffer.resize(read_samples, 0.0); }
+                    if scratch_read_buffer.len() < read_samples {
+                        scratch_read_buffer.resize(read_samples, 0.0);
+                    }
                     let _ = voice.consumer.pop_slice(&mut scratch_read_buffer[..read_samples]);
                     voice.input_buffer.extend_from_slice(&scratch_read_buffer[..read_samples]);
                 }
 
-                // Check actual available data (relative to our virtual start index)
+                // Check actual available data
                 let total_valid_samples = voice.input_buffer.len() - voice.buffer_start_idx;
                 if total_valid_samples < needed_samples {
-                     if voice.is_finished.load(Ordering::Relaxed) { voices_to_remove.push(*voice_id); }
-                     continue; 
+                    if voice.is_finished.load(Ordering::Relaxed) {
+                        voices_to_remove.push(*voice_id);
+                    }
+                    continue;
                 }
+
+                // Create a SAFE slice of the valid data we are about to read.
+                let input_slice = &voice.input_buffer[voice.buffer_start_idx..];
 
                 // Envelope
                 let env_start = voice.fade_level;
                 let mut env_end = env_start;
-                if voice.is_fading_in { env_end = (env_start + voice.fade_increment * buffer_size_frames as f32).min(1.0); if env_end >= 1.0 { voice.is_fading_in = false; } }
-                else if voice.is_fading_out { env_end = (env_start - voice.fade_increment * buffer_size_frames as f32).max(0.0); }
+                if voice.is_fading_in {
+                    env_end = (env_start + voice.fade_increment * buffer_size_frames as f32).min(1.0);
+                    if env_end >= 1.0 { voice.is_fading_in = false; }
+                } else if voice.is_fading_out {
+                    env_end = (env_start - voice.fade_increment * buffer_size_frames as f32).max(0.0);
+                }
                 voice.fade_level = env_end;
 
                 let gain_delta = (trem_end_am * env_end - trem_start_am * env_start) / buffer_size_frames as f32;
                 let mut current_gain_scalar = trem_start_am * env_start * voice.gain;
-                
-                let mix_chunks = mix_buffer.chunks_exact_mut(CHANNEL_COUNT);
 
-                // Processing (Fast vs Slow Path)
+                let mix_chunks = mix_buffer.chunks_exact_mut(CHANNEL_COUNT);
                 let is_fast_path = (avg_pitch - 1.0).abs() < 0.00001;
 
-                // Get pointer to the *start* of valid data
-                // unsafe { voice.input_buffer.get_unchecked(voice.buffer_start_idx) }
-                let base_ptr = unsafe { voice.input_buffer.as_ptr().add(voice.buffer_start_idx) };
-
-                // Mixing
                 if is_fast_path {
-                    // Fast Path (No Resampling)
+                    // Safe Fast Path
+                    // No resampling. We map input samples 1:1 to output samples.
                     let start_offset = voice.cursor_pos.round() as usize * CHANNEL_COUNT;
-                    
-                    // Simple linear loop, compiler can vectorise this easily
-                    for (mix, i) in mix_chunks.zip(0..buffer_size_frames) {
-                        let sample_idx = start_offset + (i * CHANNEL_COUNT);
-                        unsafe {
-                            let l = *base_ptr.add(sample_idx);
-                            let r = *base_ptr.add(sample_idx + 1);
+                    let end_offset = start_offset + buffer_size_frames * CHANNEL_COUNT;
+
+                    // Ensure we don't read past the end (should be covered by needed_samples check, but strict safety requires this)
+                    if let Some(valid_chunk) = input_slice.get(start_offset..end_offset) {
+                        // ZIP allows the compiler to remove bounds checks and use SIMD
+                        for (mix, input_frame) in mix_chunks.zip(valid_chunk.chunks_exact(CHANNEL_COUNT)) {
+                            // input_frame is guaranteed to have 2 elements [L, R]
+                            let l = input_frame[0];
+                            let r = input_frame[1];
                             mix[0] += l * current_gain_scalar;
                             mix[1] += r * current_gain_scalar;
+                            
+                            current_gain_scalar += gain_delta;
                         }
-                        current_gain_scalar += gain_delta;
                     }
                     
                     // Advance cursor
                     voice.cursor_pos = (voice.cursor_pos.round() as usize + buffer_size_frames) as f32;
                 } else {
-                    // Slow Path (Linear Interpolation)
+                    // Safe Slow Path
+                    // Linear Interpolation.
                     let pitch_delta = (pitch_end - pitch_start) / buffer_size_frames as f32;
                     let mut current_pitch_rate = pitch_start;
+
+                    // We hinted to the compiler earlier that we have 'needed_samples'. 
+                    // This assert helps the optimizer hoist bounds checks out of the loop.
+                    assert!(input_slice.len() >= needed_samples);
 
                     for mix in mix_chunks {
                         let idx = voice.cursor_pos.floor() as usize;
                         let frac = voice.cursor_pos - idx as f32;
                         let idx_stereo = idx * CHANNEL_COUNT;
 
-                        unsafe {
-                            // Reads are relative to base_ptr (buffer_start_idx)
-                            let s0_l = *base_ptr.add(idx_stereo);
-                            let s0_r = *base_ptr.add(idx_stereo + 1);
-                            let s1_l = *base_ptr.add(idx_stereo + 2);
-                            let s1_r = *base_ptr.add(idx_stereo + 3);
+                        // Standard indexing is safe here.
+                        // Because of the assert above, LLVM knows these indices are valid.
+                        let s0_l = input_slice[idx_stereo];
+                        let s0_r = input_slice[idx_stereo + 1];
+                        let s1_l = input_slice[idx_stereo + 2];
+                        let s1_r = input_slice[idx_stereo + 3];
 
-                            let out_l = s0_l + (s1_l - s0_l) * frac;
-                            let out_r = s0_r + (s1_r - s0_r) * frac;
+                        let out_l = s0_l + (s1_l - s0_l) * frac;
+                        let out_r = s0_r + (s1_r - s0_r) * frac;
 
-                            mix[0] += out_l * current_gain_scalar;
-                            mix[1] += out_r * current_gain_scalar;
-                        }
+                        mix[0] += out_l * current_gain_scalar;
+                        mix[1] += out_r * current_gain_scalar;
+
                         voice.cursor_pos += current_pitch_rate;
                         current_gain_scalar += gain_delta;
                         current_pitch_rate += pitch_delta;
@@ -370,7 +387,7 @@ fn spawn_audio_processing_thread<P>(
                     voice.cursor_pos -= samples_consumed_int as f32;
                 }
 
-                 if voice.is_fading_out && voice.fade_level == 0.0 {
+                if voice.is_fading_out && voice.fade_level == 0.0 {
                     voices_to_remove.push(*voice_id);
                 }
             }
