@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, SampleFormat, Stream, StreamConfig};
+use cpal::{Device,  SizedSample, SampleFormat, FromSample, Stream, StreamConfig};
 use ringbuf::traits::{Observer, Consumer, Producer, Split};
 use ringbuf::HeapRb;
 use std::collections::{HashMap, VecDeque};
@@ -43,8 +43,35 @@ pub fn get_supported_sample_rates(device_name: Option<String>) -> Result<Vec<u32
 }
 
 fn get_cpal_host() -> cpal::Host {
-    cpal::available_hosts().into_iter().find(|id| id.name().to_lowercase().contains("jack"))
-        .and_then(|id| cpal::host_from_id(id).ok()).unwrap_or_else(cpal::default_host)
+    let available_hosts = cpal::available_hosts();
+    let host_names: Vec<_> = available_hosts.iter().map(|id| id.name()).collect();
+    log::info!("[Audio] Available Hosts: {:?}", host_names);
+    // Prioritize JACK
+    if let Some(id) = available_hosts.iter().find(|id| id.name().to_lowercase().contains("jack")) {
+        if let Ok(host) = cpal::host_from_id(*id) {
+            log::info!("[Audio] Selected Audio Host: JACK (PipeWire/Native)");
+            return host;
+        }
+    }
+    // Prioritize PulseAudio
+    if let Some(id) = available_hosts.iter().find(|id| id.name().to_lowercase().contains("pulse")) {
+        if let Ok(host) = cpal::host_from_id(*id) {
+            log::info!("[Audio] Selected Audio Host: PulseAudio (PipeWire/Native)");
+            return host;
+        }
+    }
+    // Explicit ALSA check (Linux only)
+    // Sometimes 'default' behaves differently than explicit ALSA on weird setups.
+    #[cfg(target_os = "linux")]
+    if let Some(id) = available_hosts.iter().find(|id| id.name().to_lowercase().contains("alsa")) {
+         if let Ok(host) = cpal::host_from_id(*id) {
+            log::info!("[Audio] Selected Audio Host: ALSA");
+            return host;
+        }
+    }
+    // Fallback (WASAPI on Windows, CoreAudio on Mac, or whatever is left)
+    log::info!("[Audio] Selected Audio Host: System Default");
+    cpal::default_host()
 }
 
 pub fn get_audio_device_names() -> Result<Vec<String>> {
@@ -490,50 +517,89 @@ pub fn start_audio_playback(
     let mix_channels = 2; 
     let ring_buf_capacity = buffer_size_frames * mix_channels * 10;
     let ring_buf = HeapRb::<f32>::new(ring_buf_capacity);
-    let (producer, mut consumer) = ring_buf.split();
+    let (producer, consumer) = ring_buf.split();
 
     spawn_audio_processing_thread(rx, producer, organ, sample_rate, buffer_size_frames, gain, polyphony, tui_tx.clone(), shared_midi_recorder);
-
-    let mut stereo_read_buffer: Vec<f32> = vec![0.0; buffer_size_frames * 2];
-
-    let data_callback = move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
-        let out_channels = device_channels;
-        let in_channels = 2;
-        let frames_to_write = output.len() / out_channels;
-        let frames_available = consumer.occupied_len() / in_channels;
-        let frames_to_process = frames_to_write.min(frames_available);
-        let samples_to_read = frames_to_process * in_channels;
-
-        if frames_to_process > 0 {
-            if stereo_read_buffer.len() < samples_to_read { stereo_read_buffer.resize(samples_to_read, 0.0); }
-            let _ = consumer.pop_slice(&mut stereo_read_buffer[..samples_to_read]);
-
-            let mut in_idx = 0;
-            let mut out_idx = 0;
-            for _ in 0..frames_to_process {
-                output[out_idx + 0] = stereo_read_buffer[in_idx + 0];
-                output[out_idx + 1] = stereo_read_buffer[in_idx + 1];
-                for ch in 2..out_channels { output[out_idx + ch] = 0.0; }
-                in_idx += in_channels;
-                out_idx += out_channels;
-            }
-        }
-
-        let silence_start_frame = frames_to_process;
-        if silence_start_frame < frames_to_write {
-            let silence_start_sample = silence_start_frame * out_channels;
-            for sample in &mut output[silence_start_sample..] { *sample = 0.0; }
-            let _ = tui_tx.send(TuiMessage::AudioUnderrun);
-        }
-    };
 
     let err_callback = |err| { log::error!("[CpalCallback] Stream error: {}", err); };
 
     let stream = match sample_format {
-        SampleFormat::F32 => device.build_output_stream(&stream_config, data_callback, err_callback, None)?,
-        _ => return Err(anyhow!("Unsupported sample format")),
+        SampleFormat::F32 => build_stream::<f32>(
+            &device, &stream_config, consumer, device_channels, tui_tx, err_callback
+        )?,
+        SampleFormat::I16 => build_stream::<i16>(
+            &device, &stream_config, consumer, device_channels, tui_tx, err_callback
+        )?,
+        SampleFormat::U16 => build_stream::<u16>(
+            &device, &stream_config, consumer, device_channels, tui_tx, err_callback
+        )?,
+        _ => return Err(anyhow!("Unsupported sample format: {:?}", sample_format)),
     };
 
     stream.play()?;
+    Ok(stream)
+}
+
+// Helper to handle different sample formats (F32, I16, U16) in a generic way
+fn build_stream<T>(
+    device: &Device,
+    config: &StreamConfig,
+    mut consumer: impl Consumer<Item = f32> + Send + 'static,
+    device_channels: usize,
+    tui_tx: mpsc::Sender<TuiMessage>,
+    err_fn: impl Fn(cpal::StreamError) + Send + 'static,
+) -> Result<Stream> 
+where 
+    T: SizedSample + FromSample<f32> + Send + 'static,
+{
+    let mut stereo_read_buffer: Vec<f32> = Vec::with_capacity(1024);
+
+    let stream = device.build_output_stream(
+        config,
+        move |output: &mut [T], _: &cpal::OutputCallbackInfo| {
+            let out_channels = device_channels;
+            let in_channels = 2;
+            let frames_to_write = output.len() / out_channels;
+            let samples_to_read = frames_to_write * in_channels;
+
+            if stereo_read_buffer.len() < samples_to_read {
+                stereo_read_buffer.resize(samples_to_read, 0.0);
+            }
+
+            let read_count = consumer.pop_slice(&mut stereo_read_buffer[..samples_to_read]);
+            let frames_processed = read_count / in_channels;
+
+            let mut in_idx = 0;
+            let mut out_idx = 0;
+
+            for _ in 0..frames_processed {
+                let l_f32 = stereo_read_buffer[in_idx + 0];
+                let r_f32 = stereo_read_buffer[in_idx + 1];
+
+                output[out_idx + 0] = T::from_sample(l_f32);
+                output[out_idx + 1] = T::from_sample(r_f32);
+
+                for ch in 2..out_channels {
+                    output[out_idx + ch] = T::from_sample(0.0f32);
+                }
+
+                in_idx += in_channels;
+                out_idx += out_channels;
+            }
+
+            if frames_processed < frames_to_write {
+                let silence_start = frames_processed * out_channels;
+                for sample in &mut output[silence_start..] {
+                    *sample = T::from_sample(0.0f32);
+                }
+                if frames_processed == 0 {
+                    let _ = tui_tx.send(TuiMessage::AudioUnderrun);
+                }
+            }
+        },
+        err_fn,
+        None
+    )?;
+    
     Ok(stream)
 }
