@@ -44,33 +44,37 @@ pub fn get_supported_sample_rates(device_name: Option<String>) -> Result<Vec<u32
 
 fn get_cpal_host() -> cpal::Host {
     let available_hosts = cpal::available_hosts();
+    
+    // Debug log to see what cpal actually detected
     let host_names: Vec<_> = available_hosts.iter().map(|id| id.name()).collect();
     log::info!("[Audio] Available Hosts: {:?}", host_names);
-    // Prioritize JACK
-    if let Some(id) = available_hosts.iter().find(|id| id.name().to_lowercase().contains("jack")) {
-        if let Ok(host) = cpal::host_from_id(*id) {
-            log::info!("[Audio] Selected Audio Host: JACK (PipeWire/Native)");
-            return host;
+
+    // Define our priority order
+    let priority_order = ["jack", "pulse", "alsa"];
+
+    for target_name in priority_order {
+        // Find the host ID that matches the current target name
+        if let Some(host_id) = available_hosts.iter().find(|id| id.name().to_lowercase().contains(target_name)) {
+            // Try to initialize the host
+            if let Ok(host) = cpal::host_from_id(*host_id) {
+                // Try to actually fetch devices. 
+                match host.output_devices() {
+                    Ok(_devices) => {
+                        // Check if we can actually iterate/read the list
+                        log::info!("[Audio] Selected Host: {} (Status: Online)", host.id().name());
+                        return host;
+                    },
+                    Err(e) => {
+                        log::warn!("[Audio] Host found but unusable: {} (Error: {})", host.id().name(), e);
+                        // Continue loop to try next priority
+                    }
+                }
+            }
         }
     }
-    // Prioritize PulseAudio
-    if let Some(id) = available_hosts.iter().find(|id| id.name().to_lowercase().contains("pulse")) {
-        if let Ok(host) = cpal::host_from_id(*id) {
-            log::info!("[Audio] Selected Audio Host: PulseAudio (PipeWire/Native)");
-            return host;
-        }
-    }
-    // Explicit ALSA check (Linux only)
-    // Sometimes 'default' behaves differently than explicit ALSA on weird setups.
-    #[cfg(target_os = "linux")]
-    if let Some(id) = available_hosts.iter().find(|id| id.name().to_lowercase().contains("alsa")) {
-         if let Ok(host) = cpal::host_from_id(*id) {
-            log::info!("[Audio] Selected Audio Host: ALSA");
-            return host;
-        }
-    }
-    // Fallback (WASAPI on Windows, CoreAudio on Mac, or whatever is left)
-    log::info!("[Audio] Selected Audio Host: System Default");
+
+    // Fallback: If no prioritized host works, try the default
+    log::info!("[Audio] All prioritized hosts failed. Falling back to system default.");
     cpal::default_host()
 }
 
