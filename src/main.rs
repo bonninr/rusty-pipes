@@ -257,7 +257,7 @@ fn main() -> Result<()> {
         ir_file: config.ir_file.clone(),
         reverb_mix: config.reverb_mix,
         audio_buffer_frames: config.audio_buffer_frames,
-        preload_frames: config.preload_frames,
+        max_ram_gb: config.max_ram_gb,
         precache: config.precache,
         convert_to_16bit: config.convert_to_16bit,
         original_tuning: config.original_tuning,
@@ -316,7 +316,7 @@ fn main() -> Result<()> {
                 load_config.original_tuning,
                 load_config.sample_rate,
                 Some(progress_tx), 
-                load_config.preload_frames,
+                (load_config.max_ram_gb * 1024.0) as usize,
             );
 
             log::info!("[LoadingThread] Finished.");
@@ -374,7 +374,7 @@ fn main() -> Result<()> {
             config.original_tuning,
             config.sample_rate,
             if config.precache && tui_mode { Some(tui_progress_tx) } else { None },
-            config.preload_frames,
+            (config.max_ram_gb * 1024.0) as usize,
         )?);
     }
      

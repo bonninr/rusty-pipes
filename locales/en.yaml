@@ -131,7 +131,7 @@ config:
   group_gain: "Gain:"
   group_polyphony: "Polyphony:"
   group_buffer: "Audio Buffer (frames):"
-  group_preload: "Preload Frames:"
+  group_preload: "Max RAM for Samples (GB):"
   group_options: "Options:"
   
   # Tooltips
@@ -146,7 +146,7 @@ config:
   tooltip_gain: "Overall output volume. Adjust this to prevent clipping or to increase loudness."
   tooltip_polyphony: "Maximum number of simultaneous voices. Voices past this limit will have a very short release tail. Lower values reduce the fullness of the organ but reduce CPU usage and risk of audio dropouts."
   tooltip_buffer: "Number of audio frames per buffer. Higher values can reduce audio glitches on slower systems, but also increase audio latency."
-  tooltip_preload: "Each sample's first few frames will be pre-loaded into RAM. Higher values give your disk more time to stream the remaining sample data, but this also uses more RAM. Increase this value if you have a slower SSD."
+  tooltip_preload: "Maximum RAM to use for pre-loading samples (in GB). Higher values give your disk more time to stream the remaining sample data, but this also uses more RAM. Increase this value if you have a slower SSD."
   tooltip_precache: "Enable this to completely load all samples into RAM instead of streaming them from disk."
   tooltip_convert: "Enable this to convert all samples to 16-bit depth for lower RAM usage and potentially better performance."
   tooltip_tuning: "Enable this to use the original tuning of the organ samples, as long as they are not off by more than 20 cents. Can help to preserve the original character of some organs."
@@ -210,7 +210,7 @@ tui_config:
   fmt_gain:        "Gain:             %{val}"
   fmt_poly:        "Polyphony:        %{val}"
   fmt_buffer:      "Audio Buffer:     %{val} frames"
-  fmt_preload:     "Preload Frames:   %{val} frames"
+  fmt_preload:     "Max Sample RAM:   %{val} GB"
   fmt_precache:    "Pre-cache:        %{val}"
   fmt_convert:     "Convert to 16-bit:%{val}"
   fmt_tuning:      "Original Tuning:  %{val}"

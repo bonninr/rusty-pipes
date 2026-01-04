@@ -112,6 +112,8 @@ impl App for ConfigApp {
                     .min_col_width(180.0)  // Minimum width for labels
                     .show(ui, |ui| {
                         
+                        ui.style_mut().spacing.slider_width = 300.0;
+                        
                         // --- Organ File ---
                         ui.label(t!("config.group_organ_file")).on_hover_text(t!("config.tooltip_organ"));
                         ui.horizontal(|ui| {
@@ -253,7 +255,7 @@ impl App for ConfigApp {
                                     }
                                 }
                             });
-                        // Add a refresh button for IRs? Or a "Show Folder" button could be nice, but simple is best.
+                        
                         if ui.button("📂").on_hover_text(t!("config.tooltip_ir_folder")).clicked() {
                              if let Ok(dir) = crate::config::get_reverb_directory() {
                                  let _ = open::that(dir);
@@ -292,8 +294,14 @@ impl App for ConfigApp {
 
                         // --- Preload Frames ---
                         ui.label(t!("config.group_preload")).on_hover_text(t!("config.tooltip_preload"));
-                        ui.add(egui::DragValue::new(&mut self.state.settings.preload_frames).speed(32.0).range(1024..=99999999));
-
+                        ui.add_enabled(
+                            !self.state.settings.precache, 
+                            egui::Slider::new(&mut self.state.settings.max_ram_gb, 0.0..=256.0)
+                                .show_value(true)
+                                .min_decimals(1)
+                                .step_by(1.0)
+                                .text("")
+                        );
                         ui.end_row();
 
                         // --- Boolean Options ---
@@ -361,7 +369,7 @@ impl App for ConfigApp {
                             ir_file: self.state.settings.ir_file.clone(),
                             reverb_mix: self.state.settings.reverb_mix,
                             audio_buffer_frames: self.state.settings.audio_buffer_frames,
-                            preload_frames: self.state.settings.preload_frames,
+                            max_ram_gb: self.state.settings.max_ram_gb,
                             precache: self.state.settings.precache,
                             convert_to_16bit: self.state.settings.convert_to_16bit,
                             original_tuning: self.state.settings.original_tuning,

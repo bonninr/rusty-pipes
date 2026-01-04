@@ -50,7 +50,7 @@ enum SettingRow {
     Gain = 7,
     Polyphony = 8,
     AudioBuffer = 9,
-    PreloadFrames = 10,
+    MaxRAMGB = 10,
     Precache = 11,
     ConvertTo16Bit = 12,
     OriginalTuning = 13,
@@ -72,7 +72,7 @@ impl SettingRow {
             7 => Some(Self::Gain),
             8 => Some(Self::Polyphony),
             9 => Some(Self::AudioBuffer),
-            10 => Some(Self::PreloadFrames),
+            10 => Some(Self::MaxRAMGB),
             11 => Some(Self::Precache),
             12 => Some(Self::ConvertTo16Bit),
             13 => Some(Self::OriginalTuning),
@@ -104,7 +104,7 @@ fn get_item_display(idx: usize, state: &ConfigState) -> String {
         SettingRow::Gain => t!("tui_config.fmt_gain", val = format!("{:.2}", settings.gain)).to_string(),
         SettingRow::Polyphony => t!("tui_config.fmt_poly", val = settings.polyphony).to_string(),
         SettingRow::AudioBuffer => t!("tui_config.fmt_buffer", val = settings.audio_buffer_frames).to_string(),
-        SettingRow::PreloadFrames => t!("tui_config.fmt_preload", val = settings.preload_frames).to_string(),
+        SettingRow::MaxRAMGB => t!("tui_config.fmt_preload", val = settings.max_ram_gb).to_string(),
         SettingRow::Precache => t!("tui_config.fmt_precache", val = bool_to_str(settings.precache)).to_string(),
         SettingRow::ConvertTo16Bit => t!("tui_config.fmt_convert", val = bool_to_str(settings.convert_to_16bit)).to_string(),
         SettingRow::OriginalTuning => t!("tui_config.fmt_tuning", val = bool_to_str(settings.original_tuning)).to_string(),
@@ -243,9 +243,11 @@ pub fn run_config_ui(
                                         let buffer = state.config_state.settings.audio_buffer_frames.to_string();
                                         state.mode = ConfigMode::TextInput(idx, buffer);
                                     }
-                                    SettingRow::PreloadFrames => { // Preload Frames
-                                        let buffer = state.config_state.settings.preload_frames.to_string();
-                                        state.mode = ConfigMode::TextInput(idx, buffer);
+                                    SettingRow::MaxRAMGB => { // Max RAM GB
+                                        if !state.config_state.settings.precache {
+                                            let buffer = state.config_state.settings.max_ram_gb.to_string();
+                                            state.mode = ConfigMode::TextInput(idx, buffer);
+                                        }
                                     }
                                     SettingRow::Precache => state.config_state.settings.precache = !state.config_state.settings.precache,
                                     SettingRow::ConvertTo16Bit => state.config_state.settings.convert_to_16bit = !state.config_state.settings.convert_to_16bit,
@@ -269,7 +271,7 @@ pub fn run_config_ui(
                                                 ir_file: s.ir_file.clone(),
                                                 reverb_mix: s.reverb_mix,
                                                 audio_buffer_frames: s.audio_buffer_frames,
-                                                preload_frames: s.preload_frames,
+                                                max_ram_gb: s.max_ram_gb,
                                                 precache: s.precache,
                                                 convert_to_16bit: s.convert_to_16bit,
                                                 original_tuning: s.original_tuning,
@@ -479,9 +481,9 @@ pub fn run_config_ui(
                                         state.config_state.settings.audio_buffer_frames = val;
                                     }
                                 }
-                                SettingRow::PreloadFrames => {
-                                    if let Ok(val) = buffer.parse::<usize>() {
-                                        state.config_state.settings.preload_frames = val;
+                                SettingRow::MaxRAMGB => {
+                                    if let Ok(val) = buffer.parse::<f32>() {
+                                        state.config_state.settings.max_ram_gb = val;
                                     }
                                 }
                                 _ => {}
@@ -559,19 +561,26 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
     let items: Vec<ListItem> = (0..num_config_items)
         .map(|i| {
         let text = get_item_display(i, &state.config_state);
-            let mut list_item = ListItem::new(text.clone());
+        let mut list_item = ListItem::new(text.clone());
+        let row = SettingRow::from_index(i);
             
-            // Index 10 is "S. Start Rusty Pipes"
-            if text == t!("config.btn_start") {
-                list_item = list_item.style(
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD)
-                );
-            }
-            list_item
-        })
-        .collect();
+        // Style the "Start" button
+        if row == Some(SettingRow::Start) {
+            list_item = list_item.style(
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
+            );
+        }
+
+        // Style the Disabled RAM option
+        if row == Some(SettingRow::MaxRAMGB) && state.config_state.settings.precache {
+            list_item = list_item.style(Style::default().fg(Color::DarkGray));
+        }
+
+        list_item
+    })
+    .collect();
 
     let list_widget = List::new(items)
         .block(Block::default().borders(Borders::ALL).title("Settings"))
@@ -633,7 +642,7 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
                 SettingRow::Gain => t!("tui_config.prompt_gain").to_string(),
                 SettingRow::Polyphony => t!("tui_config.prompt_poly").to_string(),
                 SettingRow::AudioBuffer => t!("tui_config.prompt_buffer").to_string(),
-                SettingRow::PreloadFrames => t!("tui_config.prompt_preload").to_string(),
+                SettingRow::MaxRAMGB => t!("config.group_preload").to_string(),
                 _ => t!("tui_config.prompt_generic").to_string(),
             };
             draw_text_input_modal(frame, &title, buffer, 40, 3);

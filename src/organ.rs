@@ -105,6 +105,8 @@ pub struct ConversionTask {
 impl Organ {
     /// Loads and parses an organ file (either .organ or .Organ_Hauptwerk_xml).
     /// This function dispatches to the correct parser based on the file extension.
+    ///
+    /// `max_preload_ram_mb`: The maximum amount of RAM (in MB) to dedicate to preloading attack transients.
     pub fn load(
         path: &Path, 
         convert_to_16_bit: bool, 
@@ -112,7 +114,7 @@ impl Organ {
         original_tuning: bool,
         target_sample_rate: u32,
         progress_tx: Option<mpsc::Sender<(f32, String)>>,
-        preload_frames: usize,
+        max_preload_ram_mb: usize,
     ) -> Result<Self> {
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
         let loader_tx = progress_tx.clone();
@@ -136,7 +138,8 @@ impl Organ {
             // Run the parallel loader
             organ.run_parallel_precache(target_sample_rate, progress_tx)?;
         } else {
-            organ.preload_attack_samples(target_sample_rate, progress_tx, preload_frames)?;
+            // Dynamically calculate frame count based on RAM budget
+            organ.preload_attack_samples(target_sample_rate, progress_tx, max_preload_ram_mb)?;
         }
         Ok(organ)
     }
@@ -240,9 +243,9 @@ impl Organ {
         &mut self,
         target_sample_rate: u32,
         progress_tx: Option<mpsc::Sender<(f32, String)>>,
-        preload_frames: usize,
+        max_preload_ram_mb: usize,
     ) -> Result<()> {
-        log::info!("[Cache] Pre-loading attack/release transients...");
+        log::info!("[Cache] Calculating pre-load budget based on {} MB limit...", max_preload_ram_mb);
         
         // Collect all paths that need loading
         let mut paths = HashSet::new();
@@ -255,10 +258,43 @@ impl Organ {
             }
         }
         let unique_paths: Vec<PathBuf> = paths.into_iter().collect();
-        let total = unique_paths.len();
-        log::debug!("[Cache] Found {} unique attack/release samples to preload.", total);
-        if total == 0 { return Ok(()); }
+        let total_files = unique_paths.len();
         
+        if total_files == 0 { 
+            log::debug!("[Cache] No samples found to preload.");
+            return Ok(()); 
+        }
+
+        // Calculate frames per file based on RAM budget
+        // Total bytes available
+        let total_bytes_budget = max_preload_ram_mb as usize * 1024 * 1024;
+        
+        // Bytes available per unique file
+        let bytes_per_file = total_bytes_budget / total_files;
+
+        // Size of one f32 sample
+        let bytes_per_float = std::mem::size_of::<f32>();
+
+        // Heuristic: Assume Stereo (2 channels) to be safe. 
+        // If files are mono, we simply load less duration than we could have, but we won't crash RAM.
+        // If files are stereo, we hit the target exactly.
+        let assumed_channels = 2;
+        let bytes_per_frame = bytes_per_float * assumed_channels;
+
+        let frames_to_preload = bytes_per_file / bytes_per_frame;
+
+        // Convert to milliseconds for logging (just for user info)
+        let ms_preload = (frames_to_preload as f32 / target_sample_rate as f32) * 1000.0;
+
+        log::info!("[Cache] Found {} unique samples. RAM Budget: {} MB.", total_files, max_preload_ram_mb);
+        log::info!("[Cache] Allocation: ~{} bytes/file -> Preloading {} frames (~{:.1} ms) per sample.", 
+            bytes_per_file, frames_to_preload, ms_preload);
+
+        if frames_to_preload == 0 {
+            log::warn!("[Cache] RAM budget is too low to preload any meaningful data per file.");
+            return Ok(());
+        }
+
         // Load them in parallel
         let loaded_count = AtomicUsize::new(0);
         
@@ -267,12 +303,12 @@ impl Organ {
             .par_iter()
             .filter_map(|path| {
                  // Load just the start using a helper from wav_converter
-                 match wav_converter::load_sample_head(path, target_sample_rate, preload_frames) {
+                 match wav_converter::load_sample_head(path, target_sample_rate, frames_to_preload) {
                      Ok(data) => {
                          let current = loaded_count.fetch_add(1, Ordering::Relaxed);
                          if let Some(tx) = &progress_tx {
                              if current % 50 == 0 {
-                                 let _ = tx.send((current as f32 / total as f32, "Pre-loading transients...".to_string()));
+                                 let _ = tx.send((current as f32 / total_files as f32, "Pre-loading transients...".to_string()));
                              }
                          }
                          Some((path.clone(), Arc::new(data)))
@@ -299,7 +335,7 @@ impl Organ {
             }
         }
         
-        log::info!("[Cache] Pre-loaded {} attack headers.", loaded_chunks.len());
+        log::info!("[Cache] Successfully pre-loaded {} attack headers.", loaded_chunks.len());
         Ok(())
     }
 
