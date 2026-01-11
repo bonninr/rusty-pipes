@@ -121,11 +121,16 @@ impl AppState {
 
         let presets = Self::load_presets(&organ.name);
         let midi_control_map = MidiControlMap::load(&organ.name);
+        let mut midi_log = VecDeque::with_capacity(MIDI_LOG_CAPACITY);
+        // Initialize with empty lines
+        for _ in 0..MIDI_LOG_CAPACITY - 1 {
+            midi_log.push_back("".to_string());
+        }
 
         Ok(Self {
             organ,
             stop_channels: HashMap::new(),
-            midi_log: VecDeque::with_capacity(MIDI_LOG_CAPACITY),
+            midi_log,
             error_msg: None,
             currently_playing_notes: HashMap::new(),
             active_midi_notes: HashMap::new(),
@@ -457,15 +462,15 @@ impl AppState {
         Ok(())
     }
     
-    /// Activates all channels (0-9) for the specified stop.
+    /// Activates all channels for the specified stop.
     pub fn select_all_channels_for_stop(&mut self, stop_index: usize) {
         let stop_set = self.stop_channels.entry(stop_index).or_default();
-        for channel in 0..10 { // Channels 0-9
+        for channel in 0..16 {
             stop_set.insert(channel);
         }
     }
     
-    /// Deactivates all channels (0-9) for the specified stop.
+    /// Deactivates all channels for the specified stop.
     pub fn select_none_channels_for_stop(
         &mut self,
         stop_index: usize,
@@ -474,7 +479,7 @@ impl AppState {
         if let Some(stop_set) = self.stop_channels.get_mut(&stop_index) {
             // Collect channels to deactivate
             let channels_to_deactivate: Vec<u8> = stop_set.iter().copied()
-                .filter(|&c| c < 10)
+                .filter(|&c| c < 16)
                 .collect();
 
             if !channels_to_deactivate.is_empty() {

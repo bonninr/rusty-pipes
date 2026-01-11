@@ -955,11 +955,7 @@ impl EguiApp {
                             response.scroll_to_me(Some(egui::Align::Center));
                         }
                         
-                        // Use a background color that contrasts with the main panel
-                        let group_bg = visuals.extreme_bg_color; 
-                        
                         egui::Frame::group(ui.style())
-                            .fill(group_bg)
                             .show(ui, |ui| {
                                 let available_width = ui.available_width();
                                 let spacing = ui.spacing().item_spacing.x;
@@ -1036,13 +1032,12 @@ impl EguiApp {
                 ui.scope_builder(UiBuilder { max_rect: Some(log_rect), ..Default::default() }, |ui| {
                     // Use the theme's 'extreme' background for the log area to make it look like a terminal/text box
                     egui::Frame::canvas(ui.style())
-                        .fill(visuals.extreme_bg_color)
+                        .fill(visuals.panel_fill)
                         .show(ui, |ui| {
                             egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
                                 ui.set_width(ui.available_width());
                                 for msg in midi_log {
-                                    // RichText::weak() automatically picks a subtle gray based on light/dark mode
-                                    ui.label(egui::RichText::new(msg).weak());
+                                    ui.label(egui::RichText::new(msg));
                                 }
                             });
                         });
