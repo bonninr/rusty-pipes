@@ -403,7 +403,7 @@ pub fn run_config_ui(
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([700.0, 700.0])
+            .with_inner_size([700.0, 800.0])
             .with_resizable(true),         
         ..Default::default()
     };
