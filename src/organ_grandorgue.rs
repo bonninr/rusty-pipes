@@ -2,8 +2,9 @@ use anyhow::{anyhow, Result};
 use ini::inistr;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::fs::canonicalize;
-use std::sync::mpsc;
+use std::fs::{self, canonicalize};
+use std::sync::{mpsc, Mutex};
+use std::io::Read;
 
 use crate::wav_converter;
 use crate::organ::{Organ, Stop, Rank, Pipe, ReleaseSample, Tremulant, WindchestGroup, ConversionTask};
@@ -22,65 +23,205 @@ impl NonEmpty for String {
     }
 }
 
-/// Determine the GrandOrgue organ root directory based on the file path.
-fn detect_grandorgue_root(file_path: &Path) -> Result<PathBuf> {
-    // Try to resolve the file path to its canonical (physical) location.
-    // This handles cases where the definition file (or its parent folder) is a symlink.
-    if let Ok(physical_file) = canonicalize(file_path) {
-        // GrandOrgue paths are relative to the file, so the parent is the root.
-        if let Some(parent) = physical_file.parent() {
-            log::info!("GrandOrgue: Detected physical root at {:?}", parent);
-            return Ok(parent.to_path_buf());
-        }
-    }
-
-    // If canonicalize fails, use the logical parent.
-    let logical_path = Organ::normalize_path_preserve_symlinks(file_path)?;
-    logical_path.parent()
-        .map(|p| p.to_path_buf())
-        .ok_or_else(|| anyhow!("Could not determine parent directory for {:?}", file_path))
+/// Helper to get a clean organ name from a file path
+fn get_organ_name(path: &Path) -> String {
+    path.file_stem().unwrap_or_default().to_string_lossy().to_string()
 }
 
-/// Loads and parses a GrandOrgue (.organ) file.
-pub fn load_grandorgue(
-    path: &Path, 
-    convert_to_16_bit: bool, 
-    pre_cache: bool, 
+/// Standard Folder Loader: Just reads the file and points base_path to the folder.
+pub fn load_grandorgue_dir(
+    path: &Path,
+    convert_to_16_bit: bool,
     original_tuning: bool,
     target_sample_rate: u32,
     progress_tx: &Option<mpsc::Sender<(f32, String)>>,
 ) -> Result<Organ> {
     let logical_path = Organ::normalize_path_preserve_symlinks(path)?;
+    
+    // Determine the root directory relative to the definition file
+    let organ_base_path = if let Ok(physical_file) = canonicalize(path) {
+        physical_file.parent().unwrap().to_path_buf()
+    } else {
+        logical_path.parent().unwrap().to_path_buf()
+    };
 
-    let organ_base_path = detect_grandorgue_root(&path)?;
+    println!("Loading GrandOrgue organ from directory: {:?}", logical_path);
+    let file_content = Organ::read_file_tolerant(&logical_path)?;
+    let organ_name = get_organ_name(&logical_path);
+    let cache_path = Organ::get_organ_cache_dir(&organ_name)?;
 
-    println!("Loading GrandOrgue organ from: {:?}", logical_path);
+    // For standard files, the provisioner is a no-op (files exist)
+    let file_provisioner = |_tasks: &HashSet<ConversionTask>| -> Result<()> { Ok(()) };
+
+    load_grandorgue_common(
+        &organ_name,
+        &file_content,
+        organ_base_path,
+        cache_path,
+        convert_to_16_bit,
+        original_tuning,
+        target_sample_rate,
+        progress_tx,
+        file_provisioner
+    )
+}
+
+/// Zip Loader: Extracts definition, finds samples, extracts samples, then loads.
+pub fn load_grandorgue_zip(
+    zip_path: &Path,
+    convert_to_16_bit: bool,
+    original_tuning: bool,
+    target_sample_rate: u32,
+    progress_tx: &Option<mpsc::Sender<(f32, String)>>,
+) -> Result<Organ> {
+    let zip_file = fs::File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(zip_file)?;
+
+    let organ_name = get_organ_name(zip_path);
+    let cache_path = Organ::get_organ_cache_dir(&organ_name)?;
+    
+    // Create extraction root
+    let extracted_source_path = cache_path.join("extracted_source");
+    fs::create_dir_all(&extracted_source_path)?;
+
+    // Find definition file
+    let definition_filename = {
+        let mut found = None;
+        for i in 0..archive.len() {
+            let file = archive.by_index(i)?;
+            if file.name().to_lowercase().ends_with(".organ") {
+                found = Some(file.name().to_string());
+                break;
+            }
+        }
+        found.ok_or_else(|| anyhow!("No .organ definition file found inside {:?}", zip_path))?
+    };
+
+    println!("Loading GrandOrgue organ from Archive: {:?} (Def: {})", zip_path, definition_filename);
+
+    // Read definition content
+    let definition_content = {
+        let mut file = archive.by_name(&definition_filename)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        match String::from_utf8(buffer.clone()) {
+            Ok(s) => s,
+            Err(_) => buffer.into_iter().map(|b| b as char).collect(),
+        }
+    };
+
+    // Prepare Closure
+    // We clone the path so the closure owns its own copy, allowing the original to be moved later.
+    let source_path_for_closure = extracted_source_path.clone();
+    let archive_mutex = Mutex::new(archive); 
+    
+    let zip_provisioner = move |tasks: &HashSet<ConversionTask>| -> Result<()> {
+        let mut archive = archive_mutex.lock().map_err(|_| anyhow!("Failed to lock zip archive"))?;
+        let total = tasks.len();
+        
+        if let Some(tx) = progress_tx {
+            let _ = tx.send((0.0, format!("Extracting {} samples from archive...", total)));
+        }
+
+        for (i, task) in tasks.iter().enumerate() {
+            let entry_name = task.relative_path.to_string_lossy().replace('\\', "/");
+            let dest_path = source_path_for_closure.join(&task.relative_path);
+            
+            // Skip if already extracted
+            if dest_path.exists() { continue; }
+
+            if let Some(parent) = dest_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            
+            // Try Strict Lookup
+            let mut extracted = false;
+            // Create a scope so 'file' is dropped immediately after use
+            if let Ok(mut file) = archive.by_name(&entry_name) {
+                let mut out = fs::File::create(&dest_path)?;
+                std::io::copy(&mut file, &mut out)?;
+                extracted = true;
+            }
+
+            // Fuzzy Lookup (only if strict failed)
+            // The strict borrow is now gone, so we can iterate safely.
+            if !extracted {
+                let len = archive.len(); 
+                for idx in 0..len {
+                    // Open file once
+                    let mut file = archive.by_index(idx)?;
+                    if file.name().eq_ignore_ascii_case(&entry_name) {
+                        let mut out = fs::File::create(&dest_path)?;
+                        // We use the same file handle we just checked
+                        std::io::copy(&mut file, &mut out)?;
+                        extracted = true;
+                        break; 
+                    }
+                }
+            }
+
+            if !extracted {
+                log::warn!("Sample not found in zip: {}", entry_name);
+            }
+
+            if let Some(tx) = progress_tx {
+                if i % 20 == 0 {
+                    let _ = tx.send((i as f32 / total as f32, "Extracting files...".to_string()));
+                }
+            }
+        }
+        Ok(())
+    };
+
+    // Call common loader
+    load_grandorgue_common(
+        &organ_name,
+        &definition_content,
+        extracted_source_path,
+        cache_path,
+        convert_to_16_bit,
+        original_tuning,
+        target_sample_rate,
+        progress_tx,
+        zip_provisioner
+    )
+}
+
+/// The internal logic that parses INI, calls the provisioner, and builds the struct.
+#[allow(clippy::too_many_arguments)]
+fn load_grandorgue_common<F>(
+    organ_name: &str,
+    file_content: &str,
+    base_path: PathBuf, // Extracted source folder OR original folder
+    cache_path: PathBuf,
+    convert_to_16_bit: bool,
+    original_tuning: bool,
+    target_sample_rate: u32,
+    progress_tx: &Option<mpsc::Sender<(f32, String)>>,
+    provision_samples_fn: F,
+) -> Result<Organ> 
+where F: Fn(&HashSet<ConversionTask>) -> Result<()> 
+{
     if let Some(tx) = progress_tx { let _ = tx.send((0.0, "Parsing GrandOrgue INI...".to_string())); }
 
-    // Access helper from Organ
-    let file_content = Organ::read_file_tolerant(&logical_path)?;
-    
+    // Sanitize # comments
     let safe_content = file_content.replace('#', "__HASH__");
     let conf = inistr!(&safe_content);
 
-    let organ_name = logical_path.file_stem().unwrap_or_default().to_string_lossy().to_string();
-    let cache_path = Organ::get_organ_cache_dir(&organ_name)?;
-
     let mut organ = Organ {
-        base_path: organ_base_path.to_path_buf(),
+        base_path: base_path.clone(),
         cache_path: cache_path.clone(),
-        name: organ_name,
-        sample_cache: if pre_cache { Some(HashMap::new()) } else { None },
-        metadata_cache: if pre_cache { Some(HashMap::new()) } else { None },
+        name: organ_name.to_string(),
+        sample_cache: None, 
+        metadata_cache: None,
         ..Default::default()
     };
 
-    // Collect Tasks Logic
+    // --- PHASE 1: Collect all required tasks ---
     let mut conversion_tasks: HashSet<ConversionTask> = HashSet::new();
 
     for (section_name, props) in conf.iter() {
         let section_lower = section_name.to_lowercase();
-        
         let is_rank_def = section_lower.starts_with("rank");
         let is_stop_def = section_lower.starts_with("stop");
         
@@ -93,7 +234,11 @@ pub fn load_grandorgue(
         if !is_rank_def && !has_pipes { continue; }
 
         let get_prop = |key_upper: &str, key_lower: &str, default: &str| {
-            props.get(key_upper).or_else(|| props.get(key_lower)).and_then(|opt| opt.as_deref()).map(|s| s.to_string()).unwrap_or_else(|| default.to_string()).trim().replace("__HASH__", "#").to_string()
+            props.get(key_upper).or_else(|| props.get(key_lower))
+                .and_then(|opt| opt.as_deref())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| default.to_string())
+                .trim().replace("__HASH__", "#").to_string()
         };
         
         let pipe_count: usize = get_prop("NumberOfLogicalPipes", "numberoflogicalpipes", "0").parse().unwrap_or(0);
@@ -103,7 +248,6 @@ pub fn load_grandorgue(
             let pipe_key_prefix_lower = format!("pipe{:03}", i);
 
             if let Some(attack_path_str) = get_prop(&pipe_key_prefix_upper, &pipe_key_prefix_lower, "").non_empty_or(None) {
-                
                 if attack_path_str.starts_with("REF:") { continue; }
 
                 let mut pitch_tuning_cents: f32 = get_prop(&format!("{}PitchTuning", pipe_key_prefix_upper), &format!("{}pitchtuning", pipe_key_prefix_lower), "0.0").parse().unwrap_or(0.0);
@@ -125,7 +269,7 @@ pub fn load_grandorgue(
                     let rel_key_lower = format!("{}release{:03}", pipe_key_prefix_lower, r_idx);
                     if let Some(rel_path_str) = get_prop(&rel_key_upper, &rel_key_lower, "").non_empty_or(None) {
                             if rel_path_str.starts_with("REF:") { continue; }
-
+                            
                             conversion_tasks.insert(ConversionTask {
                                 relative_path: PathBuf::from(rel_path_str.replace('\\', "/")),
                                 tuning_cents_int: (pitch_tuning_cents * 100.0) as i32,
@@ -137,7 +281,11 @@ pub fn load_grandorgue(
         }
     }
 
-    // Parallel Execution
+    // Provision Samples (Extract from Zip if needed)
+    // If loading from disk, this does nothing. If Zip, this extracts only the files found above.
+    provision_samples_fn(&conversion_tasks)?;
+
+    // At this point, files exist physically at `base_path` (either original dir or cache/extracted_source)
     Organ::process_tasks_parallel(&organ.base_path, &organ.cache_path, conversion_tasks, target_sample_rate, progress_tx)?;
 
     // Assembly

@@ -201,7 +201,7 @@ pub fn run_config_ui(
                                         let path = tui_filepicker::run_file_picker(
                                             &mut terminal,
                                             &t!("config.picker_organ"),
-                                            &["organ", "Organ_Hauptwerk_xml", "xml"],
+                                            &["organ", "orgue","Organ_Hauptwerk_xml", "xml"],
                                         )?;
                                         if let Some(p) = path {
                                             state.config_state.settings.organ_file = Some(p);

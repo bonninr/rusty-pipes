@@ -123,7 +123,9 @@ impl Organ {
         
         // Dispatch to specific loader modules
         let mut organ = if extension == "organ" {
-            organ_grandorgue::load_grandorgue(path, convert_to_16_bit, false, original_tuning, target_sample_rate, &loader_tx)?
+            organ_grandorgue::load_grandorgue_dir(path, convert_to_16_bit, original_tuning, target_sample_rate, &loader_tx)?
+        } else if extension == "orgue" {
+            organ_grandorgue::load_grandorgue_zip(path, convert_to_16_bit, original_tuning, target_sample_rate, &loader_tx)?
         } else if extension == "Organ_Hauptwerk_xml" || extension == "xml" {
             organ_hauptwerk::load_hauptwerk(path, convert_to_16_bit, false, original_tuning, target_sample_rate, &loader_tx)?
         } else {
