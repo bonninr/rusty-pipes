@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::fs::{self, canonicalize};
 use std::sync::{mpsc, Mutex};
 use std::io::Read;
+use rust_i18n::t;
 
 use crate::wav_converter;
 use crate::organ::{Organ, Stop, Rank, Pipe, ReleaseSample, Tremulant, WindchestGroup, ConversionTask};
@@ -120,7 +121,7 @@ pub fn load_grandorgue_zip(
         let total = tasks.len();
         
         if let Some(tx) = progress_tx {
-            let _ = tx.send((0.0, format!("Extracting {} samples from archive...", total)));
+            let _ = tx.send((0.0, t!("gui.progress_extract_samples").to_string()));
         }
 
         for (i, task) in tasks.iter().enumerate() {
@@ -166,7 +167,7 @@ pub fn load_grandorgue_zip(
 
             if let Some(tx) = progress_tx {
                 if i % 20 == 0 {
-                    let _ = tx.send((i as f32 / total as f32, "Extracting files...".to_string()));
+                    let _ = tx.send((i as f32 / total as f32, t!("gui.progress_extract_samples").to_string()));
                 }
             }
         }
@@ -202,7 +203,7 @@ fn load_grandorgue_common<F>(
 ) -> Result<Organ> 
 where F: Fn(&HashSet<ConversionTask>) -> Result<()> 
 {
-    if let Some(tx) = progress_tx { let _ = tx.send((0.0, "Parsing GrandOrgue INI...".to_string())); }
+    if let Some(tx) = progress_tx { let _ = tx.send((0.0, t!("gui.progress_parse_ini").to_string())); }
 
     // Sanitize # comments
     let safe_content = file_content.replace('#', "__HASH__");
@@ -289,7 +290,7 @@ where F: Fn(&HashSet<ConversionTask>) -> Result<()>
     Organ::process_tasks_parallel(&organ.base_path, &organ.cache_path, conversion_tasks, target_sample_rate, progress_tx)?;
 
     // Assembly
-    if let Some(tx) = progress_tx { let _ = tx.send((1.0, "Assembling organ...".to_string())); }
+    if let Some(tx) = progress_tx { let _ = tx.send((1.0, t!("gui.progress_assemble_organ").to_string())); }
 
     let mut stops_map: HashMap<String, Stop> = HashMap::new();
     let mut ranks_map: HashMap<String, Rank> = HashMap::new();

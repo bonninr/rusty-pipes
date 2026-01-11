@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Стоп"
   midi_player_fastforward: "Перемотати вперед"
 
+  progress_processing: "Передискретизація"
+  progress_cache_read: "Читання кешу з диска"
+  progress_cache_write: "Запис кешу на диск"
+  progress_cache_done: "Завантажено з дискового кешу"
+  progress_load_transients: "Попереднє зав. транзієнтів"
+  progress_load_ram: "Завантаження семплів в RAM"
+  progress_parse_ini: "Аналіз GrandOrgue INI"
+  progress_parse_xml: "Аналіз XML"
+  progress_assemble_organ: "Збірка органу"
+  progress_extract_samples: "Вилучення семплів"
+
 errors:
   midi_connect_fail: "Не вдалося підключитися до %{name}: %{err}"
   midi_fetch_fail: "Помилка отримання MIDI-пристроїв: %{err}"

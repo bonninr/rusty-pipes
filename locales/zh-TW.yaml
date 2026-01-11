@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "停止"
   midi_player_fastforward: "快轉"
 
+  progress_processing: "重取樣 (Resampling)"
+  progress_cache_read: "正在從磁碟讀取快取"
+  progress_cache_write: "正在將快取寫入磁碟"
+  progress_cache_done: "已從磁碟快取載入"
+  progress_load_transients: "預載瞬態 (Transients)"
+  progress_load_ram: "正在載入採樣到記憶體"
+  progress_parse_ini: "解析 GrandOrgue INI"
+  progress_parse_xml: "解析 XML"
+  progress_assemble_organ: "組裝管風琴"
+  progress_extract_samples: "提取採樣"
+
 errors:
   midi_connect_fail: "連接到 %{name} 失敗: %{err}"
   midi_fetch_fail: "獲取 MIDI 裝置出錯: %{err}"

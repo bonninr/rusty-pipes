@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Pysäytä"
   midi_player_fastforward: "Kelaa eteenpäin"
 
+  progress_processing: "Uudelleennäytteistys"
+  progress_cache_read: "Luetaan välimuistia levyltä"
+  progress_cache_write: "Kirjoitetaan välimuistia levylle"
+  progress_cache_done: "Ladattu levyvälimuistista"
+  progress_load_transients: "Transienttien esilataus"
+  progress_load_ram: "Ladataan sampleja RAM-muistiin"
+  progress_parse_ini: "Jäsennellään GrandOrgue INI"
+  progress_parse_xml: "Jäsennellään XML"
+  progress_assemble_organ: "Kootaan urkuja"
+  progress_extract_samples: "Puretaan sampleja"
+
 errors:
   midi_connect_fail: "Yhteys laitteeseen %{name} epäonnistui: %{err}"
   midi_fetch_fail: "Virhe haettaessa MIDI-laitteita: %{err}"

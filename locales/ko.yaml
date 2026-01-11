@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "정지"
   midi_player_fastforward: "빨리 감기"
 
+  progress_processing: "리샘플링 중"
+  progress_cache_read: "디스크 캐시 읽는 중"
+  progress_cache_write: "디스크 캐시 쓰는 중"
+  progress_cache_done: "디스크 캐시에서 로드됨"
+  progress_load_transients: "트랜지언트 프리로딩"
+  progress_load_ram: "샘플을 RAM에 로드 중"
+  progress_parse_ini: "GrandOrgue INI 파싱"
+  progress_parse_xml: "XML 파싱"
+  progress_assemble_organ: "오르간 조립 중"
+  progress_extract_samples: "샘플 추출 중"
+
 errors:
   midi_connect_fail: "%{name} 연결 실패: %{err}"
   midi_fetch_fail: "MIDI 장치 가져오기 오류: %{err}"

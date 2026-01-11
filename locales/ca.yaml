@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Aturar"
   midi_player_fastforward: "Avanç Ràpid"
 
+  progress_processing: "Re-mostreig"
+  progress_cache_read: "Llegint memòria cau del disc"
+  progress_cache_write: "Escrivint memòria cau al disc"
+  progress_cache_done: "Carregat de la memòria cau del disc"
+  progress_load_transients: "Precarregant transitoris"
+  progress_load_ram: "Carregant mostres a la RAM"
+  progress_parse_ini: "Analitzant GrandOrgue INI"
+  progress_parse_xml: "Analitzant XML"
+  progress_assemble_organ: "Muntant orgue"
+  progress_extract_samples: "Extraient mostres"
+
 errors:
   midi_connect_fail: "Error en connectar a %{name}: %{err}"
   midi_fetch_fail: "Error en obtenir dispositius MIDI: %{err}"

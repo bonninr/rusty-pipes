@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Stop"
   midi_player_fastforward: "Přetočit vpřed"
 
+  progress_processing: "Převzorkování"
+  progress_cache_read: "Čtení cache z disku"
+  progress_cache_write: "Zápis cache na disk"
+  progress_cache_done: "Načteno z diskové cache"
+  progress_load_transients: "Přednačtení tranzientů"
+  progress_load_ram: "Načítání samplů do RAM"
+  progress_parse_ini: "Parsování GrandOrgue INI"
+  progress_parse_xml: "Parsování XML"
+  progress_assemble_organ: "Sestavování varhan"
+  progress_extract_samples: "Extrahování samplů"
+
 errors:
   midi_connect_fail: "Nepodařilo se připojit k %{name}: %{err}"
   midi_fetch_fail: "Chyba při získávání MIDI zařízení: %{err}"

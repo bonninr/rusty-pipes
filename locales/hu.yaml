@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Állj"
   midi_player_fastforward: "Előretekerés"
 
+  progress_processing: "Újramintavételezés"
+  progress_cache_read: "Gyorsítótár olvasása lemezről"
+  progress_cache_write: "Gyorsítótár írása lemezre"
+  progress_cache_done: "Betöltve lemez-gyorsítótárból"
+  progress_load_transients: "Tranziensek előtöltése"
+  progress_load_ram: "Minták betöltése RAM-ba"
+  progress_parse_ini: "GrandOrgue INI elemzése"
+  progress_parse_xml: "XML elemzése"
+  progress_assemble_organ: "Orgona összeállítása"
+  progress_extract_samples: "Minták kibontása"
+
 errors:
   midi_connect_fail: "Sikertelen csatlakozás ehhez: %{name} (%{err})"
   midi_fetch_fail: "Hiba a MIDI eszközök lekérésekor: %{err}"

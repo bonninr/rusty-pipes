@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Sistere"
   midi_player_fastforward: "Provolvete"
 
+  progress_processing: "Resamplatio"
+  progress_cache_read: "Lectio celis ex disco"
+  progress_cache_write: "Scriptio celis ad discum"
+  progress_cache_done: "Oneratum ex celis disci"
+  progress_load_transients: "Prae-oneratio transientium"
+  progress_load_ram: "Oneratio exemplorum in RAM"
+  progress_parse_ini: "Analysis GrandOrgue INI"
+  progress_parse_xml: "Analysis XML"
+  progress_assemble_organ: "Compaginatio organi"
+  progress_extract_samples: "Extractio exemplorum"
+
 errors:
   midi_connect_fail: "Connexio ad %{name} defecit: %{err}"
   midi_fetch_fail: "Error in recipiendo instrumenta MIDI: %{err}"

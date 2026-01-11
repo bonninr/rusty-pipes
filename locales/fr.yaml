@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Arrêter"
   midi_player_fastforward: "Avance Rapide"
 
+  progress_processing: "Rééchantillonnage"
+  progress_cache_read: "Lecture du cache disque"
+  progress_cache_write: "Écriture du cache disque"
+  progress_cache_done: "Chargé depuis le cache disque"
+  progress_load_transients: "Préchargement des transitoires"
+  progress_load_ram: "Chargement des échantillons en RAM"
+  progress_parse_ini: "Analyse GrandOrgue INI"
+  progress_parse_xml: "Analyse XML"
+  progress_assemble_organ: "Assemblage de l'orgue"
+  progress_extract_samples: "Extraction des échantillons"
+
 errors:
   midi_connect_fail: "Échec de connexion à %{name}: %{err}"
   midi_fetch_fail: "Erreur lors de la récupération des périphériques MIDI: %{err}"

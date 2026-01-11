@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fs;
 use rayon::prelude::*;
 use bytemuck::{cast_slice, cast_slice_mut};
+use rust_i18n::t;
 
 use crate::wav_converter;
 use crate::wav_converter::SampleMetadata;
@@ -235,7 +236,7 @@ impl Organ {
                 let current = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 if current % 5 == 0 || current == total {
                     let progress = current as f32 / total as f32;
-                    let _ = tx.send((progress, format!("Processing: {}/{}", current, total)));
+                    let _ = tx.send((progress, t!("gui.progress_processing").to_string()));
                 }
             }
         });
@@ -344,7 +345,7 @@ impl Organ {
             if let Some(tx) = progress_tx {
                 if i % 1000 == 0 || i == total_count - 1 {
                     let progress = i as f32 / total_count as f32;
-                    let _ = tx.send((progress, "Reading cache from disk...".to_string()));
+                    let _ = tx.send((progress, t!("gui.progress_cache_read").to_string()));
                 }
             }
         }
@@ -398,7 +399,7 @@ impl Organ {
                 i += 1;
                 if i % 1000 == 0 || i == total_count {
                     let progress = i as f32 / total_count as f32;
-                    let _ = tx.send((progress, "Writing cache to disk...".to_string()));
+                    let _ = tx.send((progress, t!("gui.progress_cache_write").to_string()));
                 }
             }
         }
@@ -473,7 +474,7 @@ impl Organ {
             if cache_path.exists() {
                 if let Some(cached_data) = self.load_transient_cache(cache_path, frames_to_preload, original_tuning, &progress_tx) {
                     if let Some(tx) = &progress_tx {
-                        let _ = tx.send((1.0, "Loaded from disk cache.".to_string()));
+                        let _ = tx.send((1.0, t!("gui.progress_cache_done").to_string()));
                     }
                     loaded_chunks = Some(cached_data);
                 }
@@ -495,7 +496,7 @@ impl Organ {
                              let current = loaded_count.fetch_add(1, Ordering::Relaxed);
                              if let Some(tx) = &progress_tx {
                                  if current % 50 == 0 {
-                                     let _ = tx.send((current as f32 / total_files as f32, "Pre-loading transients...".to_string()));
+                                     let _ = tx.send((current as f32 / total_files as f32, t!("gui.progress_load_transients").to_string()));
                                  }
                              }
                              Some((path.clone(), Arc::new(data)))
@@ -579,7 +580,7 @@ impl Organ {
                     let progress = count as f32 / total_samples as f32;
                     // Only update every few files
                     if count % 10 == 0 || count == total_samples {
-                        let _ = tx.send((progress, "Loading into RAM...".to_string()));
+                        let _ = tx.send((progress, t!("gui.progress_load_ram").to_string()));
                     }
                 }
                 Ok((path.clone(), Arc::new(samples), Arc::new(metadata)))

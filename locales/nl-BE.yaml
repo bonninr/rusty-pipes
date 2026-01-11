@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Stoppen"
   midi_player_fastforward: "Vooruitspoelen"
 
+  progress_processing: "Resampling"
+  progress_cache_read: "Cache lezen van schijf"
+  progress_cache_write: "Cache schrijven naar schijf"
+  progress_cache_done: "Geladen uit schijfcache"
+  progress_load_transients: "Transiënten voorladen"
+  progress_load_ram: "Samples laden in RAM"
+  progress_parse_ini: "GrandOrgue INI parsen"
+  progress_parse_xml: "XML parsen"
+  progress_assemble_organ: "Orgel samenstellen"
+  progress_extract_samples: "Samples uitpakken"
+
 errors:
   midi_connect_fail: "Verbinding met %{name} mislukt: %{err}"
   midi_fetch_fail: "Fout bij ophalen MIDI-apparaten: %{err}"

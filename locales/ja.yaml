@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "停止"
   midi_player_fastforward: "早送り"
 
+  progress_processing: "リサンプリング中"
+  progress_cache_read: "ディスクキャッシュ読込中"
+  progress_cache_write: "ディスクキャッシュ書込中"
+  progress_cache_done: "キャッシュからロード完了"
+  progress_load_transients: "トランジェントをプリロード中"
+  progress_load_ram: "サンプルをRAMにロード中"
+  progress_parse_ini: "GrandOrgue INI解析中"
+  progress_parse_xml: "XML解析中"
+  progress_assemble_organ: "オルガン構築中"
+  progress_extract_samples: "サンプル抽出中"
+
 errors:
   midi_connect_fail: "%{name} への接続に失敗: %{err}"
   midi_fetch_fail: "MIDIデバイス取得エラー: %{err}"

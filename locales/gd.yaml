@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Stad"
   midi_player_fastforward: "Luath-adhart"
 
+  progress_processing: "Ath-shamplachadh"
+  progress_cache_read: "A' leughadh tasgadan bhon diosg"
+  progress_cache_write: "A' sgrìobhadh tasgadan don diosg"
+  progress_cache_done: "Air a luchdachadh bhon tasgadan diosga"
+  progress_load_transients: "A' ro-luchdachadh neo-bhuanan"
+  progress_load_ram: "A' luchdachadh sampaill gu RAM"
+  progress_parse_ini: "A' parsadh GrandOrgue INI"
+  progress_parse_xml: "A' parsadh XML"
+  progress_assemble_organ: "A' co-chur oargan"
+  progress_extract_samples: "A' toirt a-mach sampaill"
+
 errors:
   midi_connect_fail: "Dh'fhàillig an ceangal ri %{name}: %{err}"
   midi_fetch_fail: "Mearachd a' faighinn uidheaman MIDI: %{err}"

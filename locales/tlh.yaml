@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "mev"
   midi_player_fastforward: "nom ghoS"
 
+  progress_processing: "wab choH"
+  progress_cache_read: "polwI' laD"
+  progress_cache_write: "polwI' ghItlh"
+  progress_cache_done: "polwI'vo' lI'"
+  progress_load_transients: "nom wab lI'"
+  progress_load_ram: "RAMDaq lI'"
+  progress_parse_ini: "GrandOrgue INI yaj"
+  progress_parse_xml: "XML yaj"
+  progress_assemble_organ: "'o'rghan chen"
+  progress_extract_samples: "nagh beQ teq"
+
 errors:
   midi_connect_fail: "%{name} rar laHbe': %{err}"
   midi_fetch_fail: "MIDI jan Qagh: %{err}"

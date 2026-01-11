@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Stop"
   midi_player_fastforward: "Maju Cepat"
 
+  progress_processing: "Resampling"
+  progress_cache_read: "Membaca cache dari disk"
+  progress_cache_write: "Menulis cache ke disk"
+  progress_cache_done: "Dimuat dari cache disk"
+  progress_load_transients: "Memuat awal transien"
+  progress_load_ram: "Memuat sampel ke RAM"
+  progress_parse_ini: "Mengurai GrandOrgue INI"
+  progress_parse_xml: "Mengurai XML"
+  progress_assemble_organ: "Merakit organ"
+  progress_extract_samples: "Mengekstrak sampel"
+
 errors:
   midi_connect_fail: "Gagal terhubung ke %{name}: %{err}"
   midi_fetch_fail: "Gagal mengambil perangkat MIDI: %{err}"

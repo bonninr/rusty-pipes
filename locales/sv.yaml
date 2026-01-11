@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Stoppa"
   midi_player_fastforward: "Spola framåt"
 
+  progress_processing: "Omsampling"
+  progress_cache_read: "Läser cache från disk"
+  progress_cache_write: "Skriver cache till disk"
+  progress_cache_done: "Laddat från disk-cache"
+  progress_load_transients: "Förladdar transienter"
+  progress_load_ram: "Laddar samplingar till RAM"
+  progress_parse_ini: "Tolkar GrandOrgue INI"
+  progress_parse_xml: "Tolkar XML"
+  progress_assemble_organ: "Monterar orgel"
+  progress_extract_samples: "Extraherar samplingar"
+
 errors:
   midi_connect_fail: "Kunde inte ansluta till %{name}: %{err}"
   midi_fetch_fail: "Fel vid hämtning av MIDI-enheter: %{err}"

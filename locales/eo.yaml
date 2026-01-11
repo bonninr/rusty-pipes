@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Halti"
   midi_player_fastforward: "Antaŭen"
 
+  progress_processing: "Respecimenado"
+  progress_cache_read: "Legante kaŝmemoron de disko"
+  progress_cache_write: "Skribante kaŝmemoron al disko"
+  progress_cache_done: "Ŝarĝita de diska kaŝmemoro"
+  progress_load_transients: "Antaŭŝarĝante transirojn"
+  progress_load_ram: "Ŝarĝante specimenojn al RAM"
+  progress_parse_ini: "Analizante GrandOrgue INI"
+  progress_parse_xml: "Analizante XML"
+  progress_assemble_organ: "Muntante orgenon"
+  progress_extract_samples: "Eltirante specimenojn"
+
 errors:
   midi_connect_fail: "Malsukcesis konekti al %{name}: %{err}"
   midi_fetch_fail: "Eraro dum ricevado de MIDI-aparatoj: %{err}"

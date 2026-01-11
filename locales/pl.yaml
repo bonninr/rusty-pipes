@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Stop"
   midi_player_fastforward: "Przewiń do Przodu"
 
+  progress_processing: "Resampling"
+  progress_cache_read: "Odczyt pamięci podręcznej z dysku"
+  progress_cache_write: "Zapis pamięci podręcznej na dysk"
+  progress_cache_done: "Załadowano z pamięci podręcznej"
+  progress_load_transients: "Wstępne ładowanie transjentów"
+  progress_load_ram: "Ładowanie próbek do RAM"
+  progress_parse_ini: "Analiza GrandOrgue INI"
+  progress_parse_xml: "Analiza XML"
+  progress_assemble_organ: "Składanie organów"
+  progress_extract_samples: "Wyodrębnianie próbek"
+
 errors:
   midi_connect_fail: "Nie udało się połączyć z %{name}: %{err}"
   midi_fetch_fail: "Błąd pobierania urządzeń MIDI: %{err}"

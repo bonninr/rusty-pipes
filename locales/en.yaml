@@ -70,6 +70,17 @@ gui:
   midi_player_stop: "Stop"
   midi_player_fastforward: "Fast Forward"
 
+  progress_processing: "Resampling"
+  progress_cache_read: "Reading cache from disk"
+  progress_cache_write: "Writing cache to disk"
+  progress_cache_done: "Loaded from disk cache"
+  progress_load_transients: "Pre-loading transients"
+  progress_load_ram: "Loading samples into RAM"
+  progress_parse_ini: "Parsing GrandOrgue INI"
+  progress_parse_xml: "Parsing XML"
+  progress_assemble_organ: "Assembling organ"
+  progress_extract_samples: "Extracting samples"
+  
 errors:
   midi_connect_fail: "Failed to connect to %{name}: %{err}"
   midi_fetch_fail: "Error fetching MIDI devices: %{err}"

@@ -70,6 +70,17 @@ gui:
   midi_player_play: "Reproduzir"
   midi_player_stop: "Parar"
   midi_player_fastforward: "Avanço Rápido"
+
+  progress_processing: "Reamostragem"
+  progress_cache_read: "Lendo cache do disco"
+  progress_cache_write: "Gravando cache no disco"
+  progress_cache_done: "Carregado do cache de disco"
+  progress_load_transients: "Pré-carregando transientes"
+  progress_load_ram: "Carregando amostras na RAM"
+  progress_parse_ini: "Analisando GrandOrgue INI"
+  progress_parse_xml: "Analisando XML"
+  progress_assemble_organ: "Montando órgão"
+  progress_extract_samples: "Extraindo amostras"
   
 errors:
   midi_connect_fail: "Falha ao conectar a %{name}: %{err}"

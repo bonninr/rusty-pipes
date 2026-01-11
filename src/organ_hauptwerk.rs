@@ -8,6 +8,7 @@ use serde::Deserialize;
 use quick_xml::events::{Event, BytesStart};
 use quick_xml::reader::Reader;
 use quick_xml::de::Deserializer;
+use rust_i18n::t;
 
 use crate::wav_converter;
 use crate::organ::{Organ, Stop, Rank, Pipe, ReleaseSample, ConversionTask};
@@ -183,7 +184,7 @@ pub fn load_hauptwerk(
     reader.config_mut().trim_text(false);
     reader.config_mut().expand_empty_elements = false; 
 
-    if let Some(tx) = progress_tx { let _ = tx.send((0.0, "Parsing XML...".to_string())); }
+    if let Some(tx) = progress_tx { let _ = tx.send((0.0, t!("gui.progress_parse_xml").to_string())); }
 
     let organ_name = path.file_stem().unwrap_or_default().to_string_lossy().replace(".Organ_Hauptwerk_xml", "");
     let cache_path = Organ::get_organ_cache_dir(&organ_name)?;
@@ -545,7 +546,7 @@ pub fn load_hauptwerk(
 
     Organ::process_tasks_parallel(&organ.base_path, &organ.cache_path, conversion_tasks, target_sample_rate, progress_tx)?;
 
-    if let Some(tx) = progress_tx { let _ = tx.send((1.0, "Assembling organ...".to_string())); }
+    if let Some(tx) = progress_tx { let _ = tx.send((1.0, t!("gui.progress_assemble_organ").to_string())); }
 
     for layer in &xml_layers {
         let Some(pipe_info) = pipe_map.get(&layer.pipe_id) else {

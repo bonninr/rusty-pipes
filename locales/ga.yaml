@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Stop"
   midi_player_fastforward: "Mearchasadh"
 
+  progress_processing: "Athshampláil"
+  progress_cache_read: "Taisce á léamh ón diosca"
+  progress_cache_write: "Taisce á scríobh chuig diosca"
+  progress_cache_done: "Luchtaithe ó thaisce diosca"
+  progress_load_transients: "Neamhbhuain á réamh-luchtú"
+  progress_load_ram: "Samplaí á luchtú isteach sa RAM"
+  progress_parse_ini: "Parsáil GrandOrgue INI"
+  progress_parse_xml: "Parsáil XML"
+  progress_assemble_organ: "Orgán á chur le chéile"
+  progress_extract_samples: "Samplaí á asbhaint"
+
 errors:
   midi_connect_fail: "Theip ar nascadh le %{name}: %{err}"
   midi_fetch_fail: "Earráid ag fáil gléasanna MIDI: %{err}"

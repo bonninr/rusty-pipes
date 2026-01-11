@@ -71,6 +71,17 @@ gui:
   midi_player_stop: "Stop"
   midi_player_fastforward: "Spol frem"
 
+  progress_processing: "Resampling"
+  progress_cache_read: "Læser cache fra disk"
+  progress_cache_write: "Skriver cache til disk"
+  progress_cache_done: "Indlæst fra disk-cache"
+  progress_load_transients: "Forindlæser transienter"
+  progress_load_ram: "Indlæser samples i RAM"
+  progress_parse_ini: "Parser GrandOrgue INI"
+  progress_parse_xml: "Parser XML"
+  progress_assemble_organ: "Samler orgel"
+  progress_extract_samples: "Udpakker samples"
+
 errors:
   midi_connect_fail: "Kunne ikke forbinde til %{name}: %{err}"
   midi_fetch_fail: "Fejl ved hentning af MIDI-enheder: %{err}"
