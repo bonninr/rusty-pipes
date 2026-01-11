@@ -1,10 +1,12 @@
 use anyhow::{anyhow, Context, Result};
 use std::collections::{HashMap, HashSet};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fs;
 use rayon::prelude::*;
+use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::wav_converter;
 use crate::wav_converter::SampleMetadata;
@@ -239,6 +241,158 @@ impl Organ {
         Ok(())
     }
 
+    /// Helper to get the transient cache directory (~/.config/transientcache/)
+    fn get_transient_cache_path(&self) -> Result<PathBuf> {
+        let settings_path = confy::get_configuration_file_path("rusty-pipes", "settings")?;
+        let config_dir = settings_path.parent()
+            .ok_or_else(|| anyhow!("Could not determine config directory"))?;
+        
+        let cache_dir = config_dir.join("transientcache");
+        if !cache_dir.exists() {
+            fs::create_dir_all(&cache_dir)?;
+        }
+
+        // Sanitize organ name for filename
+        let safe_name: String = self.name.chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect();
+        
+        Ok(cache_dir.join(format!("{}.bin", safe_name)))
+    }
+
+    /// Tries to load the consolidated cache from disk.
+    /// Returns None if file doesn't exist, has invalid header, or frame count mismatches.
+    fn load_transient_cache(
+        &self, 
+        path: &Path, 
+        expected_frames: usize,
+        progress_tx: &Option<mpsc::Sender<(f32, String)>>
+    ) -> Option<HashMap<PathBuf, Arc<Vec<f32>>>> {
+        let file = fs::File::open(path).ok()?;
+        let mut reader = BufReader::with_capacity(1_024 * 1_024, file);
+
+        // Validate Magic Header
+        let mut magic = [0u8; 4];
+        if reader.read_exact(&mut magic).is_err() || &magic != b"TRNS" {
+            log::warn!("[Cache] Cache file corrupted or invalid format.");
+            return None;
+        }
+
+        // Validate Frame Count
+        let mut frames_buf = [0u8; 8];
+        reader.read_exact(&mut frames_buf).ok()?;
+        let stored_frames = u64::from_le_bytes(frames_buf) as usize;
+
+        if stored_frames != expected_frames {
+            log::info!("[Cache] RAM settings changed (old: {}, new: {}). Invalidating cache.", stored_frames, expected_frames);
+            return None; 
+        }
+
+        // Read Item Count
+        let mut count_buf = [0u8; 8];
+        reader.read_exact(&mut count_buf).ok()?;
+        let total_count = u64::from_le_bytes(count_buf) as usize;
+
+        log::info!("[Cache] Fast-loading {} samples from cache file...", total_count);
+
+        let mut map = HashMap::with_capacity(total_count);
+        let mut path_buffer = Vec::new();
+
+        for i in 0..total_count {
+            // Read Path Length
+            let mut len_buf = [0u8; 8];
+            if reader.read_exact(&mut len_buf).is_err() { break; }
+            let path_len = u64::from_le_bytes(len_buf) as usize;
+
+            // Read Path String
+            path_buffer.resize(path_len, 0);
+            if reader.read_exact(&mut path_buffer).is_err() { break; }
+            
+            // Use lossy utf8 conversion to avoid crashing on random bytes
+            let path_str = String::from_utf8_lossy(&path_buffer).to_string();
+            let path = PathBuf::from(path_str);
+
+            // Read Data Length (number of f32s)
+            if reader.read_exact(&mut len_buf).is_err() { break; }
+            let data_len = u64::from_le_bytes(len_buf) as usize;
+
+            // Allocate the memory as f32s (ensures correct alignment)
+            let mut samples = vec![0.0f32; data_len];
+
+            // Safely cast the f32 slice to a mutable u8 slice
+            // bytemuck checks that f32 is "Pod" (Plain Old Data) and safe to write bytes into.
+            let byte_slice: &mut [u8] = cast_slice_mut(&mut samples);
+
+            // Read directly from file into the vector's memory
+            if reader.read_exact(byte_slice).is_err() { break; }
+
+            map.insert(path, Arc::new(samples));
+
+            if let Some(tx) = progress_tx {
+                if i % 1000 == 0 || i == total_count - 1 {
+                    let progress = i as f32 / total_count as f32;
+                    let _ = tx.send((progress, "Reading cache from disk...".to_string()));
+                }
+            }
+        }
+
+        if map.len() != total_count {
+            log::warn!("[Cache] Truncated cache file. Rebuilding.");
+            return None;
+        }
+
+        Some(map)
+    }
+
+    /// Writes the loaded chunks to a single binary file.
+    /// Optimized for speed using large buffers and zero-copy byte casting (Safe).
+    fn save_transient_cache(
+        &self, 
+        path: &Path, 
+        data: &HashMap<PathBuf, Arc<Vec<f32>>>, 
+        frames_per_sample: usize,
+        progress_tx: &Option<mpsc::Sender<(f32, String)>>
+    ) -> Result<()> {
+        let file = fs::File::create(path)?;
+        let mut writer = BufWriter::with_capacity(1_024 * 1_024, file);
+
+        // Write Magic Header
+        writer.write_all(b"TRNS")?;
+        // Write Frames Per Sample
+        writer.write_all(&(frames_per_sample as u64).to_le_bytes())?;
+        
+        // Write Item Count
+        let total_count = data.len();
+        writer.write_all(&(total_count as u64).to_le_bytes())?;
+
+        // Write each item
+        let mut i = 0;
+        for (path_buf, samples) in data {
+            let path_str = path_buf.to_string_lossy();
+            let path_bytes = path_str.as_bytes();
+            writer.write_all(&(path_bytes.len() as u64).to_le_bytes())?;
+            writer.write_all(path_bytes)?;
+
+            writer.write_all(&(samples.len() as u64).to_le_bytes())?;
+
+            // Safely cast the f32 slice to a u8 slice for writing
+            let byte_slice: &[u8] = cast_slice(samples);
+            writer.write_all(byte_slice)?;
+
+            if let Some(tx) = progress_tx {
+                i += 1;
+                if i % 1000 == 0 || i == total_count {
+                    let progress = i as f32 / total_count as f32;
+                    let _ = tx.send((progress, "Writing cache to disk...".to_string()));
+                }
+            }
+        }
+        
+        writer.flush()?;
+        log::info!("[Cache] Wrote {} samples to transient cache at {:?}", total_count, path);
+        Ok(())
+    }
+
     fn preload_attack_samples(
         &mut self,
         target_sample_rate: u32,
@@ -295,47 +449,74 @@ impl Organ {
             return Ok(());
         }
 
-        // Load them in parallel
-        let loaded_count = AtomicUsize::new(0);
-        
-        // Map Path -> Arc<Vec<f32>> (Preloaded Chunk)
-        let loaded_chunks: HashMap<PathBuf, Arc<Vec<f32>>> = unique_paths
-            .par_iter()
-            .filter_map(|path| {
-                 // Load just the start using a helper from wav_converter
-                 match wav_converter::load_sample_head(path, target_sample_rate, frames_to_preload) {
-                     Ok(data) => {
-                         let current = loaded_count.fetch_add(1, Ordering::Relaxed);
-                         if let Some(tx) = &progress_tx {
-                             if current % 50 == 0 {
-                                 let _ = tx.send((current as f32 / total_files as f32, "Pre-loading transients...".to_string()));
+        // Check transient cache first
+        let mut loaded_chunks: Option<HashMap<PathBuf, Arc<Vec<f32>>>> = None;
+        let cache_path_result = self.get_transient_cache_path();
+
+        if let Ok(cache_path) = &cache_path_result {
+            if cache_path.exists() {
+                if let Some(cached_data) = self.load_transient_cache(cache_path, frames_to_preload, &progress_tx) {
+                    if let Some(tx) = &progress_tx {
+                        let _ = tx.send((1.0, "Loaded from disk cache.".to_string()));
+                    }
+                    loaded_chunks = Some(cached_data);
+                }
+            }
+        }
+
+        // Cache miss, load wav files
+        let chunks_map = if let Some(map) = loaded_chunks {
+            map
+        } else {
+            // Load them in parallel
+            let loaded_count = AtomicUsize::new(0);
+            let map: HashMap<PathBuf, Arc<Vec<f32>>> = unique_paths
+                .par_iter()
+                .filter_map(|path| {
+                     // Load just the start using a helper from wav_converter
+                     match wav_converter::load_sample_head(path, target_sample_rate, frames_to_preload) {
+                         Ok(data) => {
+                             let current = loaded_count.fetch_add(1, Ordering::Relaxed);
+                             if let Some(tx) = &progress_tx {
+                                 if current % 50 == 0 {
+                                     let _ = tx.send((current as f32 / total_files as f32, "Pre-loading transients...".to_string()));
+                                 }
                              }
+                             Some((path.clone(), Arc::new(data)))
+                         },
+                         Err(e) => {
+                             log::warn!("Failed to preload {:?}: {}", path, e);
+                             None
                          }
-                         Some((path.clone(), Arc::new(data)))
-                     },
-                     Err(e) => {
-                         log::warn!("Failed to preload {:?}: {}", path, e);
-                         None
                      }
-                 }
-            })
-            .collect();
+                })
+                .collect();
+
+            // Save to cache for next time
+            if let Ok(cache_path) = &cache_path_result {
+                if let Err(e) = self.save_transient_cache(cache_path, &map, frames_to_preload, &progress_tx) {
+                    log::error!("Failed to save transient cache: {}", e);
+                }
+            }
+
+            map
+        };
 
         // Assign the loaded chunks back to the pipes
         for rank in self.ranks.values_mut() {
             for pipe in rank.pipes.values_mut() {
-                if let Some(data) = loaded_chunks.get(&pipe.attack_sample_path) {
+                if let Some(data) = chunks_map.get(&pipe.attack_sample_path) {
                     pipe.preloaded_bytes = Some(data.clone());
                 }
                 for release in &mut pipe.releases {
-                    if let Some(data) = loaded_chunks.get(&release.path) {
+                    if let Some(data) = chunks_map.get(&release.path) {
                         release.preloaded_bytes = Some(data.clone());
                     }
                 }
             }
         }
         
-        log::info!("[Cache] Successfully pre-loaded {} attack headers.", loaded_chunks.len());
+        log::info!("[Cache] Successfully pre-loaded {} attack headers.", chunks_map.len());
         Ok(())
     }
 

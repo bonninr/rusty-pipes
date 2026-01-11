@@ -29,9 +29,9 @@ impl App for LoadingApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(20.0);
+                ui.add_space(10.0);
                 ui.label(
-                    egui::RichText::new(t!("loading.heading"))
+                    egui::RichText::new(&self.status_text)
                         .heading()
                         .color(egui::Color32::WHITE),
                 );
@@ -42,15 +42,6 @@ impl App for LoadingApp {
                     .show_percentage()
                     .animate(true);
                 ui.add(progress_bar);
-                ui.add_space(5.0);
-
-                // The status label (e.g., current file)
-                ui.label(
-                    egui::RichText::new(&self.status_text)
-                        .small()
-                        .color(egui::Color32::GRAY),
-                );
-
                 ui.add_space(20.0);
             });
         });

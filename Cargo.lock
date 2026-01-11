@@ -4777,6 +4777,7 @@ dependencies = [
  "anyhow",
  "audioadapter",
  "audioadapter-buffers",
+ "bytemuck",
  "byteorder",
  "chrono",
  "clap",
