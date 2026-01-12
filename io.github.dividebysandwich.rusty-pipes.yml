@@ -33,6 +33,7 @@ modules:
     build-options:
       env:
         SWAGGER_UI_DOWNLOAD_URL: file:///run/build/rusty-pipes/swagger-ui.zip
+        CMAKE_POLICY_VERSION_MINIMUM: "3.5"
     
     build-commands:
       - cargo --offline fetch --manifest-path Cargo.toml
