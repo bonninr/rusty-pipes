@@ -62,6 +62,7 @@ jobs:
           bundle: rusty-pipes.flatpak
           manifest-path: io.github.dividebysandwich.rusty-pipes.yml
           cache-key: flatpak-builder-${{ github.sha }}
+          args: "--env=CMAKE_POLICY_VERSION_MINIMUM=3.5"
 
       - name: Upload Flatpak Bundle
         uses: actions/upload-artifact@v4
