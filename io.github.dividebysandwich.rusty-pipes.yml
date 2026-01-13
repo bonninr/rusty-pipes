@@ -4,6 +4,7 @@ runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm20
 
 command: rusty-pipes
 
@@ -34,10 +35,14 @@ modules:
       env:
         SWAGGER_UI_DOWNLOAD_URL: file:///run/build/rusty-pipes/swagger-ui.zip
         CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+        LIBCLANG_PATH: /usr/lib/sdk/llvm20/lib
     
     build-commands:
       - cargo --offline fetch --manifest-path Cargo.toml
-      - cargo --offline build --release --manifest-path Cargo.toml
+      - |
+        CLANG_VERSION=$(ls /usr/lib/sdk/llvm20/lib/clang)
+        export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/lib/sdk/llvm20/lib/clang/$CLANG_VERSION/include"
+        cargo --offline build --release --manifest-path Cargo.toml
       - install -D target/release/rusty-pipes /app/bin/rusty-pipes
       - install -D -m 644 assets/rusty-pipes.png /app/share/icons/hicolor/128x128/apps/io.github.dividebysandwich.rusty-pipes.png
       - install -D -m 644 assets/rusty-pipes.desktop /app/share/applications/io.github.dividebysandwich.rusty-pipes.desktop
