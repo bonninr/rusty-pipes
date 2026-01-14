@@ -144,7 +144,7 @@ impl Organ {
             organ.run_parallel_precache(target_sample_rate, progress_tx)?;
         } else {
             // Dynamically calculate frame count based on RAM budget
-            organ.preload_attack_samples(target_sample_rate, progress_tx, max_preload_ram_mb, original_tuning)?;
+            organ.preload_attack_samples(target_sample_rate, progress_tx, max_preload_ram_mb, original_tuning, convert_to_16_bit)?;
         }
         Ok(organ)
     }
@@ -270,6 +270,8 @@ impl Organ {
         path: &Path, 
         expected_frames: usize,
         expected_original_tuning: bool,
+        expected_sample_rate: u32,
+        expected_16bit: bool,
         progress_tx: &Option<mpsc::Sender<(f32, String)>>
     ) -> Option<HashMap<PathBuf, Arc<Vec<f32>>>> {
         let file = fs::File::open(path).ok()?;
@@ -293,12 +295,31 @@ impl Organ {
         }
 
         // Validate Tuning Setting
-        let mut tuning_buf = [0u8; 1];
-        if reader.read_exact(&mut tuning_buf).is_err() { return None; }
-        let stored_tuning = tuning_buf[0] != 0;
+        let mut bool_buf = [0u8; 1];
+        if reader.read_exact(&mut bool_buf).is_err() { return None; }
+        let stored_tuning = bool_buf[0] != 0;
 
         if stored_tuning != expected_original_tuning {
-            log::info!("[Cache] Tuning setting changed (old: {}, new: {}). Invalidating cache.", stored_tuning, expected_original_tuning);
+            log::info!("[Cache] Tuning setting changed. Invalidating.");
+            return None;
+        }
+
+        // Validate Sample Rate (New)
+        let mut sr_buf = [0u8; 4];
+        if reader.read_exact(&mut sr_buf).is_err() { return None; }
+        let stored_sr = u32::from_le_bytes(sr_buf);
+
+        if stored_sr != expected_sample_rate {
+            log::info!("[Cache] Sample rate changed (old: {}, new: {}). Invalidating.", stored_sr, expected_sample_rate);
+            return None;
+        }
+
+        // Validate 16-bit Setting (New)
+        if reader.read_exact(&mut bool_buf).is_err() { return None; }
+        let stored_16bit = bool_buf[0] != 0;
+
+        if stored_16bit != expected_16bit {
+            log::info!("[Cache] 16-bit conversion setting changed. Invalidating.");
             return None;
         }
 
@@ -364,7 +385,9 @@ impl Organ {
         path: &Path, 
         data: &HashMap<PathBuf, Arc<Vec<f32>>>, 
         frames_per_sample: usize,
-        original_tuning: bool, // New parameter
+        original_tuning: bool,
+        sample_rate: u32,
+        to_16bit: bool,
         progress_tx: &Option<mpsc::Sender<(f32, String)>>
     ) -> Result<()> {
         let file = fs::File::create(path)?;
@@ -377,6 +400,12 @@ impl Organ {
 
         // Config: Tuning (1 byte)
         writer.write_all(&[if original_tuning { 1u8 } else { 0u8 }])?;
+
+        // Config: Sample Rate (4 bytes)
+        writer.write_all(&sample_rate.to_le_bytes())?;
+
+        // Config: 16-bit (1 byte)
+        writer.write_all(&[if to_16bit { 1u8 } else { 0u8 }])?;
 
         // Write Item Count
         let total_count = data.len();
@@ -415,6 +444,7 @@ impl Organ {
         progress_tx: Option<mpsc::Sender<(f32, String)>>,
         max_preload_ram_mb: usize,
         original_tuning: bool,
+        convert_to_16bit: bool,
     ) -> Result<()> {
         log::info!("[Cache] Calculating pre-load budget based on {} MB limit...", max_preload_ram_mb);
         
@@ -472,7 +502,7 @@ impl Organ {
 
         if let Ok(cache_path) = &cache_path_result {
             if cache_path.exists() {
-                if let Some(cached_data) = self.load_transient_cache(cache_path, frames_to_preload, original_tuning, &progress_tx) {
+                if let Some(cached_data) = self.load_transient_cache(cache_path, frames_to_preload, original_tuning, target_sample_rate, convert_to_16bit, &progress_tx) {
                     if let Some(tx) = &progress_tx {
                         let _ = tx.send((1.0, t!("gui.progress_cache_done").to_string()));
                     }
@@ -511,7 +541,7 @@ impl Organ {
 
             // Save to cache for next time
             if let Ok(cache_path) = &cache_path_result {
-                if let Err(e) = self.save_transient_cache(cache_path, &map, frames_to_preload, original_tuning, &progress_tx) {
+                if let Err(e) = self.save_transient_cache(cache_path, &map, frames_to_preload, original_tuning, target_sample_rate, convert_to_16bit, &progress_tx) {
                     log::error!("Failed to save transient cache: {}", e);
                 }
             }
