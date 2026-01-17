@@ -153,37 +153,38 @@ pub fn run_tui_loop(
             tui_state.midi_learn_state.check_for_midi_input(&tui_state.app_state);
         }
 
-        let switch_target = {
-            let mut state = tui_state.app_state.lock().unwrap();
+        if tui_state.mode == AppMode::MainApp {
+            let switch_target = {
+                let mut state = tui_state.app_state.lock().unwrap();
             
-            // Take the event to consume it (preventing double processing)
-            if let Some((event, _time)) = state.last_midi_event_received.take() {
-                 // Check against library
-                 organ_library.organs.iter()
-                    .find(|o| o.activation_trigger.as_ref().map_or(false, |t| t == &event))
-                    .map(|o| o.path.clone())
-            } else if let Some(sysex) = state.last_sysex.take() {
-                 // Legacy SysEx check
-                 let event = MidiEventSpec::SysEx(sysex);
-                 organ_library.organs.iter()
-                    .find(|o| o.activation_trigger.as_ref().map_or(false, |t| t == &event))
-                    .map(|o| o.path.clone())
-            } else {
-                None
+                // Take the event to consume it (preventing double processing)
+                if let Some((event, _time)) = state.last_midi_event_received.take() {
+                    // Check against library
+                    organ_library.organs.iter()
+                        .find(|o| o.activation_trigger.as_ref().map_or(false, |t| t == &event))
+                        .map(|o| o.path.clone())
+                } else if let Some(sysex) = state.last_sysex.take() {
+                    // Legacy SysEx check
+                    let event = MidiEventSpec::SysEx(sysex);
+                    organ_library.organs.iter()
+                        .find(|o| o.activation_trigger.as_ref().map_or(false, |t| t == &event))
+                        .map(|o| o.path.clone())
+                } else {
+                    None
+                }
+            };
+
+            if let Some(path) = switch_target {
+                // Found a trigger! Set reload action
+                *exit_action.lock().unwrap() = MainLoopAction::ReloadOrgan { file: path };
+            
+                // Signal application to quit (shuts down audio/logic threads)
+                audio_tx.send(AppMessage::Quit)?;
+            
+                // Break TUI loop immediately
+                break; 
             }
-        };
-
-        if let Some(path) = switch_target {
-            // Found a trigger! Set reload action
-            *exit_action.lock().unwrap() = MainLoopAction::ReloadOrgan { file: path };
-            
-            // Signal application to quit (shuts down audio/logic threads)
-            audio_tx.send(AppMessage::Quit)?;
-            
-            // Break TUI loop immediately
-            break; 
         }
-
         // Update piano roll state before drawing
         tui_state.app_state.lock().unwrap().update_piano_roll_state();
 

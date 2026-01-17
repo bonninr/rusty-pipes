@@ -342,33 +342,35 @@ impl App for EguiApp {
         self.organ_manager.show(ctx, &self.exit_action, self.app_state.clone());
         
         // Organ Switching via Trigger
-        // Check for any recent MIDI event (SysEx or Note) that matches a known organ trigger
-        let event_opt = {
-            let mut state = self.app_state.lock().unwrap();
-            let evt = state.last_midi_event_received.take();
-            // Also check for legacy SysEx field just in case
-            let legacy_sysex = state.last_sysex.take();
-            (evt, legacy_sysex)
-        };
+        if !self.organ_manager.visible && !self.midi_learn_state.is_open {
+            // Check for any recent MIDI event (SysEx or Note) that matches a known organ trigger
+            let event_opt = {
+                let mut state = self.app_state.lock().unwrap();
+                let evt = state.last_midi_event_received.take();
+                // Also check for legacy SysEx field just in case
+                let legacy_sysex = state.last_sysex.take();
+                (evt, legacy_sysex)
+            };
 
-        if let (Some((event, _time)), _) = event_opt {
-            if self.organ_manager.is_learning() {
-                // We are learning inside the organ manager UI
-            } else {
-                // Not learning, check if this triggers an organ load
+            if let (Some((event, _time)), _) = event_opt {
+                if self.organ_manager.is_learning() {
+                    // We are learning inside the organ manager UI
+                } else {
+                    // Not learning, check if this triggers an organ load
+                    if let Some(path) = self.organ_manager.find_organ_by_trigger(&event) {
+                        *self.exit_action.lock().unwrap() = MainLoopAction::ReloadOrgan { file: path };
+                        self.gui_is_running.store(false, Ordering::SeqCst);
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
+            } else if let (_, Some(sysex)) = event_opt {
+                // Fallback for SysEx if it came through the old path (unlikely with new code, but safe)
+                let event = MidiEventSpec::SysEx(sysex);
                 if let Some(path) = self.organ_manager.find_organ_by_trigger(&event) {
                     *self.exit_action.lock().unwrap() = MainLoopAction::ReloadOrgan { file: path };
-                    self.gui_is_running.store(false, Ordering::SeqCst);
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
-        } else if let (_, Some(sysex)) = event_opt {
-             // Fallback for SysEx if it came through the old path (unlikely with new code, but safe)
-             let event = MidiEventSpec::SysEx(sysex);
-             if let Some(path) = self.organ_manager.find_organ_by_trigger(&event) {
-                 *self.exit_action.lock().unwrap() = MainLoopAction::ReloadOrgan { file: path };
-                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-             }
         }
     }
 
