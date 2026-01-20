@@ -8,6 +8,7 @@ use rust_i18n::t;
 pub enum LearnTarget {
     Stop(usize),
     Tremulant(String),
+    Preset(usize),
 }
 
 impl Default for LearnTarget {
@@ -65,6 +66,12 @@ pub fn draw_midi_learn_modal(
                     LearnTarget::Tremulant(id) => {
                         state.midi_control_map.learn_tremulant(id.clone(), event_clone.clone(), is_enable);
                     }
+                    LearnTarget::Preset(slot) => {
+                        // Presets only activate
+                        if is_enable {
+                            state.midi_control_map.learn_preset(*slot, event_clone.clone());
+                        }
+                    }
                 }
                 // Save immediately
                 let _ = state.midi_control_map.save(&state.organ.name);
@@ -89,8 +96,10 @@ pub fn draw_midi_learn_modal(
         .default_height(400.0)
         .show(ctx, |ui| {
             ui.label(t!("midi_learn.description_1"));
-            let target = learn_state.target.clone();
             
+            // Clone to avoid borrow conflict
+            let target = learn_state.target.clone();
+
             match target {
                 LearnTarget::Stop(idx) => {
                     ui.label(t!("midi_learn.description_2"));
@@ -110,6 +119,14 @@ pub fn draw_midi_learn_modal(
                         state.midi_control_map.tremulants.get(&id).cloned().unwrap_or_default()
                     };
                     draw_tremulant_row(ui, learn_state, &id, &control, app_state.clone());
+                },
+                LearnTarget::Preset(slot) => {
+                    ui.add_space(10.0);
+                    let trigger = {
+                        let state = app_state.lock().unwrap();
+                        state.midi_control_map.presets.get(&slot).cloned().flatten()
+                    };
+                    draw_preset_row(ui, learn_state, slot, trigger, app_state.clone());
                 }
             }
         });
@@ -170,12 +187,52 @@ fn draw_tremulant_row(
         });
 }
 
+fn draw_preset_row(
+    ui: &mut egui::Ui,
+    learn_state: &mut MidiLearnState,
+    slot: usize,
+    trigger: Option<crate::config::MidiEventSpec>,
+    app_state: Arc<Mutex<AppState>>
+) {
+    egui::Grid::new("preset_learn_grid")
+        .num_columns(2)
+        .striped(true)
+        .spacing([20.0, 8.0])
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new(t!("midi_learn.col_enable_event")).strong());
+            ui.label(egui::RichText::new(t!("midi_learn.col_actions")).strong());
+            ui.end_row();
+
+            // Trigger Button
+            let txt = if learn_state.learning_slot == Some((0, true)) {
+                t!("midi_learn.status_listening").to_string()
+            } else if let Some(evt) = trigger {
+                evt.to_string()
+            } else {
+                t!("midi_learn.btn_learn").to_string()
+            };
+
+            if ui.add(egui::Button::new(txt).selected(learn_state.learning_slot == Some((0, true)))).clicked() {
+                learn_state.last_interaction = Instant::now();
+                learn_state.learning_slot = Some((0, true)); // 0 = dummy internal channel, true = enable
+            }
+
+            // Clear Button
+            if ui.button(t!("midi_learn.btn_clear")).clicked() {
+                let mut state = app_state.lock().unwrap();
+                state.midi_control_map.clear_preset(slot);
+                let _ = state.midi_control_map.save(&state.organ.name);
+            }
+            ui.end_row();
+        });
+}
+
 fn draw_stop_grid(
     ui: &mut egui::Ui,
     learn_state: &mut MidiLearnState,
     control_map: &std::collections::HashMap<u8, crate::midi_control::StopChannelControl>,
     app_state: Arc<Mutex<AppState>>,
-    stop_idx: usize,
+    stop_idx: usize
 ) {
     egui::ScrollArea::vertical().show(ui, |ui| {
         egui::Grid::new("midi_learn_grid")

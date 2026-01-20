@@ -542,7 +542,10 @@ impl EguiApp {
                                         |p| (format!("F{}: {}", i + 1, p.name.clone()), true),
                                     );
 
-                                    if ui.add_sized(btn_size, egui::Button::new(text)).clicked() {
+                                    let btn = ui.add_sized(btn_size, egui::Button::new(text));
+                                    
+                                    // Left Click: Recall
+                                    if btn.clicked() {
                                         if is_loaded {
                                             let mut app_state = self.app_state.lock().unwrap();
                                             if let Err(e) = app_state.recall_preset(i, &self.audio_tx) {
@@ -552,6 +555,15 @@ impl EguiApp {
                                             }
                                         }
                                     }
+                                    
+                                    // Right Click: Learn
+                                    if btn.secondary_clicked() {
+                                        self.midi_learn_state.is_open = true;
+                                        self.midi_learn_state.target = LearnTarget::Preset(i);
+                                        self.midi_learn_state.target_name = format!("Preset F{}", i + 1);
+                                        self.midi_learn_state.learning_slot = None;
+                                    }
+                                    
                                     if (i + 1) % 2 == 0 {
                                         ui.end_row();
                                     }

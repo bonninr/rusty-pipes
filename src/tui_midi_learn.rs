@@ -13,6 +13,8 @@ use rust_i18n::t;
 pub enum LearnTarget {
     Stop(usize),
     Tremulant(String),
+    #[allow(dead_code)]
+    Preset(usize),
 }
 
 impl Default for LearnTarget {
@@ -58,6 +60,13 @@ impl MidiLearnTuiState {
     pub fn reset_tremulant(&mut self, trem_id: String, trem_name: String) {
         self.target = LearnTarget::Tremulant(trem_id);
         self.target_name = trem_name;
+        self.common_reset();
+    }
+
+    #[allow(dead_code)]
+    pub fn reset_preset(&mut self, slot: usize) {
+        self.target = LearnTarget::Preset(slot);
+        self.target_name = format!("Preset F{}", slot + 1);
         self.common_reset();
     }
 
@@ -117,6 +126,9 @@ impl MidiLearnTuiState {
                             LearnTarget::Tremulant(id) => {
                                 state.midi_control_map.clear_tremulant(id);
                             }
+                            LearnTarget::Preset(slot) => {
+                                state.midi_control_map.clear_preset(*slot);
+                            }
                         }
                         let _ = state.midi_control_map.save(&state.organ.name);
                     },
@@ -142,6 +154,11 @@ impl MidiLearnTuiState {
                         }
                         LearnTarget::Tremulant(id) => {
                             state.midi_control_map.learn_tremulant(id.clone(), event_clone.clone(), is_enable);
+                        }
+                        LearnTarget::Preset(slot) => {
+                            if is_enable {
+                                state.midi_control_map.learn_preset(*slot, event_clone.clone());
+                            }
                         }
                     }
                     
@@ -191,6 +208,12 @@ pub fn draw_midi_learn_modal(frame: &mut Frame, tui_state: &MidiLearnTuiState, a
             let label = "Tremulant".to_string();
             // Single row, index 0
             vec![build_row(0, label, control.enable_event.clone(), control.disable_event.clone(), tui_state)]
+        },
+        LearnTarget::Preset(slot) => {
+            let trigger = app_state.midi_control_map.presets.get(slot).cloned().flatten();
+            let label = "Preset".to_string();
+            // Single row, Enable column is used for Trigger, Disable is N/A
+            vec![build_row(0, label, trigger, None, tui_state)]
         }
     };
 

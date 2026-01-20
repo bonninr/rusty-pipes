@@ -266,6 +266,9 @@ impl AppState {
                         },
                         ControlAction::SetTremulant { id, active } => {
                             self.set_tremulant_active(id, active, audio_tx);
+                        },
+                        ControlAction::LoadPreset { slot_index } => {
+                            let _ = self.recall_preset(slot_index, audio_tx);
                         }
                     }
                 }
@@ -298,6 +301,9 @@ impl AppState {
                         },
                         ControlAction::SetTremulant { id, active } => {
                             self.set_tremulant_active(id, active, audio_tx);
+                        },
+                                                ControlAction::LoadPreset { slot_index } => {
+                            let _ = self.recall_preset(slot_index, audio_tx);
                         }
                     }
                 }
@@ -333,6 +339,9 @@ impl AppState {
                         },
                         ControlAction::SetTremulant { id, active } => {
                             self.set_tremulant_active(id, active, audio_tx);
+                        },
+                        ControlAction::LoadPreset { slot_index } => {
+                            let _ = self.recall_preset(slot_index, audio_tx);
                         }
                     }
                 }

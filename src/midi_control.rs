@@ -15,9 +15,11 @@ pub struct StopChannelControl {
 }
 
 /// Unified action type returned when checking events
+#[derive(Debug, PartialEq)]
 pub enum ControlAction {
     SetStop { index: usize, internal_channel: u8, active: bool },
     SetTremulant { id: String, active: bool },
+    LoadPreset { slot_index: usize },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -28,6 +30,10 @@ pub struct MidiControlMap {
     // Map<TremulantID, Control>
     #[serde(default)]
     pub tremulants: HashMap<String, StopChannelControl>,
+
+    // Map<PresetSlotIndex, Trigger> (0-11)
+    #[serde(default)]
+    pub presets: HashMap<usize, Option<MidiEventSpec>>,
 }
 
 impl MidiControlMap {
@@ -35,6 +41,7 @@ impl MidiControlMap {
         Self { 
             stops: HashMap::new(),
             tremulants: HashMap::new(),
+            presets: HashMap::new(),
         }
     }
 
@@ -100,6 +107,10 @@ impl MidiControlMap {
         }
     }
 
+    pub fn learn_preset(&mut self, slot_index: usize, event: MidiEventSpec) {
+        self.presets.insert(slot_index, Some(event));
+    }
+
     pub fn clear_stop(&mut self, stop_index: usize, internal_channel: u8) {
         if let Some(stop_entry) = self.stops.get_mut(&stop_index) {
             stop_entry.remove(&internal_channel);
@@ -108,6 +119,10 @@ impl MidiControlMap {
 
     pub fn clear_tremulant(&mut self, trem_id: &str) {
         self.tremulants.remove(trem_id);
+    }
+
+    pub fn clear_preset(&mut self, slot_index: usize) {
+        self.presets.remove(&slot_index);
     }
 
     /// Checks incoming MIDI against the map and returns a list of actions to take.
@@ -140,6 +155,15 @@ impl MidiControlMap {
             if let Some(trigger) = &control.disable_event {
                 if trigger == incoming {
                     actions.push(ControlAction::SetTremulant { id: trem_id.clone(), active: false });
+                }
+            }
+        }
+
+        // Check Presets
+        for (slot, trigger_opt) in &self.presets {
+            if let Some(trigger) = trigger_opt {
+                if trigger == incoming {
+                    actions.push(ControlAction::LoadPreset { slot_index: *slot });
                 }
             }
         }
