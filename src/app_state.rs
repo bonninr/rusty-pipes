@@ -3,10 +3,11 @@ use crate::{
     config::{MidiDeviceConfig, MidiEventSpec, load_settings, save_settings},
     input::KeyboardLayout,
     midi,
-    midi_control::MidiControlMap,
+    midi_control::{MidiControlMap, ControlAction},
     midi_recorder::MidiRecorder,
     organ::Organ,
 };
+
 use anyhow::Result;
 use midir::{MidiInput, MidiInputConnection, MidiInputPort};
 use serde::{Deserialize, Serialize};
@@ -258,11 +259,14 @@ impl AppState {
                 
                 // Check if this triggers any stop changes
                 let actions = self.midi_control_map.check_event(&spec);
-                for (stop_idx, internal_ch, set_active) in actions {
-                    if set_active {
-                        self.set_stop_channel_state(stop_idx, internal_ch, true, audio_tx)?;
-                    } else {
-                        self.set_stop_channel_state(stop_idx, internal_ch, false, audio_tx)?;
+                for action in actions {
+                    match action {
+                        ControlAction::SetStop { index, internal_channel, active } => {
+                            self.set_stop_channel_state(index, internal_channel, active, audio_tx)?;
+                        },
+                        ControlAction::SetTremulant { id, active } => {
+                            self.set_tremulant_active(id, active, audio_tx);
+                        }
                     }
                 }
 
@@ -287,8 +291,15 @@ impl AppState {
 
                 // Check if this triggers any stop changes
                 let actions = self.midi_control_map.check_event(&spec);
-                for (stop_idx, internal_ch, set_active) in actions {
-                    self.set_stop_channel_state(stop_idx, internal_ch, set_active, audio_tx)?;
+                for action in actions {
+                    match action {
+                        ControlAction::SetStop { index, internal_channel, active } => {
+                            self.set_stop_channel_state(index, internal_channel, active, audio_tx)?;
+                        },
+                        ControlAction::SetTremulant { id, active } => {
+                            self.set_tremulant_active(id, active, audio_tx);
+                        }
+                    }
                 }
                 
                 // Stop tracking the active note
@@ -315,11 +326,14 @@ impl AppState {
 
                 // Check if this SysEx triggers any stop changes (e.g. Stop Toggle via SysEx)
                 let actions = self.midi_control_map.check_event(&spec);
-                for (stop_idx, internal_ch, set_active) in actions {
-                    if set_active {
-                        self.set_stop_channel_state(stop_idx, internal_ch, true, audio_tx)?;
-                    } else {
-                        self.set_stop_channel_state(stop_idx, internal_ch, false, audio_tx)?;
+                for action in actions {
+                    match action {
+                        ControlAction::SetStop { index, internal_channel, active } => {
+                            self.set_stop_channel_state(index, internal_channel, active, audio_tx)?;
+                        },
+                        ControlAction::SetTremulant { id, active } => {
+                            self.set_tremulant_active(id, active, audio_tx);
+                        }
                     }
                 }
             },

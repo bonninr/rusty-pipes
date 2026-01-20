@@ -296,7 +296,7 @@ pub fn run_tui_loop(
                                                         let state = tui_state.app_state.lock().unwrap();
                                                         state.organ.stops[idx].name.clone()
                                                     };
-                                                    tui_state.midi_learn_state.reset(idx, stop_name);
+                                                    tui_state.midi_learn_state.reset_stop(idx, stop_name);
                                                     tui_state.mode = AppMode::MidiLearn;
                                                 }
                                             }

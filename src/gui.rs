@@ -19,7 +19,7 @@ use crate::{
     app_state::{AppState, Preset},
     organ::Organ,
     input::MusicCommand,
-    gui_midi_learn::{MidiLearnState, draw_midi_learn_modal},
+    gui_midi_learn::{LearnTarget, MidiLearnState, draw_midi_learn_modal},
     app::MainLoopAction,
     gui_organ_manager::OrganManagerUi,
     config::MidiEventSpec, // Import the new Enum
@@ -612,7 +612,10 @@ impl EguiApp {
                                             egui::RichText::new(&trem.name)
                                         };
 
-                                        if ui.add_sized(btn_size, egui::Button::new(button_text)).clicked() {
+                                        let btn = ui.add_sized(btn_size, egui::Button::new(button_text));
+                                        
+                                        // Left Click: Toggle
+                                        if btn.clicked() {
                                             let mut state = self.app_state.lock().unwrap();
                                             state.set_tremulant_active(
                                                 trem_id.to_string(),
@@ -620,6 +623,15 @@ impl EguiApp {
                                                 &self.audio_tx,
                                             );
                                         }
+                                        
+                                        // Right Click: Learn
+                                        if btn.secondary_clicked() {
+                                            self.midi_learn_state.is_open = true;
+                                            self.midi_learn_state.target = LearnTarget::Tremulant(trem_id.to_string());
+                                            self.midi_learn_state.target_name = trem.name.clone();
+                                            self.midi_learn_state.learning_slot = None;
+                                        }
+                                        
                                         if (i + 1) % 2 == 0 {
                                             ui.end_row();
                                         }
@@ -1002,8 +1014,8 @@ impl EguiApp {
                             // User clicked, don't auto-scroll
                             self.selection_changed_by_key = false; 
                             self.midi_learn_state.is_open = true;
-                            self.midi_learn_state.target_stop_index = i;
-                            self.midi_learn_state.target_stop_name = stop.name.clone();
+                            self.midi_learn_state.target = LearnTarget::Stop(i); // Use Enum
+                            self.midi_learn_state.target_name = stop.name.clone(); // Use target_name
                             self.midi_learn_state.learning_slot = None;
                         }
                         
