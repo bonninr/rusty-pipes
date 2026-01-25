@@ -4719,9 +4719,9 @@ dependencies = [
 
 [[package]]
 name = "rubato"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ddc303d435dbb461ae4b780286ce577005d5bb4956567038bd67a7204a71dc6"
+checksum = "90173154a8a14e6adb109ea641743bc95ec81c093d94e70c6763565f7108ebeb"
 dependencies = [
  "audioadapter",
  "audioadapter-buffers",
@@ -4881,7 +4881,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "rusty-pipes"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4924,7 +4924,7 @@ dependencies = [
  "utoipa",
  "utoipa-swagger-ui",
  "walkdir",
- "zip 7.1.0",
+ "zip 7.2.0",
 ]
 
 [[package]]
@@ -5696,6 +5696,7 @@ checksum = "91e7d9e3bb61134e77bde20dd4825b97c010155709965fedf0f49bb138e52a9d"
 dependencies = [
  "deranged",
  "itoa",
+ "js-sys",
  "libc",
  "num-conv",
  "num_threads",
@@ -5956,6 +5957,12 @@ checksum = "cb30dbbd9036155e74adad6812e9898d03ec374946234fbcebd5dfc7b9187b90"
 dependencies = [
  "rustc-hash 2.1.1",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e43ffa54726cdc9ea78392023ffe9fe9cf9ac779e1c6fcb0d23f9862e3879d20"
 
 [[package]]
 name = "typenum"
@@ -7513,9 +7520,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "7.1.0"
+version = "7.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9013f1222db8a6d680f13a7ccdc60a781199cd09c2fa4eff58e728bb181757fc"
+checksum = "c42e33efc22a0650c311c2ef19115ce232583abbe80850bc8b66509ebef02de0"
 dependencies = [
  "aes",
  "bzip2",
@@ -7533,6 +7540,7 @@ dependencies = [
  "ppmd-rust",
  "sha1",
  "time",
+ "typed-path",
  "zeroize",
  "zopfli",
  "zstd",
