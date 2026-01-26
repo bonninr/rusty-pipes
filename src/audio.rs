@@ -1,8 +1,12 @@
 use anyhow::{Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, FromSample, SampleFormat, SizedSample, Stream, StreamConfig};
+use cpal::{
+    BufferSize, Device, FromSample, SampleFormat, SizedSample, Stream, StreamConfig,
+    SupportedBufferSize,
+};
 use ringbuf::HeapRb;
 use ringbuf::traits::{Consumer, Observer, Producer, Split};
+use std::cmp::Ordering as CmpOrdering;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -67,64 +71,80 @@ pub fn get_supported_sample_rates(device_name: Option<String>) -> Result<Vec<u32
 }
 
 fn get_cpal_host() -> cpal::Host {
+    #[cfg(target_os = "windows")]
+    let host_ids = [cpal::HostId::Asio, cpal::HostId::Wasapi];
+
+    #[cfg(target_os = "linux")]
+    let host_ids = [cpal::HostId::Jack, cpal::HostId::Alsa];
+
+    #[cfg(target_os = "macos")]
+    let host_ids = [cpal::HostId::CoreAudio];
+
+    // Fallback for other OSs or if strict selection fails
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    let host_ids = [cpal::HostId::Asio]; // Generic fallback
+
     let available_hosts = cpal::available_hosts();
-    let host_names: Vec<_> = available_hosts.iter().map(|id| id.name()).collect();
-    log::info!("[Audio] Available Hosts: {:?}", host_names);
+    log::info!("[Audio] Available Hosts: {:?}", available_hosts);
 
-    let priority_order = ["asio","jack", "alsa"];
+    for host_id in host_ids {
+        if available_hosts.contains(&host_id) {
+            let host = match cpal::host_from_id(host_id) {
+                Ok(h) => h,
+                Err(e) => {
+                    log::warn!(
+                        "[Audio] Failed to create host from id {:?}: {}. Skipping.",
+                        host_id,
+                        e
+                    );
+                    continue;
+                }
+            };
+            log::info!("[Audio] Probing Host: {}", host.id().name());
 
-    for target_name in priority_order {
-        if let Some(host_id) = available_hosts
-            .iter()
-            .find(|id| id.name().to_lowercase().contains(target_name))
-        {
-            if let Ok(host) = cpal::host_from_id(*host_id) {
-                log::info!("[Audio] Probing Host: {}", host.id().name());
-
-                match host.output_devices() {
-                    Ok(mut devices) => {
-                        // Get the first device (or fail if none)
-                        if let Some(device) = devices.next() {
-                            // Interrogate the device!
-                            // Merely existing isn't enough. We try to query its supported configurations.
-                            // If the JACK server is down, this call will fail or return an empty iterator.
-                            match device.supported_output_configs() {
-                                Ok(mut configs) => {
-                                    if configs.next().is_some() {
-                                        log::info!(
-                                            "[Audio] Selected Host: {} (Validated)",
-                                            host.id().name()
-                                        );
-                                        return host;
-                                    } else {
-                                        log::warn!(
-                                            "[Audio] Host '{}' found a device, but it has 0 supported configs. Skipping.",
-                                            host.id().name()
-                                        );
-                                    }
-                                }
-                                Err(e) => {
+            match host.output_devices() {
+                Ok(mut devices) => {
+                    // Get the first device (or fail if none)
+                    if let Some(device) = devices.next() {
+                        // Interrogate the device!
+                        // Merely existing isn't enough. We try to query its supported configurations.
+                        // If the JACK server is down, this call will fail or return an empty iterator.
+                        match device.supported_output_configs() {
+                            Ok(mut configs) => {
+                                if configs.next().is_some() {
+                                    log::info!(
+                                        "[Audio] Selected Host: {} (Validated)",
+                                        host.id().name()
+                                    );
+                                    return host;
+                                } else {
                                     log::warn!(
-                                        "[Audio] Host '{}' device failed config query: {}. Skipping.",
-                                        host.id().name(),
-                                        e
+                                        "[Audio] Host '{}' found a device, but it has 0 supported configs. Skipping.",
+                                        host.id().name()
                                     );
                                 }
                             }
-                        } else {
-                            log::warn!(
-                                "[Audio] Host '{}' initialized but found NO devices. Skipping.",
-                                host.id().name()
-                            );
+                            Err(e) => {
+                                log::warn!(
+                                    "[Audio] Host '{}' device failed config query: {}. Skipping.",
+                                    host.id().name(),
+                                    e
+                                );
+                            }
                         }
-                    }
-                    Err(e) => {
+                    } else {
                         log::warn!(
-                            "[Audio] Host '{}' failed to list devices: {}. Skipping.",
-                            host.id().name(),
-                            e
+                            "[Audio] Host '{}' initialized but found NO devices. Skipping.",
+                            host.id().name()
                         );
                     }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[Audio] Host '{}' failed to list devices: {}. Skipping.",
+                        host.id().name(),
+                        e
+                    );
                 }
             }
         }
@@ -634,7 +654,7 @@ fn spawn_audio_processing_thread<P>(
                 let pushed = producer.push_slice(&mix_buffer[offset..needed]);
                 offset += pushed;
                 if offset < needed {
-                    thread::sleep(Duration::from_millis(1));
+                    std::thread::yield_now();
                 }
             }
         }
@@ -644,7 +664,7 @@ fn spawn_audio_processing_thread<P>(
 pub fn start_audio_playback(
     rx: mpsc::Receiver<AppMessage>,
     organ: Arc<Organ>,
-    buffer_size_frames: usize,
+    requested_buffer_size: usize,
     gain: f32,
     polyphony: usize,
     audio_device_name: Option<String>,
@@ -652,61 +672,104 @@ pub fn start_audio_playback(
     tui_tx: mpsc::Sender<TuiMessage>,
     shared_midi_recorder: Arc<Mutex<Option<MidiRecorder>>>,
 ) -> Result<AudioHandle> {
-    // Boilerplate Cpal setup
     let host = get_cpal_host();
-    let device: Device = {
-        if let Some(name) = audio_device_name {
-            host.output_devices()?
-                .find(|d| d.id().map_or(false, |n| n.to_string() == name))
-                .ok_or_else(|| {
-                    anyhow!("Audio device not found: {}. Falling back to default.", name)
-                })
-                .or_else(|e| {
-                    log::warn!("{}", e);
-                    host.default_output_device()
-                        .ok_or_else(|| anyhow!("No default output device available"))
-                })?
-        } else {
-            host.default_output_device()
-                .ok_or_else(|| anyhow!("No default output device available"))?
-        }
+
+    // Select Device
+    let device: Device = if let Some(name) = audio_device_name {
+        host.output_devices()?
+            // Fix: Use .name() instead of .id() or .description()
+            .find(|d| d.id().map_or(false, |n| n.to_string() == name))
+            .ok_or_else(|| anyhow!("Device '{}' not found. Using default.", name))
+            .or_else(|_| {
+                host.default_output_device()
+                    .ok_or_else(|| anyhow!("No default device"))
+            })?
+    } else {
+        host.default_output_device()
+            .ok_or_else(|| anyhow!("No default device"))?
     };
 
-    log::info!("[Cpal] Using output device: {}", device.id()?.to_string());
+    let device_name = device.id()?.to_string();
+    log::info!("[Cpal] Using device: {}", device_name);
 
+    // Find Best Config
     let supported_configs = device.supported_output_configs()?;
-    let target_sample_rate = sample_rate;
 
-    let config_range = supported_configs
-        .filter(|c| c.sample_format() == SampleFormat::F32 && c.channels() >= 2)
-        .find(|c| {
-            c.min_sample_rate() <= target_sample_rate && c.max_sample_rate() >= target_sample_rate
+    let mut valid_configs: Vec<_> = supported_configs
+        .filter(|c| {
+            c.channels() >= 2
+                && c.min_sample_rate() <= sample_rate
+                && c.max_sample_rate() >= sample_rate
         })
-        .ok_or_else(|| {
-            anyhow!(
-                "No supported F32 config found for sample rate {}Hz",
-                target_sample_rate
-            )
-        })?;
+        .collect();
 
-    let config = config_range.with_sample_rate(target_sample_rate);
-    let sample_format = config.sample_format();
-    let stream_config: StreamConfig = config.into();
-    let sample_rate = stream_config.sample_rate;
-    let device_channels = stream_config.channels as usize;
+    if valid_configs.is_empty() {
+        return Err(anyhow!(
+            "No supported config found for {}Hz with 2+ channels",
+            sample_rate
+        ));
+    }
 
+    valid_configs.sort_by(|a, b| {
+        if a.sample_format() == SampleFormat::F32 {
+            CmpOrdering::Less
+        } else if b.sample_format() == SampleFormat::F32 {
+            CmpOrdering::Greater
+        } else {
+            CmpOrdering::Equal
+        }
+    });
+
+    let best_config_range = &valid_configs[0];
+    let sample_format = best_config_range.sample_format();
+
+    // Configure Buffer Size
+    let buffer_size = match best_config_range.buffer_size() {
+        SupportedBufferSize::Range { min, max } => {
+            let clamped = (requested_buffer_size as u32).clamp(*min, *max);
+            if clamped != requested_buffer_size as u32 {
+                log::warn!(
+                    "[Cpal] Requested buffer {}, clamped to hardware limits: {}",
+                    requested_buffer_size,
+                    clamped
+                );
+            }
+            BufferSize::Fixed(clamped)
+        }
+        SupportedBufferSize::Unknown => BufferSize::Fixed(requested_buffer_size as u32),
+    };
+
+    let mut stream_config: StreamConfig = best_config_range.with_sample_rate(sample_rate).into();
+
+    stream_config.buffer_size = buffer_size;
+
+    log::info!(
+        "[Cpal] Final Config: Rate={}Hz, Channels={}, Format={:?}, Buffer={:?}",
+        stream_config.sample_rate,
+        stream_config.channels,
+        sample_format,
+        stream_config.buffer_size
+    );
+
+    // Setup Ring Buffer
     let mix_channels = 2;
-    let ring_buf_capacity = buffer_size_frames * mix_channels * 10;
+    let actual_buffer_frames = match stream_config.buffer_size {
+        BufferSize::Fixed(v) => v as usize,
+        _ => requested_buffer_size,
+    };
+
+    let ring_buf_capacity = actual_buffer_frames * mix_channels * 3;
     let ring_buf = HeapRb::<f32>::new(ring_buf_capacity);
     let (producer, consumer) = ring_buf.split();
+
     let stop_signal = Arc::new(AtomicBool::new(false));
 
     spawn_audio_processing_thread(
         rx,
         producer,
         organ,
-        sample_rate,
-        buffer_size_frames,
+        stream_config.sample_rate,
+        actual_buffer_frames,
         gain,
         polyphony,
         tui_tx.clone(),
@@ -714,9 +777,8 @@ pub fn start_audio_playback(
         stop_signal.clone(),
     );
 
-    let err_callback = |err| {
-        log::error!("[CpalCallback] Stream error: {}", err);
-    };
+    let err_callback = |err| log::error!("[Stream Error] {}", err);
+    let device_channels = stream_config.channels as usize;
 
     let stream = match sample_format {
         SampleFormat::F32 => build_stream::<f32>(
