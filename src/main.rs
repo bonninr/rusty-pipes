@@ -39,6 +39,7 @@ mod organ_hauptwerk;
 mod tui;
 mod tui_config;
 mod tui_filepicker;
+mod tui_lcd;
 mod tui_midi;
 mod tui_midi_learn;
 mod voice;

@@ -180,6 +180,17 @@ config:
   picker_organ: "Roghnaigh Comhad Orgáin"
   picker_midi: "Roghnaigh Comhad MIDI (Roghnach)"
 
+  lcd_title: "Cumraíocht LCD:"
+  lcd_button: "Cumraigh LCDanna"
+  lcd_tui_nav: " Enter: Eagar/Cuir Leis | d: Scrios | Saigheada: Nascleanúint/Athraigh | Esc: Ar ais "
+  lcd_add: "+ Cuir Taispeáint Nua"
+  lcd_display_label: "Taispeáint %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Cineál:"
+  lcd_background_label: "Cúlra:"
+  lcd_line1_label: "Líne 1:"
+  lcd_line2_label: "Líne 2:"
+
 loading:
   heading: "Samplaí Orgáin á Luchtú..."
   window_title: "Á Luchtú..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Réamh-thaisce:    %{val}"
   fmt_convert:     "Tiont. go 16-giot:%{val}"
   fmt_tuning:      "Tiúnadh Bunaidh:  %{val}"
+  fmt_lcd_config:  "Cumraíocht LCD: %{count} taispeántas"
   
   val_on: "AR SIÚL"
   val_off: "AS"

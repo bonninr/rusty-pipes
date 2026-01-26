@@ -180,6 +180,17 @@ config:
   picker_organ: "Pilih File Organ"
   picker_midi: "Pilih File MIDI (Opsional)"
 
+  lcd_title: "Konfigurasi LCD:"
+  lcd_button: "Konfigurasi LCD"
+  lcd_tui_nav: " Enter: Edit/Tambah | d: Hapus | Panah: Navigasi/Ubah | Esc: Kembali "
+  lcd_add: "+ Tambah Tampilan"
+  lcd_display_label: "Tampilan %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Tipe:"
+  lcd_background_label: "Latar Belakang:"
+  lcd_line1_label: "Baris 1:"
+  lcd_line2_label: "Baris 2:"
+
 loading:
   heading: "Memuat Sampel Organ..."
   window_title: "Memuat..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Pre-cache:        %{val}"
   fmt_convert:     "Konv. 16-bit:     %{val}"
   fmt_tuning:      "Penyetelan Asli:  %{val}"
+  fmt_lcd_config:  "Konfigurasi LCD: %{count} tampilan"
   
   val_on: "NYALA"
   val_off: "MATI"

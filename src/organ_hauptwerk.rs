@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use quick_xml::de::Deserializer;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::reader::Reader;
 use rust_i18n::t;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::fs::{canonicalize, File};
+use std::fs::{File, canonicalize};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -177,7 +177,10 @@ fn detect_hauptwerk_organ_root(xml_path: &Path) -> Result<PathBuf> {
     }
 
     // Failure: We can't find the data directory.
-    Err(anyhow!("Invalid Hauptwerk file structure. Could not locate 'OrganInstallationPackages' sibling directory for {:?}", xml_path))
+    Err(anyhow!(
+        "Invalid Hauptwerk file structure. Could not locate 'OrganInstallationPackages' sibling directory for {:?}",
+        xml_path
+    ))
 }
 
 /// Loads and parses a Hauptwerk (.Organ_Hauptwerk_xml) file.

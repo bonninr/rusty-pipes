@@ -180,6 +180,17 @@ config:
   picker_organ: "Seleccionar Fitxer d'Orgue"
   picker_midi: "Seleccionar Fitxer MIDI (Opcional)"
 
+  lcd_title: "Configuració LCD:"
+  lcd_button: "Configurar LCDs"
+  lcd_tui_nav: " Enter: Editar/Afegir | d: Eliminar | Fletxes: Navegar/Canviar | Esc: Enrere "
+  lcd_add: "+ Afegir Pantalla"
+  lcd_display_label: "Pantalla %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Tipus:"
+  lcd_background_label: "Fons:"
+  lcd_line1_label: "Línia 1:"
+  lcd_line2_label: "Línia 2:"
+
 loading:
   heading: "Carregant Mostres de l'Orgue..."
   window_title: "Carregant..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Pre-caché:        %{val}"
   fmt_convert:     "Conv. 16-bit:     %{val}"
   fmt_tuning:      "Afinació Orig.:   %{val}"
+  fmt_lcd_config:  "Configuració LCD: %{count} pantalles"
   
   val_on: "ON"
   val_off: "OFF"

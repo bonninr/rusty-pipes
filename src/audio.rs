@@ -1,25 +1,25 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, FromSample, SampleFormat, SizedSample, Stream, StreamConfig};
-use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::HeapRb;
+use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::TuiMessage;
 use crate::app::{ActiveNote, AppMessage};
 use crate::midi_recorder::MidiRecorder;
 use crate::organ::Organ;
-use crate::TuiMessage;
 
 use crate::audio_convolver::StereoConvolver;
 use crate::audio_event::{enforce_voice_limit, process_message, process_note_on};
 use crate::audio_loader::run_loader_job;
 use crate::audio_recorder::AudioRecorder;
 use crate::voice::{
-    SpawnJob, TremulantLfo, Voice, CHANNEL_COUNT, MAX_NEW_VOICES_PER_BLOCK, TREMULANT_AM_BOOST,
+    CHANNEL_COUNT, MAX_NEW_VOICES_PER_BLOCK, SpawnJob, TREMULANT_AM_BOOST, TremulantLfo, Voice,
 };
 
 // Handle struct that manages the lifecycle for the audio thread
@@ -97,11 +97,18 @@ fn get_cpal_host() -> cpal::Host {
                                         );
                                         return host;
                                     } else {
-                                        log::warn!("[Audio] Host '{}' found a device, but it has 0 supported configs. Skipping.", host.id().name());
+                                        log::warn!(
+                                            "[Audio] Host '{}' found a device, but it has 0 supported configs. Skipping.",
+                                            host.id().name()
+                                        );
                                     }
                                 }
                                 Err(e) => {
-                                    log::warn!("[Audio] Host '{}' device failed config query: {}. Skipping.", host.id().name(), e);
+                                    log::warn!(
+                                        "[Audio] Host '{}' device failed config query: {}. Skipping.",
+                                        host.id().name(),
+                                        e
+                                    );
                                 }
                             }
                         } else {

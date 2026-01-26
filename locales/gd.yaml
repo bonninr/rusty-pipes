@@ -180,6 +180,17 @@ config:
   picker_organ: "Tagh Faidhle Oargain"
   picker_midi: "Tagh Faidhle MIDI (Roghainneil)"
 
+  lcd_title: "Rèiteachadh LCD:"
+  lcd_button: "Rèitich LCDs"
+  lcd_tui_nav: " Enter: Deasaich/Cuir ris | d: Sguab às | Saigheada: Seòl/Atharraich | Esc: Air ais "
+  lcd_add: "+ Cuir Taisbeanadh Ris"
+  lcd_display_label: "Taisbeanadh %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Seòrsa:"
+  lcd_background_label: "Cùl-raon:"
+  lcd_line1_label: "Loidhne 1:"
+  lcd_line2_label: "Loidhne 2:"
+
 loading:
   heading: "A' Luchdachadh Sampaill Oargain..."
   window_title: "A' Luchdachadh..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Ro-tasgadan:          %{val}"
   fmt_convert:     "Tionnd. gu 16-bit:    %{val}"
   fmt_tuning:      "Gleusadh Tùsail:      %{val}"
+  fmt_lcd_config:  "Rèiteachadh LCD: %{count} taisbeanaidhean"
   
   val_on: "AIR"
   val_off: "DHETH"

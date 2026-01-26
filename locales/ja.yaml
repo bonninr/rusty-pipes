@@ -180,6 +180,17 @@ config:
   picker_organ: "オルガンファイルの選択"
   picker_midi: "MIDIファイルの選択 (任意)"
 
+  lcd_title: "LCD設定:"
+  lcd_button: "LCDを設定"
+  lcd_tui_nav: " Enter: 編集/追加 | d: 削除 | 矢印: 移動/変更 | Esc: 戻る "
+  lcd_add: "+ ディスプレイ追加"
+  lcd_display_label: "ディスプレイ %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "タイプ:"
+  lcd_background_label: "背景:"
+  lcd_line1_label: "行 1:"
+  lcd_line2_label: "行 2:"
+
 loading:
   heading: "オルガンサンプルを読み込み中..."
   window_title: "読み込み中..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "プリキャッシュ:   %{val}"
   fmt_convert:     "16bit変換:        %{val}"
   fmt_tuning:      "元の調律:         %{val}"
+  fmt_lcd_config:  "LCD設定: %{count} ディスプレイ"
   
   val_on: "ON"
   val_off: "OFF"

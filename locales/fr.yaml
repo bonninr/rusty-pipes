@@ -180,6 +180,17 @@ config:
   picker_organ: "Sélectionner Fichier d'Orgue"
   picker_midi: "Sélectionner Fichier MIDI (Optionnel)"
 
+  lcd_title: "Configuration LCD :"
+  lcd_button: "Configurer LCDs"
+  lcd_tui_nav: " Entrée: Éditer/Ajout | d: Suppr | Flèches: Navig/Change | Échap: Retour "
+  lcd_add: "+ Nouvel écran"
+  lcd_display_label: "Écran %{num}"
+  lcd_id_label: "ID :"
+  lcd_type_label: "Type :"
+  lcd_background_label: "Fond :"
+  lcd_line1_label: "Ligne 1 :"
+  lcd_line2_label: "Ligne 2 :"
+
 loading:
   heading: "Chargement des Échantillons..."
   window_title: "Chargement..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Pré-cache:           %{val}"
   fmt_convert:     "Conv. en 16-bit:     %{val}"
   fmt_tuning:      "Accordage Orig.:     %{val}"
+  fmt_lcd_config:  "Configuration LCD : %{count} écrans"
   
   val_on: "ON"
   val_off: "OFF"

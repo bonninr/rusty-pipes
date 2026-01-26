@@ -180,6 +180,17 @@ config:
   picker_organ: "Välj Orgelfil"
   picker_midi: "Välj MIDI-fil (Valfritt)"
 
+  lcd_title: "LCD-konfiguration:"
+  lcd_button: "Konfigurera LCD-er"
+  lcd_tui_nav: " Enter: Redigera/Lägg till | d: Ta bort | Pilar: Navigera/Ändra | Esc: Tillbaka "
+  lcd_add: "+ Lägg till Display"
+  lcd_display_label: "Display %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Typ:"
+  lcd_background_label: "Bakgrund:"
+  lcd_line1_label: "Rad 1:"
+  lcd_line2_label: "Rad 2:"
+
 loading:
   heading: "Laddar Orgelsamplingar..."
   window_title: "Laddar..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "För-cacha:        %{val}"
   fmt_convert:     "Konv. till 16-bit:%{val}"
   fmt_tuning:      "Orig. Stämning:   %{val}"
+  fmt_lcd_config:  "LCD-konfiguration: %{count} displayer"
   
   val_on: "PÅ"
   val_off: "AV"

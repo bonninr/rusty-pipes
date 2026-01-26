@@ -1,8 +1,9 @@
-use eframe::{egui, App, Frame};
+use eframe::{App, Frame, egui};
 use rust_i18n::t;
 use std::sync::{
+    Arc,
     atomic::{AtomicBool, Ordering},
-    mpsc, Arc,
+    mpsc,
 };
 
 struct LoadingApp {

@@ -180,6 +180,17 @@ config:
   picker_organ: "Valitse urkutiedosto"
   picker_midi: "Valitse MIDI-tiedosto (Valinnainen)"
 
+  lcd_title: "LCD-asetukset:"
+  lcd_button: "Määritä LCD:t"
+  lcd_tui_nav: " Enter: Muokkaa/Lisää | d: Poista | Nuolet: Siirry/Muuta | Esc: Takaisin "
+  lcd_add: "+ Lisää näyttö"
+  lcd_display_label: "Näyttö %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Tyyppi:"
+  lcd_background_label: "Tausta:"
+  lcd_line1_label: "Rivi 1:"
+  lcd_line2_label: "Rivi 2:"
+
 loading:
   heading: "Ladataan urkusampleja..."
   window_title: "Ladataan..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Välimuisti RAM:   %{val}"
   fmt_convert:     "Muunna 16-bit:    %{val}"
   fmt_tuning:      "Orig. viritys:    %{val}"
+  fmt_lcd_config:  "LCD-asetukset: %{count} näyttöä"
   
   val_on: "PÄÄLLÄ"
   val_off: "POIS"

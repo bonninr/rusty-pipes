@@ -180,6 +180,17 @@ config:
   picker_organ: "Selecteer Orgelbestand"
   picker_midi: "Selecteer MIDI-bestand (Optioneel)"
 
+  lcd_title: "LCD Configuratie:"
+  lcd_button: "LCDs Configureren"
+  lcd_tui_nav: " Enter: Bewerk/Nieuw | d: Verwijder | Pijltjes: Navigeer/Wijzig | Esc: Terug "
+  lcd_add: "+ Nieuw Scherm"
+  lcd_display_label: "Scherm %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Type:"
+  lcd_background_label: "Achtergrond:"
+  lcd_line1_label: "Regel 1:"
+  lcd_line2_label: "Regel 2:"
+
 loading:
   heading: "Orgel Samples Laden..."
   window_title: "Laden..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Vooraf cachen:    %{val}"
   fmt_convert:     "Conv. naar 16-bit:%{val}"
   fmt_tuning:      "Orig. Stemming:   %{val}"
+  fmt_lcd_config:  "LCD Configuratie: %{count} schermen"
   
   val_on: "AAN"
   val_off: "UIT"

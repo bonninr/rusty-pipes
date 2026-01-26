@@ -183,6 +183,20 @@ config:
   # File Picker Titles
   picker_organ: "Select Organ File"
   picker_midi: "Select MIDI File"
+  
+  lcd_title: "LCD Configuration:"
+  lcd_button: "Configure LCDs"
+  lcd_tui_nav: " Enter: Edit/Add | d: Delete | Arrows: Navigate/Change | Esc: Back "
+  lcd_add: "+ Add New Display"
+  lcd_display_label: "Display %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Type:"
+  lcd_background_label: "Background:"
+  lcd_line1_label: "Line 1:"
+  lcd_line2_label: "Line 2:"
+
+
+
 
 loading:
   heading: "Loading Organ Samples..."
@@ -225,6 +239,7 @@ tui_config:
   fmt_precache:    "Pre-cache:        %{val}"
   fmt_convert:     "Convert to 16-bit:%{val}"
   fmt_tuning:      "Original Tuning:  %{val}"
+  fmt_lcd_config:  "LCD Configuration: %{count} displays"
   
   val_on: "ON"
   val_off: "OFF"

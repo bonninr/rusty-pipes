@@ -1,7 +1,7 @@
 use crate::app::MainLoopAction;
 use crate::app_state::AppState;
 use crate::config::{
-    load_organ_library, save_organ_library, MidiEventSpec, OrganLibrary, OrganProfile,
+    MidiEventSpec, OrganLibrary, OrganProfile, load_organ_library, save_organ_library,
 };
 use eframe::egui;
 use rust_i18n::t;

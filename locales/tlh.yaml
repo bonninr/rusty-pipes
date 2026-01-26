@@ -180,6 +180,17 @@ config:
   picker_organ: "'o'rghan teywI' yIwIv"
   picker_midi: "MIDI teywI' yIwIv"
 
+  lcd_title: "LCD cher:"
+  lcd_button: "LCDmey cher"
+  lcd_tui_nav: " Enter: choH/chel | d: teq | Arrow: Nav/choH | Esc: DoH "
+  lcd_add: "+ HaSta chel"
+  lcd_display_label: "HaSta %{num}"
+  lcd_id_label: "mI':"
+  lcd_type_label: "Dol:"
+  lcd_background_label: "Daq:"
+  lcd_line1_label: "ghItlh 1:"
+  lcd_line2_label: "ghItlh 2:"
+
 loading:
   heading: "nagh beQ lI'..."
   window_title: "lI'..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "RAM lI':         %{val}"
   fmt_convert:     "16-bit choH:     %{val}"
   fmt_tuning:      "prm lo':         %{val}"
+  fmt_lcd_config:  "LCD cher: %{count} HaStamey"
   
   val_on: "CHU'"
   val_off: "QOTLH"

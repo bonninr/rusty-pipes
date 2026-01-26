@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use fft_convolver::FFTConvolver;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use crate::wav::{parse_wav_metadata, WavSampleReader};
+use crate::wav::{WavSampleReader, parse_wav_metadata};
 
 /// Simple Linear Interpolation Resampler.
 pub fn resample_interleaved(

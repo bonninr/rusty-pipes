@@ -180,6 +180,17 @@ config:
   picker_organ: "Selectare Fișier Orgă"
   picker_midi: "Selectare Fișier MIDI (Opțional)"
 
+  lcd_title: "Configurare LCD:"
+  lcd_button: "Configurare LCD-uri"
+  lcd_tui_nav: " Enter: Edit/Adaugă | d: Șterge | Săgeți: Navigare/Modifică | Esc: Înapoi "
+  lcd_add: "+ Adaugă Ecran"
+  lcd_display_label: "Ecran %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Tip:"
+  lcd_background_label: "Fundal:"
+  lcd_line1_label: "Linia 1:"
+  lcd_line2_label: "Linia 2:"
+
 loading:
   heading: "Se încarcă Eșantioanele Orgii..."
   window_title: "Se încarcă..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Pre-cache:          %{val}"
   fmt_convert:     "Conv. 16-bit:       %{val}"
   fmt_tuning:      "Acordaj Orig.:      %{val}"
+  fmt_lcd_config:  "Configurare LCD: %{count} ecrane"
   
   val_on: "PORNIT"
   val_off: "OPRIT"

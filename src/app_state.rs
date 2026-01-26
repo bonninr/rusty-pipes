@@ -1,6 +1,6 @@
 use crate::{
     app::{AppMessage, TuiMessage},
-    config::{load_settings, save_settings, LcdDisplayConfig, MidiDeviceConfig, MidiEventSpec},
+    config::{LcdDisplayConfig, MidiDeviceConfig, MidiEventSpec, load_settings, save_settings},
     input::KeyboardLayout,
     midi,
     midi_control::{ControlAction, MidiControlMap},
@@ -17,7 +17,7 @@ use std::{
     io::{BufReader, BufWriter},
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
-    sync::{mpsc::Sender, Arc, Mutex},
+    sync::{Arc, Mutex, mpsc::Sender},
     time::{Duration, Instant},
 };
 

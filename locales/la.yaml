@@ -180,6 +180,17 @@ config:
   picker_organ: "Seligere Plicam Organi"
   picker_midi: "Seligere Plicam MIDI (Optionale)"
 
+  lcd_title: "Configuratio LCD:"
+  lcd_button: "Configurare LCD"
+  lcd_tui_nav: " Enter: Edere/Addere | d: Delere | Sagittae: Navigare/Mutare | Esc: Retro "
+  lcd_add: "+ Addere Ostentum"
+  lcd_display_label: "Ostentum %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Typus:"
+  lcd_background_label: "Scaena:"
+  lcd_line1_label: "Linea 1:"
+  lcd_line2_label: "Linea 2:"
+
 loading:
   heading: "Exempla Organi Onerantur..."
   window_title: "Onerans..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Prae-cache:       %{val}"
   fmt_convert:     "Conv. ad 16-bit:  %{val}"
   fmt_tuning:      "Temp. Originalis: %{val}"
+  fmt_lcd_config:  "Configuratio LCD: %{count} ostenta"
   
   val_on: "ACCENSUM"
   val_off: "EXTINCTUM"

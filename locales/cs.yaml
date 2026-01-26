@@ -180,6 +180,17 @@ config:
   picker_organ: "Vybrat soubor varhan"
   picker_midi: "Vybrat MIDI soubor (Volitelné)"
 
+  lcd_title: "Konfigurace LCD:"
+  lcd_button: "Konfigurovat LCD"
+  lcd_tui_nav: " Enter: Upravit/Přidat | d: Smazat | Šipky: Navigace/Změna | Esc: Zpět "
+  lcd_add: "+ Přidat Displej"
+  lcd_display_label: "Displej %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Typ:"
+  lcd_background_label: "Pozadí:"
+  lcd_line1_label: "Řádek 1:"
+  lcd_line2_label: "Řádek 2:"
+
 loading:
   heading: "Načítám samply varhan..."
   window_title: "Načítání..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "RAM Cache:        %{val}"
   fmt_convert:     "Konv. na 16-bit:  %{val}"
   fmt_tuning:      "Původní ladění:   %{val}"
+  fmt_lcd_config:  "Konfigurace LCD: %{count} displejů"
   
   val_on: "ZAP"
   val_off: "VYP"

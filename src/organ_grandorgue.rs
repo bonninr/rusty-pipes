@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use ini::inistr;
 use rust_i18n::t;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, canonicalize};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Mutex};
+use std::sync::{Mutex, mpsc};
 
 use crate::organ::{
     ConversionTask, Organ, Pipe, Rank, ReleaseSample, Stop, Tremulant, WindchestGroup,
@@ -18,11 +18,7 @@ trait NonEmpty: Sized {
 
 impl NonEmpty for String {
     fn non_empty_or(self, default: Option<Self>) -> Option<Self> {
-        if self.is_empty() {
-            default
-        } else {
-            Some(self)
-        }
+        if self.is_empty() { default } else { Some(self) }
     }
 }
 
@@ -683,7 +679,10 @@ where
                 });
 
                 if releases.is_empty() {
-                    log::info!("GrandOrgue: No release samples defined for Pipe {:?}. Checking for embedded releases...", attack_sample_path_relative);
+                    log::info!(
+                        "GrandOrgue: No release samples defined for Pipe {:?}. Checking for embedded releases...",
+                        attack_sample_path_relative
+                    );
                     if let Ok(Some(extracted_path)) = wav_converter::try_extract_release_sample(
                         &attack_sample_path_relative,
                         &organ.base_path,

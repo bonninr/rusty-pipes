@@ -1,5 +1,5 @@
 use anyhow::Result;
-use eframe::{egui, App, Frame};
+use eframe::{App, Frame, egui};
 use egui::{Stroke, UiBuilder};
 use midir::MidiInputConnection;
 use rust_i18n::t;
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use std::{
     collections::{BTreeSet, HashMap, VecDeque},
     path::PathBuf,
-    sync::{mpsc::Sender, Arc, Mutex},
+    sync::{Arc, Mutex, mpsc::Sender},
 };
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
     app::{AppMessage, TuiMessage},
     app_state::{AppState, Preset},
     config::MidiEventSpec, // Import the new Enum
-    gui_midi_learn::{draw_midi_learn_modal, LearnTarget, MidiLearnState},
+    gui_midi_learn::{LearnTarget, MidiLearnState, draw_midi_learn_modal},
     gui_organ_manager::OrganManagerUi,
     input::MusicCommand,
     organ::Organ,
@@ -44,7 +44,6 @@ pub struct EguiApp {
     reverb_files: Vec<(String, PathBuf)>,
     selected_reverb_index: Option<usize>,
     midi_learn_state: MidiLearnState,
-    show_lcd_config_modal: bool,
 
     // Organ Manager
     organ_manager: OrganManagerUi,
@@ -98,7 +97,6 @@ pub fn run_gui_loop(
         reverb_files,
         selected_reverb_index,
         midi_learn_state: MidiLearnState::default(),
-        show_lcd_config_modal: false,
         organ_manager: OrganManagerUi::new(),
         exit_action: exit_action.clone(),
         gui_is_running,
@@ -489,174 +487,6 @@ impl EguiApp {
                 });
                 self.stop_list_scroll_offset = scroll_out.state.offset.y;
             });
-
-        // LCD Modal
-        if self.show_lcd_config_modal {
-            self.draw_lcd_config_modal(ctx);
-        }
-    }
-
-    fn draw_lcd_config_modal(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_lcd_config_modal;
-        egui::Window::new("LCD Configuration")
-            .open(&mut open)
-            .show(ctx, |ui| {
-                let mut state = self.app_state.lock().unwrap();
-                let mut to_remove = None;
-
-                if ui.button("Add Display").clicked() {
-                    let next_id = state.lcd_displays.len() as u8 + 1;
-                    use crate::config::{LcdColor, LcdDisplayConfig, LcdLineType};
-                    state.lcd_displays.push(LcdDisplayConfig {
-                        id: next_id,
-                        line1: LcdLineType::OrganName,
-                        line2: LcdLineType::SystemStatus,
-                        background_color: LcdColor::White,
-                    });
-                    state.persist_settings();
-                    state.refresh_lcds();
-                }
-
-                ui.separator();
-
-                egui::ScrollArea::vertical()
-                    .max_height(400.0)
-                    .show(ui, |ui| {
-                        for (i, display) in state.lcd_displays.iter_mut().enumerate() {
-                            ui.group(|ui| {
-                                ui.horizontal(|ui| {
-                                    ui.label(format!("Display #{}", i + 1));
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            if ui.button("🗑").clicked() {
-                                                to_remove = Some(i);
-                                            }
-                                        },
-                                    );
-                                });
-
-                                use crate::config::{LcdColor, LcdLineType};
-
-                                egui::Grid::new(format!("lcd_grid_{}", i))
-                                    .num_columns(2)
-                                    .show(ui, |ui| {
-                                        ui.label("ID (Sysex ID):");
-                                        ui.add(
-                                            egui::DragValue::new(&mut display.id).range(1..=127),
-                                        );
-                                        ui.end_row();
-
-                                        ui.label("Background:");
-                                        egui::ComboBox::from_id_salt(format!("lcd_color_{}", i))
-                                            .selected_text(format!(
-                                                "{:?}",
-                                                display.background_color
-                                            ))
-                                            .show_ui(ui, |ui| {
-                                                ui.selectable_value(
-                                                    &mut display.background_color,
-                                                    LcdColor::Off,
-                                                    "Off",
-                                                );
-                                                ui.selectable_value(
-                                                    &mut display.background_color,
-                                                    LcdColor::White,
-                                                    "White",
-                                                );
-                                                ui.selectable_value(
-                                                    &mut display.background_color,
-                                                    LcdColor::Red,
-                                                    "Red",
-                                                );
-                                                ui.selectable_value(
-                                                    &mut display.background_color,
-                                                    LcdColor::Green,
-                                                    "Green",
-                                                );
-                                                ui.selectable_value(
-                                                    &mut display.background_color,
-                                                    LcdColor::Yellow,
-                                                    "Yellow",
-                                                );
-                                                ui.selectable_value(
-                                                    &mut display.background_color,
-                                                    LcdColor::Blue,
-                                                    "Blue",
-                                                );
-                                                ui.selectable_value(
-                                                    &mut display.background_color,
-                                                    LcdColor::Magenta,
-                                                    "Magenta",
-                                                );
-                                                ui.selectable_value(
-                                                    &mut display.background_color,
-                                                    LcdColor::Cyan,
-                                                    "Cyan",
-                                                );
-                                            });
-                                        ui.end_row();
-
-                                        let line_options = [
-                                            (LcdLineType::Empty, "Empty"),
-                                            (LcdLineType::OrganName, "Organ Name"),
-                                            (LcdLineType::SystemStatus, "System Status"),
-                                            (LcdLineType::LastPreset, "Last Preset"),
-                                            (LcdLineType::LastStopChange, "Last Stop Change"),
-                                            (LcdLineType::MidiLog, "MIDI Log"),
-                                            (LcdLineType::Gain, "Gain"),
-                                            (LcdLineType::ReverbMix, "Reverb Mix"),
-                                            (LcdLineType::MidiPlayerStatus, "MIDI Player Status"),
-                                        ];
-
-                                        ui.label("Line 1:");
-                                        egui::ComboBox::from_id_salt(format!("lcd_line1_{}", i))
-                                            .selected_text(format!("{}", display.line1))
-                                            .show_ui(ui, |ui| {
-                                                for (val, label) in &line_options {
-                                                    ui.selectable_value(
-                                                        &mut display.line1,
-                                                        val.clone(),
-                                                        *label,
-                                                    );
-                                                }
-                                            });
-                                        ui.end_row();
-
-                                        ui.label("Line 2:");
-                                        egui::ComboBox::from_id_salt(format!("lcd_line2_{}", i))
-                                            .selected_text(format!("{}", display.line2))
-                                            .show_ui(ui, |ui| {
-                                                for (val, label) in &line_options {
-                                                    ui.selectable_value(
-                                                        &mut display.line2,
-                                                        val.clone(),
-                                                        *label,
-                                                    );
-                                                }
-                                            });
-                                        ui.end_row();
-                                    });
-                            });
-                            ui.add_space(5.0);
-                        }
-                    });
-
-                if let Some(idx) = to_remove {
-                    state.lcd_displays.remove(idx);
-                    state.persist_settings();
-                    state.refresh_lcds();
-                }
-
-                // Refresh on close or change is implicit if we persisted settings.
-                // We persisted above on add/remove.
-                // For direct field modification, we should probably persist on close or change.
-                if ui.input(|i| i.pointer.any_released()) {
-                    state.persist_settings();
-                    state.refresh_lcds();
-                }
-            });
-        self.show_lcd_config_modal = open;
     }
 
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
@@ -686,9 +516,6 @@ impl EguiApp {
 
                 // Right-aligned controls
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(t!("gui.btn_lcd_config")).clicked() {
-                        self.show_lcd_config_modal = true;
-                    }
                     ui.add_space(5.0);
                     ui.separator();
                     ui.add_space(5.0);

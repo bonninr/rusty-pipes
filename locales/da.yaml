@@ -180,6 +180,17 @@ config:
   picker_organ: "Vælg Orgelfil"
   picker_midi: "Vælg MIDI-fil (Valgfrit)"
 
+  lcd_title: "LCD-konfiguration:"
+  lcd_button: "Konfigurer LCD'er"
+  lcd_tui_nav: " Enter: Rediger/Tilføj | d: Slet | Pile: Naviger/Ændre | Esc: Tilbage "
+  lcd_add: "+ Tilføj Display"
+  lcd_display_label: "Display %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Type:"
+  lcd_background_label: "Baggrund:"
+  lcd_line1_label: "Linje 1:"
+  lcd_line2_label: "Linje 2:"
+
 loading:
   heading: "Indlæser Orgelsamples..."
   window_title: "Indlæser..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Pre-cache:        %{val}"
   fmt_convert:     "Konv. til 16-bit: %{val}"
   fmt_tuning:      "Orig. Stemming:   %{val}"
+  fmt_lcd_config:  "LCD-konfiguration: %{count} displays"
   
   val_on: "TIL"
   val_off: "FRA"

@@ -1,16 +1,16 @@
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use actix_web::dev::ServerHandle;
+use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Sender};
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::app_state::AppState;
-use crate::app::MainLoopAction;
 use crate::app::AppMessage;
+use crate::app::MainLoopAction;
+use crate::app_state::AppState;
 use crate::config::{self, load_organ_library};
 
 /// A handle that controls the lifecycle of the API Server.
@@ -23,7 +23,7 @@ impl Drop for ApiServerHandle {
     fn drop(&mut self) {
         println!("Stopping API Server...");
         let handle = self.handle.clone();
-        
+
         // Actix's stop() method is async, but Drop is sync.
         // We spawn a temporary thread with a minimal runtime just to await the stop signal.
         thread::spawn(move || {
@@ -40,7 +40,7 @@ impl Drop for ApiServerHandle {
 
 // --- Data Models ---
 
-#[derive(Serialize, Clone, ToSchema)] 
+#[derive(Serialize, Clone, ToSchema)]
 pub struct StopStatusResponse {
     /// The internal index of the stop
     index: usize,
@@ -186,7 +186,9 @@ struct ApiDoc;
 /// Redirects to Swagger UI
 #[utoipa::path(get, path = "/", responses((status = 302, description = "Redirect to Swagger")))]
 async fn index() -> impl Responder {
-    HttpResponse::Found().append_header(("Location", "/swagger-ui/")).finish()
+    HttpResponse::Found()
+        .append_header(("Location", "/swagger-ui/"))
+        .finish()
 }
 
 /// Returns information about the currently loaded organ.
@@ -196,7 +198,9 @@ async fn index() -> impl Responder {
 )]
 async fn get_organ_info(data: web::Data<ApiData>) -> impl Responder {
     let state = data.app_state.lock().unwrap();
-    HttpResponse::Ok().json(OrganInfoResponse { name: state.organ.name.clone() })
+    HttpResponse::Ok().json(OrganInfoResponse {
+        name: state.organ.name.clone(),
+    })
 }
 
 /// Returns a list of all organs available in the library.
@@ -207,13 +211,19 @@ async fn get_organ_info(data: web::Data<ApiData>) -> impl Responder {
 async fn get_organ_library() -> impl Responder {
     match load_organ_library() {
         Ok(lib) => {
-            let response: Vec<OrganEntryResponse> = lib.organs.iter().map(|p| OrganEntryResponse {
-                name: p.name.clone(),
-                path: p.path.to_string_lossy().to_string(),
-            }).collect();
+            let response: Vec<OrganEntryResponse> = lib
+                .organs
+                .iter()
+                .map(|p| OrganEntryResponse {
+                    name: p.name.clone(),
+                    path: p.path.to_string_lossy().to_string(),
+                })
+                .collect();
             HttpResponse::Ok().json(response)
-        },
-        Err(e) => HttpResponse::InternalServerError().body(format!("Failed to load library: {}", e))
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().body(format!("Failed to load library: {}", e))
+        }
     }
 }
 
@@ -235,17 +245,20 @@ async fn load_organ(body: web::Json<LoadOrganRequest>, data: web::Data<ApiData>)
     };
 
     // Verify the path exists in the library (security + validation)
-    let found = lib.organs.iter().find(|o| o.path.to_string_lossy() == *target_path_str);
+    let found = lib
+        .organs
+        .iter()
+        .find(|o| o.path.to_string_lossy() == *target_path_str);
 
     if let Some(profile) = found {
         log::info!("API: Requesting reload of organ: {}", profile.name);
-        
+
         // Signal the main loop to reload
-        *data.exit_action.lock().unwrap() = MainLoopAction::ReloadOrgan { 
-            file: profile.path.clone() 
+        *data.exit_action.lock().unwrap() = MainLoopAction::ReloadOrgan {
+            file: profile.path.clone(),
         };
 
-        let _ = data.audio_tx.send(AppMessage::Quit); 
+        let _ = data.audio_tx.send(AppMessage::Quit);
 
         HttpResponse::Ok().json(serde_json::json!({"status": "reloading", "organ": profile.name}))
     } else {
@@ -260,10 +273,10 @@ async fn load_organ(body: web::Json<LoadOrganRequest>, data: web::Data<ApiData>)
 )]
 async fn panic(data: web::Data<ApiData>) -> impl Responder {
     let mut state = data.app_state.lock().unwrap();
-    
+
     // Send the signal to the audio engine
     let _ = data.audio_tx.send(AppMessage::AllNotesOff);
-    
+
     state.add_midi_log("API: Executed Panic (All Notes Off)".into());
     HttpResponse::Ok().json(serde_json::json!({"status": "success"}))
 }
@@ -276,9 +289,11 @@ async fn panic(data: web::Data<ApiData>) -> impl Responder {
 async fn get_stops(data: web::Data<ApiData>) -> impl Responder {
     let state = data.app_state.lock().unwrap();
     let mut response_list = Vec::with_capacity(state.organ.stops.len());
-    
+
     for (i, stop) in state.organ.stops.iter().enumerate() {
-        let mut active_channels = state.stop_channels.get(&i)
+        let mut active_channels = state
+            .stop_channels
+            .get(&i)
             .map(|set| set.iter().cloned().collect::<Vec<u8>>())
             .unwrap_or_default();
         active_channels.sort();
@@ -305,21 +320,30 @@ async fn get_stops(data: web::Data<ApiData>) -> impl Responder {
 async fn update_stop_channel(
     path: web::Path<(usize, u8)>,
     body: web::Json<ChannelUpdateRequest>,
-    data: web::Data<ApiData>
+    data: web::Data<ApiData>,
 ) -> impl Responder {
     let (stop_index, channel_id) = path.into_inner();
-    if channel_id > 15 { return HttpResponse::BadRequest().body("Channel ID > 15"); }
+    if channel_id > 15 {
+        return HttpResponse::BadRequest().body("Channel ID > 15");
+    }
 
     let mut state = data.app_state.lock().unwrap();
-    if stop_index >= state.organ.stops.len() { return HttpResponse::NotFound().finish(); }
+    if stop_index >= state.organ.stops.len() {
+        return HttpResponse::NotFound().finish();
+    }
 
     match state.set_stop_channel_state(stop_index, channel_id, body.active, &data.audio_tx) {
         Ok(_) => {
             let action = if body.active { "Enabled" } else { "Disabled" };
-            state.add_midi_log(format!("API: {} Stop {} for Ch {}", action, stop_index, channel_id + 1));
+            state.add_midi_log(format!(
+                "API: {} Stop {} for Ch {}",
+                action,
+                stop_index,
+                channel_id + 1
+            ));
             HttpResponse::Ok().json(serde_json::json!({ "status": "success" }))
-        },
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string())
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
 
@@ -333,19 +357,21 @@ async fn update_stop_channel(
 )]
 async fn load_preset(path: web::Path<usize>, data: web::Data<ApiData>) -> impl Responder {
     let slot_id = path.into_inner();
-    if !(1..=12).contains(&slot_id) { return HttpResponse::BadRequest().body("Invalid slot"); }
+    if !(1..=12).contains(&slot_id) {
+        return HttpResponse::BadRequest().body("Invalid slot");
+    }
 
     let mut state = data.app_state.lock().unwrap();
     match state.recall_preset(slot_id - 1, &data.audio_tx) {
         Ok(_) => {
-             if state.presets[slot_id - 1].is_some() {
-                 state.add_midi_log(format!("API: Loaded Preset F{}", slot_id));
-                 HttpResponse::Ok().json(serde_json::json!({ "status": "success" }))
-             } else {
-                 HttpResponse::NotFound().body("Preset empty")
-             }
-        },
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string())
+            if state.presets[slot_id - 1].is_some() {
+                state.add_midi_log(format!("API: Loaded Preset F{}", slot_id));
+                HttpResponse::Ok().json(serde_json::json!({ "status": "success" }))
+            } else {
+                HttpResponse::NotFound().body("Preset empty")
+            }
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
 
@@ -361,10 +387,12 @@ async fn load_preset(path: web::Path<usize>, data: web::Data<ApiData>) -> impl R
 async fn save_preset(
     path: web::Path<usize>,
     body: web::Json<PresetSaveRequest>,
-    data: web::Data<ApiData>
+    data: web::Data<ApiData>,
 ) -> impl Responder {
     let slot_id = path.into_inner();
-    if !(1..=12).contains(&slot_id) { return HttpResponse::BadRequest().body("Invalid slot"); }
+    if !(1..=12).contains(&slot_id) {
+        return HttpResponse::BadRequest().body("Invalid slot");
+    }
 
     let mut state = data.app_state.lock().unwrap();
     state.save_preset(slot_id - 1, body.name.clone());
@@ -415,7 +443,9 @@ async fn set_gain(body: web::Json<ValueRequest>, data: web::Data<ApiData>) -> im
 async fn set_polyphony(body: web::Json<ValueRequest>, data: web::Data<ApiData>) -> impl Responder {
     let mut state = data.app_state.lock().unwrap();
     state.polyphony = (body.value as usize).max(1);
-    let _ = data.audio_tx.send(AppMessage::SetPolyphony(state.polyphony));
+    let _ = data
+        .audio_tx
+        .send(AppMessage::SetPolyphony(state.polyphony));
     state.persist_settings();
     HttpResponse::Ok().json(serde_json::json!({"status": "success", "polyphony": state.polyphony}))
 }
@@ -426,7 +456,10 @@ async fn set_polyphony(body: web::Json<ValueRequest>, data: web::Data<ApiData>) 
     request_body = ChannelUpdateRequest, 
     responses((status = 200))
 )]
-async fn start_stop_midi_recording(body: web::Json<ChannelUpdateRequest>, data: web::Data<ApiData>) -> impl Responder {
+async fn start_stop_midi_recording(
+    body: web::Json<ChannelUpdateRequest>,
+    data: web::Data<ApiData>,
+) -> impl Responder {
     let mut state = data.app_state.lock().unwrap();
     state.is_recording_midi = body.active;
     if body.active {
@@ -436,7 +469,8 @@ async fn start_stop_midi_recording(body: web::Json<ChannelUpdateRequest>, data: 
         let _ = data.audio_tx.send(AppMessage::StopMidiRecording);
         state.add_midi_log("API: Stopped MIDI Recording".into());
     }
-    HttpResponse::Ok().json(serde_json::json!({"status": "success", "recording_midi": state.is_recording_midi}))
+    HttpResponse::Ok()
+        .json(serde_json::json!({"status": "success", "recording_midi": state.is_recording_midi}))
 }
 
 /// Start or Stop Audio (WAV) Recording.
@@ -445,7 +479,10 @@ async fn start_stop_midi_recording(body: web::Json<ChannelUpdateRequest>, data: 
     request_body = ChannelUpdateRequest, 
     responses((status = 200))
 )]
-async fn start_stop_audio_recording(body: web::Json<ChannelUpdateRequest>, data: web::Data<ApiData>) -> impl Responder {
+async fn start_stop_audio_recording(
+    body: web::Json<ChannelUpdateRequest>,
+    data: web::Data<ApiData>,
+) -> impl Responder {
     let mut state = data.app_state.lock().unwrap();
     state.is_recording_audio = body.active;
     if body.active {
@@ -455,7 +492,8 @@ async fn start_stop_audio_recording(body: web::Json<ChannelUpdateRequest>, data:
         let _ = data.audio_tx.send(AppMessage::StopAudioRecording);
         state.add_midi_log("API: Stopped Audio Recording".into());
     }
-    HttpResponse::Ok().json(serde_json::json!({"status": "success", "recording_audio": state.is_recording_audio}))
+    HttpResponse::Ok()
+        .json(serde_json::json!({"status": "success", "recording_audio": state.is_recording_audio}))
 }
 
 /// Get available Impulse Response (Reverb) files.
@@ -464,9 +502,15 @@ async fn start_stop_audio_recording(body: web::Json<ChannelUpdateRequest>, data:
     responses((status = 200, body = Vec<ReverbEntry>))
 )]
 async fn get_reverbs(data: web::Data<ApiData>) -> impl Responder {
-    let list: Vec<ReverbEntry> = data.reverb_files.iter().enumerate().map(|(i, (name, _))| {
-        ReverbEntry { index: i, name: name.clone() }
-    }).collect();
+    let list: Vec<ReverbEntry> = data
+        .reverb_files
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| ReverbEntry {
+            index: i,
+            name: name.clone(),
+        })
+        .collect();
     HttpResponse::Ok().json(list)
 }
 
@@ -495,11 +539,13 @@ async fn set_reverb(body: web::Json<ReverbRequest>, data: web::Data<ApiData>) ->
     let (name, path) = &data.reverb_files[u_idx];
     state.selected_reverb_index = Some(u_idx);
     let _ = data.audio_tx.send(AppMessage::SetReverbIr(path.clone()));
-    let _ = data.audio_tx.send(AppMessage::SetReverbWetDry(state.reverb_mix));
-    
+    let _ = data
+        .audio_tx
+        .send(AppMessage::SetReverbWetDry(state.reverb_mix));
+
     state.persist_settings();
     state.add_midi_log(format!("API: Reverb set to '{}'", name));
-    
+
     HttpResponse::Ok().json(serde_json::json!({"status": "success", "reverb": name}))
 }
 
@@ -509,10 +555,15 @@ async fn set_reverb(body: web::Json<ReverbRequest>, data: web::Data<ApiData>) ->
     request_body = ReverbMixRequest,
     responses((status = 200))
 )]
-async fn set_reverb_mix(body: web::Json<ReverbMixRequest>, data: web::Data<ApiData>) -> impl Responder {
+async fn set_reverb_mix(
+    body: web::Json<ReverbMixRequest>,
+    data: web::Data<ApiData>,
+) -> impl Responder {
     let mut state = data.app_state.lock().unwrap();
     state.reverb_mix = body.mix.clamp(0.0, 1.0);
-    let _ = data.audio_tx.send(AppMessage::SetReverbWetDry(state.reverb_mix));
+    let _ = data
+        .audio_tx
+        .send(AppMessage::SetReverbWetDry(state.reverb_mix));
     state.persist_settings();
     HttpResponse::Ok().json(serde_json::json!({"status": "success", "mix": state.reverb_mix}))
 }
@@ -525,7 +576,7 @@ async fn set_reverb_mix(body: web::Json<ReverbMixRequest>, data: web::Data<ApiDa
 async fn get_tremulants(data: web::Data<ApiData>) -> impl Responder {
     let state = data.app_state.lock().unwrap();
     let mut list = Vec::new();
-    
+
     let mut trem_ids: Vec<_> = state.organ.tremulants.keys().collect();
     trem_ids.sort();
 
@@ -551,19 +602,19 @@ async fn get_tremulants(data: web::Data<ApiData>) -> impl Responder {
     responses((status = 200), (status = 404))
 )]
 async fn set_tremulant(
-    path: web::Path<String>, 
-    body: web::Json<TremulantSetRequest>, 
-    data: web::Data<ApiData>
+    path: web::Path<String>,
+    body: web::Json<TremulantSetRequest>,
+    data: web::Data<ApiData>,
 ) -> impl Responder {
     let trem_id = path.into_inner();
     let mut state = data.app_state.lock().unwrap();
-    
+
     if !state.organ.tremulants.contains_key(&trem_id) {
         return HttpResponse::NotFound().body("Tremulant ID not found");
     }
 
     state.set_tremulant_active(trem_id.clone(), body.active, &data.audio_tx);
-    
+
     let action = if body.active { "Enabled" } else { "Disabled" };
     state.add_midi_log(format!("API: {} Tremulant '{}'", action, trem_id));
 
@@ -577,7 +628,7 @@ pub fn start_api_server(
     audio_tx: Sender<AppMessage>,
     port: u16,
     exit_action: Arc<Mutex<MainLoopAction>>,
-) -> ApiServerHandle{
+) -> ApiServerHandle {
     let reverb_files = Arc::new(config::get_available_ir_files());
 
     // Create a channel to send the ServerHandle from the background thread back to here
@@ -585,7 +636,7 @@ pub fn start_api_server(
 
     std::thread::spawn(move || {
         let sys = actix_web::rt::System::new();
-        
+
         let server_data = web::Data::new(ApiData {
             app_state,
             audio_tx,
@@ -606,11 +657,14 @@ pub fn start_api_server(
                 // General
                 .route("/organ", web::get().to(get_organ_info))
                 .route("/organs", web::get().to(get_organ_library))
-                .route("/organs/load", web::post().to(load_organ)) 
+                .route("/organs/load", web::post().to(load_organ))
                 .route("/panic", web::post().to(panic))
                 // Stops
                 .route("/stops", web::get().to(get_stops))
-                .route("/stops/{stop_id}/channels/{channel_id}", web::post().to(update_stop_channel))
+                .route(
+                    "/stops/{stop_id}/channels/{channel_id}",
+                    web::post().to(update_stop_channel),
+                )
                 // Presets
                 .route("/presets/{slot_id}/load", web::post().to(load_preset))
                 .route("/presets/{slot_id}/save", web::post().to(save_preset))
@@ -633,19 +687,24 @@ pub fn start_api_server(
         match server {
             Ok(bound_server) => {
                 println!("REST API server listening on http://0.0.0.0:{}", port);
-                println!("Swagger UI available at http://0.0.0.0:{}/swagger-ui/", port);
+                println!(
+                    "Swagger UI available at http://0.0.0.0:{}/swagger-ui/",
+                    port
+                );
                 let server = bound_server.run();
                 let handle = server.handle();
                 let _ = tx.send(handle);
                 if let Err(e) = sys.block_on(server) {
                     eprintln!("API Server Error: {}", e);
                 }
-            },
+            }
             Err(e) => eprintln!("Failed to bind API server to port {}: {}", port, e),
         }
     });
     // Wait for the server to start up and give us the handle
-    let handle = rx.recv().expect("Failed to start API server or receive handle");
+    let handle = rx
+        .recv()
+        .expect("Failed to start API server or receive handle");
 
     ApiServerHandle { handle }
 }

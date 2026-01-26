@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use audioadapter_buffers::direct::InterleavedSlice;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rubato::{
@@ -12,7 +12,7 @@ use symphonia::core::audio::SampleBuffer;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::probe::Hint;
 
-use crate::wav::{parse_smpl_chunk, IsWavPackError, OtherChunk, WavFmt};
+use crate::wav::{IsWavPackError, OtherChunk, WavFmt, parse_smpl_chunk};
 
 const I16_MAX_F: f32 = 32768.0; // 2^15
 const I24_MAX_F: f32 = 8388608.0; // 2^23
@@ -53,7 +53,7 @@ fn read_f32_waves<R: Read>(mut reader: R, format: WavFmt, data_size: u32) -> Res
                         "Unsupported read format: {}/{}",
                         format.audio_format,
                         format.bits_per_sample
-                    ))
+                    ));
                 }
             };
             output_waves[ch].push(sample_f32);
@@ -102,7 +102,7 @@ fn write_f32_waves_to_bytes(
                         "Invalid target format combination: float={} bits={}",
                         target_is_float,
                         target_bits
-                    ))
+                    ));
                 }
             }
         }
@@ -342,7 +342,11 @@ fn read_wavpack_file(path: &Path) -> Result<(Vec<Vec<f32>>, u32, u16, u16)> {
                 // Check if it's an unexpected EOF vs a normal one
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
                     if !output_waves.is_empty() && !output_waves[0].is_empty() {
-                        log::warn!("Partial read of {:?}: Unexpected EOF, but recovered {} frames. Continuing.", path, output_waves[0].len());
+                        log::warn!(
+                            "Partial read of {:?}: Unexpected EOF, but recovered {} frames. Continuing.",
+                            path,
+                            output_waves[0].len()
+                        );
                         break;
                     }
                     return Err(anyhow!(
@@ -521,7 +525,7 @@ pub fn process_sample_file(
         }
         Err(e) => {
             return Err(e)
-                .with_context(|| format!("Failed to parse metadata for {:?}", full_source_path))
+                .with_context(|| format!("Failed to parse metadata for {:?}", full_source_path));
         }
     }
 

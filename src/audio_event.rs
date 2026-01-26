@@ -1,16 +1,16 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::Ordering;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::TuiMessage;
 use crate::app::{ActiveNote, AppMessage};
 use crate::audio_convolver::StereoConvolver;
 use crate::audio_recorder::AudioRecorder;
 use crate::midi_recorder::MidiRecorder;
 use crate::organ::Organ;
-use crate::voice::{SpawnJob, Voice, VOICE_STEALING_FADE_TIME};
-use crate::TuiMessage;
+use crate::voice::{SpawnJob, VOICE_STEALING_FADE_TIME, Voice};
 
 /// If voice limit is exceeded, this finds the oldest *release* samples
 /// and forces them to fade out quickly.

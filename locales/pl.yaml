@@ -180,6 +180,17 @@ config:
   picker_organ: "Wybierz Plik Organów"
   picker_midi: "Wybierz Plik MIDI (Opcjonalnie)"
 
+  lcd_title: "Konfiguracja LCD:"
+  lcd_button: "Konfiguruj LCD"
+  lcd_tui_nav: " Enter: Edytuj/Dodaj | d: Usuń | Strzałki: Nawigacja/Zmień | Esc: Wróć "
+  lcd_add: "+ Dodaj Wyświetlacz"
+  lcd_display_label: "Wyświetlacz %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Typ:"
+  lcd_background_label: "Tło:"
+  lcd_line1_label: "Linia 1:"
+  lcd_line2_label: "Linia 2:"
+
 loading:
   heading: "Wczytywanie Próbek Organów..."
   window_title: "Wczytywanie..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Pre-cache RAM:    %{val}"
   fmt_convert:     "Konw. 16-bit:     %{val}"
   fmt_tuning:      "Oryg. Strojenie:  %{val}"
+  fmt_lcd_config:  "Konfiguracja LCD: %{count} wyświetlaczy"
   
   val_on: "WŁ"
   val_off: "WYŁ"

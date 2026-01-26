@@ -180,6 +180,17 @@ config:
   picker_organ: "Виберіть файл органу"
   picker_midi: "Виберіть MIDI-файл (необов'язково)"
 
+  lcd_title: "Налаштування LCD:"
+  lcd_button: "Налаштувати LCD"
+  lcd_tui_nav: " Enter: Ред/Дод | d: Видал | Стрілки: Навіг/Змін | Esc: Назад "
+  lcd_add: "+ Додати дисплей"
+  lcd_display_label: "Дисплей %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Тип:"
+  lcd_background_label: "Фон:"
+  lcd_line1_label: "Рядок 1:"
+  lcd_line2_label: "Рядок 2:"
+
 loading:
   heading: "Завантаження семплів органу..."
   window_title: "Завантаження..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Кешування RAM:    %{val}"
   fmt_convert:     "Конв. в 16-біт:   %{val}"
   fmt_tuning:      "Ориг. стрій:      %{val}"
+  fmt_lcd_config:  "Налаштування LCD: %{count} диспл."
   
   val_on: "УВІМК"
   val_off: "ВИМК"

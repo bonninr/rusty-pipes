@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use bytemuck::{cast_slice, cast_slice_mut};
 use rayon::prelude::*;
 use rust_i18n::t;
@@ -7,7 +7,7 @@ use std::fs;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 
 use crate::wav_converter;
 use crate::wav_converter::SampleMetadata;

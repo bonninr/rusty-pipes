@@ -180,6 +180,17 @@ config:
   picker_organ: "Selecionar Arquivo de Órgão"
   picker_midi: "Selecionar Arquivo MIDI (Opcional)"
 
+  lcd_title: "Configuração LCD:"
+  lcd_button: "Configurar LCDs"
+  lcd_tui_nav: " Enter: Editar/Adicionar | d: Excluir | Setas: Navegar/Alterar | Esc: Voltar "
+  lcd_add: "+ Adicionar Tela"
+  lcd_display_label: "Tela %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Tipo:"
+  lcd_background_label: "Fundo:"
+  lcd_line1_label: "Linha 1:"
+  lcd_line2_label: "Linha 2:"
+
 loading:
   heading: "Carregando Amostras..."
   window_title: "Carregando..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Pré-cache:        %{val}"
   fmt_convert:     "Conv. 16-bit:     %{val}"
   fmt_tuning:      "Afinação Orig.:   %{val}"
+  fmt_lcd_config:  "Configuração LCD: %{count} telas"
   
   val_on: "LIG"
   val_off: "DES"

@@ -180,6 +180,17 @@ config:
   picker_organ: "Seleziona File Organo"
   picker_midi: "Seleziona File MIDI (Opzionale)"
 
+  lcd_title: "Configurazione LCD:"
+  lcd_button: "Configura LCD"
+  lcd_tui_nav: " Invio: Mod/Agg | d: Elimina | Frecce: Naviga/Cambia | Esc: Indietro "
+  lcd_add: "+ Aggiungi Display"
+  lcd_display_label: "Display %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Tipo:"
+  lcd_background_label: "Sfondo:"
+  lcd_line1_label: "Riga 1:"
+  lcd_line2_label: "Riga 2:"
+
 loading:
   heading: "Caricamento Campioni Organo..."
   window_title: "Caricamento..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "Pre-cache:        %{val}"
   fmt_convert:     "Conv. 16-bit:     %{val}"
   fmt_tuning:      "Accordo Orig.:    %{val}"
+  fmt_lcd_config:  "Configurazione LCD: %{count} display"
   
   val_on: "ON"
   val_off: "OFF"

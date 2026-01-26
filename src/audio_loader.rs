@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use ringbuf::traits::Producer;
 use std::fs::File;
 use std::io::BufReader;
@@ -6,8 +6,8 @@ use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 
-use crate::voice::{SpawnJob, CHANNEL_COUNT};
-use crate::wav::{parse_smpl_chunk, parse_wav_metadata, WavSampleReader};
+use crate::voice::{CHANNEL_COUNT, SpawnJob};
+use crate::wav::{WavSampleReader, parse_smpl_chunk, parse_wav_metadata};
 
 /// Worker function that loads samples from disk or cache and fills the ring buffer.
 pub fn run_loader_job(mut job: SpawnJob) {

@@ -180,6 +180,17 @@ config:
   picker_organ: "오르간 파일 선택"
   picker_midi: "MIDI 파일 선택 (선택 사항)"
 
+  lcd_title: "LCD 구성:"
+  lcd_button: "LCD 구성"
+  lcd_tui_nav: " Enter: 편집/추가 | d: 삭제 | 화살표: 탐색/변경 | Esc: 뒤로 "
+  lcd_add: "+ 새 디스플레이 추가"
+  lcd_display_label: "디스플레이 %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "유형:"
+  lcd_background_label: "배경:"
+  lcd_line1_label: "라인 1:"
+  lcd_line2_label: "라인 2:"
+
 loading:
   heading: "오르간 샘플 로드 중..."
   window_title: "로드 중..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "프리캐시:         %{val}"
   fmt_convert:     "16비트 변환:      %{val}"
   fmt_tuning:      "원래 튜닝:        %{val}"
+  fmt_lcd_config:  "LCD 구성: %{count}개 디스플레이"
   
   val_on: "켜짐"
   val_off: "꺼짐"

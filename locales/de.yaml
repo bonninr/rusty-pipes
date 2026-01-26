@@ -180,6 +180,17 @@ config:
   picker_organ: "Orgel-Datei auswählen"
   picker_midi: "MIDI-Datei auswählen (Optional)"
 
+  lcd_title: "LCD-Konfiguration:"
+  lcd_button: "LCDs konfigurieren"
+  lcd_tui_nav: " Enter: Bearb./Neu | d: Löschen | Pfeile: Navig./Ändern | Esc: Zurück "
+  lcd_add: "+ Neues Display"
+  lcd_display_label: "Display %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "Typ:"
+  lcd_background_label: "Hintergrund:"
+  lcd_line1_label: "Zeile 1:"
+  lcd_line2_label: "Zeile 2:"
+
 loading:
   heading: "Lade Orgel-Samples..."
   window_title: "Laden..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "RAM-Cache:        %{val}"
   fmt_convert:     "16-Bit Konv.:     %{val}"
   fmt_tuning:      "Orig. Stimmung:   %{val}"
+  fmt_lcd_config:  "LCD-Konfiguration: %{count} Displays"
   
   val_on: "AN"
   val_off: "AUS"

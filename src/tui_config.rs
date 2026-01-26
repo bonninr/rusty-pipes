@@ -14,6 +14,7 @@ use crate::audio::get_supported_sample_rates;
 use crate::config::{AppSettings, ConfigState, RuntimeConfig};
 use crate::tui::{cleanup_terminal, setup_terminal};
 use crate::tui_filepicker;
+use crate::tui_lcd;
 use crate::tui_midi;
 
 #[derive(Clone)]
@@ -25,6 +26,7 @@ enum ConfigMode {
     TextInput(usize, String), // Holds (config_index, buffer)
     MidiDeviceList,           // List of detected devices
     MidiMapping(usize),       // Editing device at specific index in settings.midi_devices
+    LcdConfig,                // New LCD Config Mode
 }
 
 struct TuiConfigState {
@@ -35,6 +37,7 @@ struct TuiConfigState {
     ir_list_state: ListState,
     midi_dev_list_state: ListState,
     midi_mapping_state: tui_midi::TuiMidiState,
+    lcd_state: tui_lcd::TuiLcdState,
     mode: ConfigMode,
 }
 
@@ -54,8 +57,9 @@ enum SettingRow {
     Precache = 11,
     ConvertTo16Bit = 12,
     OriginalTuning = 13,
-    Start = 14,
-    Quit = 15,
+    LcdConfiguration = 14,
+    Start = 15,
+    Quit = 16,
 }
 
 impl SettingRow {
@@ -76,8 +80,9 @@ impl SettingRow {
             11 => Some(Self::Precache),
             12 => Some(Self::ConvertTo16Bit),
             13 => Some(Self::OriginalTuning),
-            14 => Some(Self::Start),
-            15 => Some(Self::Quit),
+            14 => Some(Self::LcdConfiguration),
+            15 => Some(Self::Start),
+            16 => Some(Self::Quit),
             _ => None,
         }
     }
@@ -141,6 +146,11 @@ fn get_item_display(idx: usize, state: &ConfigState) -> String {
         SettingRow::OriginalTuning => t!(
             "tui_config.fmt_tuning",
             val = bool_to_str(settings.original_tuning)
+        )
+        .to_string(),
+        SettingRow::LcdConfiguration => t!(
+            "tui_config.fmt_lcd_config",
+            count = settings.lcd_displays.len()
         )
         .to_string(),
         SettingRow::Start => t!("config.btn_start").to_string(),
@@ -210,6 +220,7 @@ pub fn run_config_ui(
         midi_mapping_state: tui_midi::TuiMidiState::new(),
         sample_rate_list_state: ListState::default(),
         ir_list_state,
+        lcd_state: tui_lcd::TuiLcdState::new(),
         mode: ConfigMode::Main,
     };
     state.list_state.select(Some(0));
@@ -237,11 +248,11 @@ pub fn run_config_ui(
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => break 'config_loop,
                         KeyCode::Down | KeyCode::Char('j') => {
-                            let i = state.list_state.selected().map_or(0, |i| (i + 1) % 16);
+                            let i = state.list_state.selected().map_or(0, |i| (i + 1) % 17);
                             state.list_state.select(Some(i));
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
-                            let i = state.list_state.selected().map_or(15, |i| (i + 15) % 16);
+                            let i = state.list_state.selected().map_or(16, |i| (i + 16) % 17);
                             state.list_state.select(Some(i));
                         }
                         KeyCode::Enter => {
@@ -326,6 +337,9 @@ pub fn run_config_ui(
                                     SettingRow::OriginalTuning => {
                                         state.config_state.settings.original_tuning =
                                             !state.config_state.settings.original_tuning
+                                    }
+                                    SettingRow::LcdConfiguration => {
+                                        state.mode = ConfigMode::LcdConfig;
                                     }
                                     SettingRow::Start => {
                                         // Start
@@ -453,6 +467,17 @@ pub fn run_config_ui(
                     match action {
                         tui_midi::MappingAction::Back => state.mode = ConfigMode::MidiDeviceList,
                         _ => {}
+                    }
+                }
+                ConfigMode::LcdConfig => {
+                    let action = tui_lcd::handle_input(
+                        key,
+                        &mut state.lcd_state,
+                        &mut state.config_state.settings.lcd_displays,
+                    );
+
+                    if let tui_lcd::LcdConfigAction::Back = action {
+                        state.mode = ConfigMode::Main;
                     }
                 }
                 ConfigMode::AudioSelection => {
@@ -655,7 +680,7 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
     // --- Calculate new header height ---
     let pipes_lines = PIPES.lines().count(); // 7
     let logo_lines_count = LOGO.lines().count(); // 5
-                                                 // 7(pipes) + 5(logo) + 1(indicia) + 1(blank) + 1(title) + 2(borders) = 17
+    // 7(pipes) + 5(logo) + 1(indicia) + 1(blank) + 1(title) + 2(borders) = 17
     let header_height = (pipes_lines + logo_lines_count + 5) as u16;
 
     // --- Main Layout ---
@@ -743,6 +768,14 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
     match state.mode {
         ConfigMode::MidiDeviceList => {
             draw_midi_device_list(frame, state);
+        }
+        ConfigMode::LcdConfig => {
+            tui_lcd::draw(
+                frame,
+                frame.area(),
+                &mut state.lcd_state,
+                &state.config_state.settings.lcd_displays,
+            );
         }
         ConfigMode::AudioSelection => {
             let mut items = vec![t!("config.status_default").to_string()];

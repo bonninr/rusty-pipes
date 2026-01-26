@@ -1,8 +1,8 @@
 use anyhow::Result;
 use chrono::Local;
 use midly::{
-    num::*, Format, Header, MidiMessage as MidlyMidiMessage, Smf, Timing, TrackEvent,
-    TrackEventKind,
+    Format, Header, MidiMessage as MidlyMidiMessage, Smf, Timing, TrackEvent, TrackEventKind,
+    num::*,
 };
 use std::fs;
 use std::time::Instant;

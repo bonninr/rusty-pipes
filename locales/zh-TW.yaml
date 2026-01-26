@@ -180,6 +180,17 @@ config:
   picker_organ: "選擇管風琴檔案"
   picker_midi: "選擇 MIDI 檔案 (可選)"
 
+  lcd_title: "LCD 設定:"
+  lcd_button: "設定 LCD"
+  lcd_tui_nav: " Enter: 編輯/新增 | d: 刪除 | 方向鍵: 導航/更改 | Esc: 返回 "
+  lcd_add: "+ 新增顯示器"
+  lcd_display_label: "顯示器 %{num}"
+  lcd_id_label: "ID:"
+  lcd_type_label: "類型:"
+  lcd_background_label: "背景:"
+  lcd_line1_label: "行 1:"
+  lcd_line2_label: "行 2:"
+
 loading:
   heading: "正在載入管風琴採樣..."
   window_title: "載入中..."
@@ -217,6 +228,7 @@ tui_config:
   fmt_precache:    "預快取:           %{val}"
   fmt_convert:     "轉換為 16 位元:   %{val}"
   fmt_tuning:      "原始音準:         %{val}"
+  fmt_lcd_config:  "LCD 設定: %{count} 個顯示器"
   
   val_on: "開"
   val_off: "關"

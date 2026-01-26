@@ -5,30 +5,30 @@ use crossterm::{
         PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
     prelude::*,
     symbols::Marker,
     widgets::{
-        canvas::{Canvas, Line as CanvasLine},
         Block, Borders, Clear, List, ListItem, ListState, Paragraph,
+        canvas::{Canvas, Line as CanvasLine},
     },
 };
 use rust_i18n::t;
 use std::{
-    io::{stdout, Stdout},
+    io::{Stdout, stdout},
     sync::atomic::{AtomicBool, Ordering},
-    sync::{mpsc::Sender, Arc, Mutex},
+    sync::{Arc, Mutex, mpsc::Sender},
     thread,
     time::{Duration, Instant},
 };
 
 use crate::app::{AppMessage, MainLoopAction};
 use crate::app_state::AppState;
-use crate::config::{load_organ_library, MidiEventSpec};
+use crate::config::{MidiEventSpec, load_organ_library};
 use crate::input::MusicCommand;
-use crate::tui_midi_learn::{draw_midi_learn_modal, MidiLearnTuiState};
+use crate::tui_midi_learn::{MidiLearnTuiState, draw_midi_learn_modal};
 
 const NUM_COLUMNS: usize = 3; // Number of columns for the stop list
 
