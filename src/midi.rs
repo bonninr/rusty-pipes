@@ -510,6 +510,8 @@ pub fn send_lcd_sysex(
     line1: &str,
     line2: &str,
 ) {
+    log::info!("LCD {:?}: {} | {}", display_id, line1, line2);
+
     // defined: F0 7D 01 <ID LSB> <ID MSB> <Color> <32 bytes text> F7
 
     // Construct 32 bytes of text (pad with spaces)
@@ -536,7 +538,7 @@ pub fn send_lcd_sysex(
 
     msg.push(0xF7);
 
-    log::info!("Sending Sysex message: {:?}", msg);
+    log::debug!("Sending Sysex message: {:?}", msg);
 
     let _ = conn.send(&msg);
 }

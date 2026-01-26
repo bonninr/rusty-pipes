@@ -215,14 +215,18 @@ impl AppState {
     }
 
     pub fn refresh_lcds(&mut self) {
-        log::info!("Refreshing LCDs");
+        log::info!(
+            "Refreshing LCDs. Out connections: {}, Configured Displays: {}",
+            self.midi_out.len(),
+            self.lcd_displays.len()
+        );
 
         // Return early if no connections
         if self.midi_out.is_empty() {
+            log::info!("No MIDI output connections, skipping LCD update.");
             return;
         }
 
-        log::info!("Sending LCD refresh message");
         // Retrieve values once
         let organ_name = self.organ.name.clone();
 
@@ -246,6 +250,7 @@ impl AppState {
 
         // Loop through displays
         for display in &self.lcd_displays {
+            log::debug!("Updating LCD display ID {}", display.id);
             use crate::config::LcdLineType;
 
             let text_line1 = match display.line1 {

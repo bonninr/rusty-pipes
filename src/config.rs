@@ -233,6 +233,7 @@ pub struct RuntimeConfig {
     pub audio_device_name: Option<String>,
     pub sample_rate: u32,
     pub active_midi_devices: Vec<(MidiInputPort, MidiDeviceConfig)>,
+    pub lcd_displays: Vec<LcdDisplayConfig>,
 }
 
 /// Loads settings from disk.

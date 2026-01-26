@@ -323,7 +323,7 @@ fn main() -> Result<()> {
         sample_rate: config.sample_rate,
         tui_mode,
         keyboard_layout: active_layout,
-        lcd_displays: settings.lcd_displays.clone(),
+        lcd_displays: config.lcd_displays.clone(),
     };
     if let Err(e) = config::save_settings(&settings_to_save) {
         log::warn!("Failed to save settings: {}", e);
@@ -518,7 +518,7 @@ fn main() -> Result<()> {
                 }
             }
 
-            state.lcd_displays = settings.lcd_displays.clone();
+            state.lcd_displays = config.lcd_displays.clone();
             state.refresh_lcds();
         }
 

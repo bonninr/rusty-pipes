@@ -636,6 +636,7 @@ impl App for ConfigApp {
                                 polyphony: self.state.settings.polyphony,
                                 audio_device_name,
                                 sample_rate: self.state.settings.sample_rate,
+                                lcd_displays: self.state.settings.lcd_displays.clone(),
                             };
 
                             // Save config back to settings

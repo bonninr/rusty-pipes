@@ -380,6 +380,7 @@ pub fn run_config_ui(
                                                     .selected_audio_device_name
                                                     .clone(),
                                                 sample_rate: s.sample_rate,
+                                                lcd_displays: s.lcd_displays.clone(),
                                             });
                                             break 'config_loop;
                                         }
