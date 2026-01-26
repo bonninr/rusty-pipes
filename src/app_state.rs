@@ -131,6 +131,12 @@ pub fn get_preset_file_path() -> PathBuf {
     preset_dir.join(PRESET_FILE_NAME)
 }
 
+fn format_mm_ss(total_seconds: u32) -> String {
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+    format!("{:02}:{:02}", minutes, seconds)
+}
+
 impl AppState {
     pub fn new(
         organ: Arc<Organ>,
@@ -238,10 +244,9 @@ impl AppState {
         let reverb_str = format!("Rev: {:.2}", self.reverb_mix);
 
         let midi_status = if self.is_midi_file_playing {
-            format!(
-                "{}/{}s",
-                self.midi_current_time_secs, self.midi_total_time_secs
-            )
+            let current = format_mm_ss(self.midi_current_time_secs);
+            let total = format_mm_ss(self.midi_total_time_secs);
+            format!("{}/{}", current, total)
         } else {
             "Stopped".to_string()
         };
@@ -530,6 +535,14 @@ impl AppState {
         Ok(())
     }
 
+    pub fn get_stop_activity_label(&self, active: bool) -> String {
+        if active {
+            "*".to_string()
+        } else {
+            " ".to_string()
+        }
+    }
+
     // Helper to explicit set (not toggle) channel state
     pub fn set_stop_channel_state(
         &mut self,
@@ -555,6 +568,13 @@ impl AppState {
                 }
             }
         }
+
+        // Update LCD info
+        if let Some(stop) = self.organ.stops.get(stop_index) {
+            self.last_stop_change_name = self.get_stop_activity_label(active) + &stop.name.clone();
+        }
+        self.refresh_lcds();
+
         Ok(())
     }
 
@@ -627,23 +647,35 @@ impl AppState {
         channel: u8,
         audio_tx: &Sender<AppMessage>,
     ) -> Result<()> {
-        let stop_set = self.stop_channels.entry(stop_index).or_default();
+        let is_active = {
+            let stop_set = self.stop_channels.entry(stop_index).or_default();
 
-        if stop_set.contains(&channel) {
-            stop_set.remove(&channel);
+            if stop_set.contains(&channel) {
+                stop_set.remove(&channel);
 
-            // --- Send NoteOff for all active notes on this channel for this stop ---
-            if let Some(notes_to_stop) = self.channel_active_notes.get(&channel) {
-                if let Some(stop) = self.organ.stops.get(stop_index) {
-                    let stop_name = stop.name.clone();
-                    for &note in notes_to_stop {
-                        audio_tx.send(AppMessage::NoteOff(note, stop_name.clone()))?;
+                // --- Send NoteOff for all active notes on this channel for this stop ---
+                if let Some(notes_to_stop) = self.channel_active_notes.get(&channel) {
+                    if let Some(stop) = self.organ.stops.get(stop_index) {
+                        let stop_name = stop.name.clone();
+                        for &note in notes_to_stop {
+                            audio_tx.send(AppMessage::NoteOff(note, stop_name.clone()))?;
+                        }
                     }
                 }
+                false
+            } else {
+                stop_set.insert(channel);
+                true
             }
-        } else {
-            stop_set.insert(channel);
         };
+
+        // Update LCD info
+        if let Some(stop) = self.organ.stops.get(stop_index) {
+            self.last_stop_change_name =
+                self.get_stop_activity_label(is_active) + &stop.name.clone();
+        }
+        self.refresh_lcds();
+
         Ok(())
     }
 
@@ -653,6 +685,12 @@ impl AppState {
         for channel in 0..16 {
             stop_set.insert(channel);
         }
+
+        // Update LCD info
+        if let Some(stop) = self.organ.stops.get(stop_index) {
+            self.last_stop_change_name = self.get_stop_activity_label(true) + &stop.name.clone();
+        }
+        self.refresh_lcds();
     }
 
     /// Deactivates all channels for the specified stop.
@@ -687,6 +725,13 @@ impl AppState {
                 }
             }
         }
+
+        // Update LCD info
+        if let Some(stop) = self.organ.stops.get(stop_index) {
+            self.last_stop_change_name = self.get_stop_activity_label(false) + &stop.name.clone();
+        }
+        self.refresh_lcds();
+
         Ok(())
     }
 
