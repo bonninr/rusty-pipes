@@ -220,23 +220,46 @@ fn main() -> Result<()> {
     let tui_mode = args.tui;
 
     let active_layout = KeyboardLayout::detect();
-    log::info!("Detected system locale, defaulting keyboard layout to: {:?}", active_layout);
-     
+    log::info!(
+        "Detected system locale, defaulting keyboard layout to: {:?}",
+        active_layout
+    );
+
     // Command-line arguments override saved config
-    if let Some(f) = args.organ_file { settings.organ_file = Some(f); }
-    if let Some(f) = args.ir_file { settings.ir_file = Some(f); }
-    if let Some(m) = args.reverb_mix { settings.reverb_mix = m; }
-    if let Some(b) = args.audio_buffer_frames { settings.audio_buffer_frames = b; }
-    if let Some(p) = args.precache { settings.precache = p; }
-    if let Some(c) = args.convert_to_16bit { settings.convert_to_16bit = c; }
-    if let Some(o) = args.original_tuning { settings.original_tuning = o; }
-    if let Some(d) = args.audio_device { settings.audio_device_name = Some(d); }
+    if let Some(f) = args.organ_file {
+        settings.organ_file = Some(f);
+    }
+    if let Some(f) = args.ir_file {
+        settings.ir_file = Some(f);
+    }
+    if let Some(m) = args.reverb_mix {
+        settings.reverb_mix = m;
+    }
+    if let Some(b) = args.audio_buffer_frames {
+        settings.audio_buffer_frames = b;
+    }
+    if let Some(p) = args.precache {
+        settings.precache = p;
+    }
+    if let Some(c) = args.convert_to_16bit {
+        settings.convert_to_16bit = c;
+    }
+    if let Some(o) = args.original_tuning {
+        settings.original_tuning = o;
+    }
+    if let Some(d) = args.audio_device {
+        settings.audio_device_name = Some(d);
+    }
 
     // --- CLI: MIDI Device Selection ---
     // If a device is specified via CLI, we ensure it exists in settings and is enabled.
     // We treat it as a passthrough (1:1 mapping), which is the default for MidiDeviceConfig.
     if let Some(device_name) = args.midi_device {
-        if let Some(dev) = settings.midi_devices.iter_mut().find(|d| d.name == device_name) {
+        if let Some(dev) = settings
+            .midi_devices
+            .iter_mut()
+            .find(|d| d.name == device_name)
+        {
             dev.enabled = true;
         } else {
             // New device from CLI, add it with defaults (Enabled=true, Simple/Complex defaults to 1:1)
@@ -250,9 +273,9 @@ fn main() -> Result<()> {
 
     // --- Run Configuration UI ---
     let config_result = if tui_mode {
-        tui_config::run_config_ui(settings, Arc::clone(&midi_input_arc))
+        tui_config::run_config_ui(settings.clone(), Arc::clone(&midi_input_arc))
     } else {
-        gui_config::run_config_ui(settings, Arc::clone(&midi_input_arc))
+        gui_config::run_config_ui(settings.clone(), Arc::clone(&midi_input_arc))
     };
 
     // `config` is the final, user-approved configuration
@@ -272,7 +295,7 @@ fn main() -> Result<()> {
             return Err(e);
         }
     };
-     
+
     // --- Save Final Settings (excluding runtime options) ---
     // We reconstruct the midi_devices list based on the active connections + config logic.
     // Note: This simple approach saves the state of devices that were active/configured in this session.
@@ -298,6 +321,7 @@ fn main() -> Result<()> {
         sample_rate: config.sample_rate,
         tui_mode,
         keyboard_layout: active_layout,
+        lcd_displays: settings.lcd_displays.clone(),
     };
     if let Err(e) = config::save_settings(&settings_to_save) {
         log::warn!("Failed to save settings: {}", e);
@@ -474,10 +498,37 @@ fn main() -> Result<()> {
             active_layout,
         )?));
 
+        // --- Initialize MIDI Output & LCDs ---
+        {
+            let mut state = app_state.lock().unwrap();
+
+            // Auto-connect to all outputs that match enabled input devices
+            for (_, device_config) in &config.active_midi_devices {
+                if let Ok(conn) = midi::connect_midi_out(&device_config.name) {
+                    log::info!("Auto-connected to MIDI Output: {}", device_config.name);
+                    state.midi_out.push(conn);
+                } else {
+                    // It's normal for some devices to be input-only
+                    log::debug!(
+                        "Could not connect to MIDI Output for {}",
+                        device_config.name
+                    );
+                }
+            }
+
+            state.lcd_displays = settings.lcd_displays.clone();
+            state.refresh_lcds();
+        }
+
         let exit_action = Arc::new(Mutex::new(app::MainLoopAction::Exit));
 
         // --- REST API SERVER ---
-        let _api_server_handle = api_rest::start_api_server(app_state.clone(), audio_tx.clone(), args.api_server_port, exit_action.clone());
+        let _api_server_handle = api_rest::start_api_server(
+            app_state.clone(),
+            audio_tx.clone(),
+            args.api_server_port,
+            exit_action.clone(),
+        );
 
         // --- Spawn the dedicated MIDI logic thread ---
         let logic_app_state = Arc::clone(&app_state);
@@ -486,7 +537,7 @@ fn main() -> Result<()> {
         let logic_stop_signal = Arc::new(AtomicBool::new(false));
         let logic_stop_clone = logic_stop_signal.clone();
 
-        let gui_is_running = Arc::new(AtomicBool::new(true)); 
+        let gui_is_running = Arc::new(AtomicBool::new(true));
         let gui_running_clone = gui_is_running.clone();
 
         let thread_handle = thread::spawn(move || {
@@ -495,7 +546,6 @@ fn main() -> Result<()> {
 
             // This is a blocking loop, it waits for messages from either the MIDI callback or the file player.
             while !logic_stop_clone.load(Ordering::Relaxed) {
-                
                 // Use recv_timeout instead of recv
                 // This wakes up every 250ms to check the while-loop condition (stop_signal)
                 match tui_rx.recv_timeout(std::time::Duration::from_millis(250)) {
@@ -513,7 +563,7 @@ fn main() -> Result<()> {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                             }
                             continue; // Skip passing this to app_state
-                        }   
+                        }
 
                         if egui_ctx.is_none() {
                             if let Ok(ctx) = gui_ctx_rx.try_recv() {
@@ -533,11 +583,11 @@ fn main() -> Result<()> {
                                 ctx.request_repaint();
                             }
                         }
-                    },
+                    }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         // No message arrived, just loop back and check logic_stop_clone again
-                        continue; 
-                    },
+                        continue;
+                    }
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
                         // All senders dropped, we can exit safely
                         log::info!("All TUI senders dropped. Logic thread exiting.");
@@ -631,7 +681,8 @@ fn main() -> Result<()> {
                 audio_tx,
                 Arc::clone(&app_state),
                 gui_is_running.clone(),
-                exit_action.clone())?
+                exit_action.clone(),
+            )?
         } else {
             log::info!("Starting GUI...");
             gui::run_gui_loop(
@@ -670,7 +721,9 @@ fn main() -> Result<()> {
     }
 
     // --- Shutdown ---
-    if tui_mode { println!("{}", t!("main.shutting_down")); }
+    if tui_mode {
+        println!("{}", t!("main.shutting_down"));
+    }
     log::info!("Shutting down...");
     Ok(())
 }

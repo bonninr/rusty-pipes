@@ -1,5 +1,5 @@
 use anyhow::Result;
-use midir::{MidiInput, MidiInputPort};
+use midir::{MidiInput, MidiInputPort, MidiOutput, MidiOutputConnection};
 use midly::{MetaMessage, MidiMessage as MidlyMidiMessage, Smf, TrackEventKind};
 use std::fs;
 use std::path::PathBuf;
@@ -26,7 +26,9 @@ pub fn get_midi_device_names() -> Result<Vec<String>> {
 
 /// Converts a MIDI note number to its name (e.g., 60 -> "C4").
 pub fn midi_note_to_name(note: u8) -> String {
-    const NOTES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const NOTES: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
     let octave = (note / 12).saturating_sub(1); // MIDI note 0 is C-1
     let note_name = NOTES[(note % 12) as usize];
     format!("{}{}", note_name, octave)
@@ -232,10 +234,9 @@ pub fn play_midi_file(
     tui_tx: Sender<TuiMessage>,
     stop_signal: Arc<AtomicBool>,
 ) -> Result<JoinHandle<()>> {
-    
     // Create a channel for seek commands
     let (seek_tx, seek_rx) = mpsc::channel::<i32>();
-    
+
     // Send the seek channel back to the main thread so the GUI can use it
     let _ = tui_tx.send(TuiMessage::MidiSeekChannel(seek_tx));
 
@@ -243,11 +244,17 @@ pub fn play_midi_file(
         // Load and parse the MIDI file
         let data = match fs::read(&path) {
             Ok(d) => d,
-            Err(e) => { let _ = tui_tx.send(TuiMessage::Error(format!("Read fail: {}", e))); return; }
+            Err(e) => {
+                let _ = tui_tx.send(TuiMessage::Error(format!("Read fail: {}", e)));
+                return;
+            }
         };
         let smf = match Smf::parse(&data) {
             Ok(s) => s,
-            Err(e) => { let _ = tui_tx.send(TuiMessage::Error(format!("Parse fail: {}", e))); return; }
+            Err(e) => {
+                let _ = tui_tx.send(TuiMessage::Error(format!("Parse fail: {}", e)));
+                return;
+            }
         };
 
         let tpqn = match smf.header.timing {
@@ -258,7 +265,10 @@ pub fn play_midi_file(
         // Calculate Total Duration
         let _ = tui_tx.send(TuiMessage::MidiLog("Calculating duration...".into()));
         let total_seconds = get_midi_duration_seconds(&smf);
-        let _ = tui_tx.send(TuiMessage::MidiLog(format!("Duration: {:.0}s", total_seconds)));
+        let _ = tui_tx.send(TuiMessage::MidiLog(format!(
+            "Duration: {:.0}s",
+            total_seconds
+        )));
 
         // For restarting playback (rewind/seek)
         let mut start_at_seconds = 0.0;
@@ -268,26 +278,31 @@ pub fn play_midi_file(
             thread::yield_now();
 
             // Check stop before starting a loop
-            if stop_signal.load(Ordering::Relaxed) { break; }
+            if stop_signal.load(Ordering::Relaxed) {
+                break;
+            }
 
             let mut micros_per_quarter = 500_000.0;
             let mut tracks: Vec<_> = smf.tracks.iter().map(|t| t.iter().peekable()).collect();
             let mut track_next_tick: Vec<u32> = vec![0; tracks.len()];
             let mut global_ticks = 0;
             let mut current_time_seconds = 0.0;
-            
+
             // Should we play audio?
             // If fast-forwarding to a seek point, we mute NoteOns.
             let mut is_fast_forwarding = start_at_seconds > 0.0;
-            
+
             // Delay start only if we are at the very beginning
             if start_at_seconds == 0.0 {
                 let _ = tui_tx.send(TuiMessage::MidiProgress(0.0, 0, total_seconds as u32));
                 thread::sleep(Duration::from_millis(500));
             } else {
-                let _ = tui_tx.send(TuiMessage::MidiLog(format!("Seeking to {:.0}s...", start_at_seconds)));
+                let _ = tui_tx.send(TuiMessage::MidiLog(format!(
+                    "Seeking to {:.0}s...",
+                    start_at_seconds
+                )));
             }
-            
+
             let mut last_progress_update = Instant::now();
 
             // Event processing loop
@@ -296,26 +311,28 @@ pub fn play_midi_file(
                 thread::yield_now();
 
                 // Check stop signal
-                if stop_signal.load(Ordering::Relaxed) { return; }
+                if stop_signal.load(Ordering::Relaxed) {
+                    return;
+                }
 
                 // Check Seek Command
                 match seek_rx.try_recv() {
                     Ok(skip_sec) => {
                         let new_time = (current_time_seconds + skip_sec as f64).max(0.0);
-                        
+
                         // Prevent endless restart loop if rewinding past 0 while already at 0
                         if new_time == 0.0 && current_time_seconds < 0.5 {
                             // Do nothing, just continue playing
                         } else {
                             start_at_seconds = new_time;
                             // Send "All Notes Off" to clear hanging notes
-                            let _ = tui_tx.send(TuiMessage::TuiAllNotesOff); 
+                            let _ = tui_tx.send(TuiMessage::TuiAllNotesOff);
                             // 0xB0 123 is All Notes Off standard CC, do for channel 0 (visual aid mostly)
-                            let _ = tui_tx.send(TuiMessage::MidiChannelNotesOff(0)); 
-                            
+                            let _ = tui_tx.send(TuiMessage::MidiChannelNotesOff(0));
+
                             break; // BREAK inner loop -> Restarts Outer Loop with new `start_at_seconds`
                         }
-                    },
+                    }
                     Err(TryRecvError::Disconnected) => return,
                     Err(TryRecvError::Empty) => {}
                 }
@@ -342,21 +359,22 @@ pub fn play_midi_file(
                         let _ = tui_tx.send(TuiMessage::MidiLog("Playback finished.".into()));
                         let _ = tui_tx.send(TuiMessage::MidiPlaybackFinished);
                         return; // Exit thread
-                    },
+                    }
                 };
 
                 let event = tracks[idx].next().unwrap();
                 track_next_tick[idx] = next_event_tick;
-                
+
                 let ticks_to_wait = next_event_tick - global_ticks;
                 global_ticks = next_event_tick;
 
                 // Time math
                 let micros_per_tick = micros_per_quarter / tpqn;
                 let delta_seconds = (ticks_to_wait as f64 * micros_per_tick) / 1_000_000.0;
-                
+
                 // If we were fast forwarding, check if we reached the target
-                if is_fast_forwarding && (current_time_seconds + delta_seconds) >= start_at_seconds {
+                if is_fast_forwarding && (current_time_seconds + delta_seconds) >= start_at_seconds
+                {
                     is_fast_forwarding = false;
                     // Adjust current time exactly
                     current_time_seconds = start_at_seconds;
@@ -371,15 +389,21 @@ pub fn play_midi_file(
                 }
 
                 // Check stop signal again after sleep
-                if stop_signal.load(Ordering::Relaxed) { return; }
+                if stop_signal.load(Ordering::Relaxed) {
+                    return;
+                }
 
                 // Send progress (throttled)
                 if last_progress_update.elapsed().as_millis() > 250 {
-                     let progress = if total_seconds > 0.0 { current_time_seconds / total_seconds } else { 0.0 };
-                     let _ = tui_tx.send(TuiMessage::MidiProgress(
-                         progress as f32, 
-                         current_time_seconds as u32, 
-                         total_seconds as u32
+                    let progress = if total_seconds > 0.0 {
+                        current_time_seconds / total_seconds
+                    } else {
+                        0.0
+                    };
+                    let _ = tui_tx.send(TuiMessage::MidiProgress(
+                        progress as f32,
+                        current_time_seconds as u32,
+                        total_seconds as u32,
                     ));
                     last_progress_update = Instant::now();
                 }
@@ -390,43 +414,129 @@ pub fn play_midi_file(
                         // If fast-forwarding, we SKIP NoteOn messages to avoid noise bursts,
                         // but we process other events (controllers) if needed.
                         if !is_fast_forwarding {
-                             let channel_num = channel.as_int();
-                             match message {
+                            let channel_num = channel.as_int();
+                            match message {
                                 MidlyMidiMessage::NoteOn { key, vel } => {
-                                     let key = key.as_int();
-                                     let vel = vel.as_int();
-                                     if vel > 0 {
-                                         let _ = tui_tx.send(TuiMessage::MidiNoteOn(key, vel, channel_num));
-                                         let _ = tui_tx.send(TuiMessage::TuiNoteOn(key, channel_num, Instant::now()));
-                                     } else {
-                                         let _ = tui_tx.send(TuiMessage::MidiNoteOff(key, channel_num));
-                                         let _ = tui_tx.send(TuiMessage::TuiNoteOff(key, channel_num, Instant::now()));
-                                     }
-                                },
+                                    let key = key.as_int();
+                                    let vel = vel.as_int();
+                                    if vel > 0 {
+                                        let _ = tui_tx.send(TuiMessage::MidiNoteOn(
+                                            key,
+                                            vel,
+                                            channel_num,
+                                        ));
+                                        let _ = tui_tx.send(TuiMessage::TuiNoteOn(
+                                            key,
+                                            channel_num,
+                                            Instant::now(),
+                                        ));
+                                    } else {
+                                        let _ =
+                                            tui_tx.send(TuiMessage::MidiNoteOff(key, channel_num));
+                                        let _ = tui_tx.send(TuiMessage::TuiNoteOff(
+                                            key,
+                                            channel_num,
+                                            Instant::now(),
+                                        ));
+                                    }
+                                }
                                 MidlyMidiMessage::NoteOff { key, .. } => {
                                     let key = key.as_int();
                                     let _ = tui_tx.send(TuiMessage::MidiNoteOff(key, channel_num));
-                                    let _ = tui_tx.send(TuiMessage::TuiNoteOff(key, channel_num, Instant::now()));
-                                },
+                                    let _ = tui_tx.send(TuiMessage::TuiNoteOff(
+                                        key,
+                                        channel_num,
+                                        Instant::now(),
+                                    ));
+                                }
                                 MidlyMidiMessage::Controller { controller, .. } => {
                                     // CC #123 is "All Notes Off"
                                     if controller.as_int() == 123 {
-                                        let _ = tui_tx.send(TuiMessage::MidiChannelNotesOff(channel_num));
+                                        let _ = tui_tx
+                                            .send(TuiMessage::MidiChannelNotesOff(channel_num));
                                         let _ = tui_tx.send(TuiMessage::TuiAllNotesOff);
                                     }
                                     // TODO: Handle Sustain command (CC #64)
-                                },
+                                }
                                 _ => {} // Ignore other MIDI messages
-                             }
+                            }
                         }
-                    },
+                    }
                     TrackEventKind::Meta(MetaMessage::Tempo(micros)) => {
                         micros_per_quarter = micros.as_int() as f64;
-                    },
+                    }
                     _ => {} // Ignore Sysex or other meta events
                 }
             } // End Inner Loop
         } // End Outer Loop
     });
     Ok(handle)
+}
+
+/// Connects to a specific MIDI output port by name.
+pub fn connect_midi_out(device_name: &str) -> Result<MidiOutputConnection> {
+    let midi_out = MidiOutput::new("rusty-pipes-out")?;
+    let mut selected_port = None;
+    for port in midi_out.ports() {
+        if midi_out.port_name(&port)? == device_name {
+            selected_port = Some(port);
+            break;
+        }
+    }
+
+    if let Some(port) = selected_port {
+        midi_out
+            .connect(&port, "rusty-pipes-out-conn")
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to connect to MIDI out device {}: {}",
+                    device_name,
+                    e
+                )
+            })
+    } else {
+        Err(anyhow::anyhow!(
+            "MIDI output device not found: {}",
+            device_name
+        ))
+    }
+}
+
+/// Sends a Sysex message to update an LCD display.
+pub fn send_lcd_sysex(
+    conn: &mut MidiOutputConnection,
+    display_id: u8,
+    color_code: u8,
+    line1: &str,
+    line2: &str,
+) {
+    // defined: F0 7D 01 <ID LSB> <ID MSB> <Color> <32 bytes text> F7
+
+    // Construct 32 bytes of text (pad with spaces)
+    let full_text = format!("{:16.16}{:16.16}", line1, line2);
+    let text_bytes = full_text.as_bytes();
+
+    let mut msg = Vec::with_capacity(39);
+    msg.push(0xF0);
+    msg.push(0x7D);
+    msg.push(0x01);
+    msg.push(display_id & 0x7F); // LSB of ID (assuming ID fits in 7 bits, ignoring MSB/Extension logic for simplicity unless user asked for >127)
+    msg.push(0x00); // MSB of ID (0 for valid IDs 1-127)
+    msg.push(color_code & 0x7F);
+
+    // Ensure we push exactly 32 bytes
+    for i in 0..32 {
+        if i < text_bytes.len() {
+            // ASCII 7-bit only
+            msg.push(text_bytes[i] & 0x7F);
+        } else {
+            msg.push(0x20); // space
+        }
+    }
+
+    msg.push(0xF7);
+
+    log::info!("Sending Sysex message: {:?}", msg);
+
+    let _ = conn.send(&msg);
 }

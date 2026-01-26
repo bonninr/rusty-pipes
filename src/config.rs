@@ -25,7 +25,11 @@ pub enum MidiEventSpec {
 impl fmt::Display for MidiEventSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MidiEventSpec::Note { channel, note, is_note_off } => {
+            MidiEventSpec::Note {
+                channel,
+                note,
+                is_note_off,
+            } => {
                 let status = if *is_note_off { "Off" } else { "On" };
                 write!(f, "Ch{} Note {} ({})", channel + 1, note, status)
             }
@@ -75,7 +79,7 @@ impl Default for MidiDeviceConfig {
 }
 
 /// Settings that are saved to the configuration file.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
     pub organ_file: Option<PathBuf>,
     pub ir_file: Option<PathBuf>,
@@ -93,6 +97,95 @@ pub struct AppSettings {
     pub keyboard_layout: KeyboardLayout,
     #[serde(default)]
     pub midi_devices: Vec<MidiDeviceConfig>,
+    #[serde(default)]
+    pub lcd_displays: Vec<LcdDisplayConfig>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum LcdColor {
+    Off,
+    White,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+}
+
+impl Default for LcdColor {
+    fn default() -> Self {
+        Self::White
+    }
+}
+
+impl LcdColor {
+    pub fn to_byte(&self) -> u8 {
+        match self {
+            LcdColor::Off => 0,
+            LcdColor::White => 1,
+            LcdColor::Red => 2,
+            LcdColor::Green => 3,
+            LcdColor::Yellow => 4,
+            LcdColor::Blue => 5,
+            LcdColor::Magenta => 6,
+            LcdColor::Cyan => 7,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum LcdLineType {
+    Empty,
+    OrganName,
+    SystemStatus, // "Loading... / Ready / CPU: x%"
+    LastPreset,
+    LastStopChange,
+    MidiLog,
+    Gain,
+    ReverbMix,
+    MidiPlayerStatus,
+}
+
+impl Default for LcdLineType {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
+impl fmt::Display for LcdLineType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LcdLineType::Empty => write!(f, "Empty"),
+            LcdLineType::OrganName => write!(f, "Organ Name"),
+            LcdLineType::SystemStatus => write!(f, "System Status"),
+            LcdLineType::LastPreset => write!(f, "Last Preset"),
+            LcdLineType::LastStopChange => write!(f, "Last Stop Change"),
+            LcdLineType::MidiLog => write!(f, "Last MIDI Log"),
+            LcdLineType::Gain => write!(f, "Gain"),
+            LcdLineType::ReverbMix => write!(f, "Reverb Mix"),
+            LcdLineType::MidiPlayerStatus => write!(f, "MIDI Player Status"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LcdDisplayConfig {
+    pub id: u8, // 7-bit ID
+    pub line1: LcdLineType,
+    pub line2: LcdLineType,
+    pub background_color: LcdColor,
+}
+
+impl Default for LcdDisplayConfig {
+    fn default() -> Self {
+        Self {
+            id: 1,
+            line1: LcdLineType::OrganName,
+            line2: LcdLineType::SystemStatus,
+            background_color: LcdColor::White,
+        }
+    }
 }
 
 /// Default settings for a new installation.
@@ -114,6 +207,7 @@ impl Default for AppSettings {
             sample_rate: 48000,
             keyboard_layout: KeyboardLayout::Qwerty,
             midi_devices: Vec::new(),
+            lcd_displays: Vec::new(),
         }
     }
 }
@@ -305,7 +399,6 @@ impl ConfigState {
                 }
             }
         }
-        // If still None, it will just be "Default" in the UI (which is None)
 
         // Get available sample rates for the selected audio device
         let available_sample_rates = get_supported_sample_rates(selected_audio_device_name.clone())

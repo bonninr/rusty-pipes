@@ -1,15 +1,15 @@
 use crate::{
     app::{AppMessage, TuiMessage},
-    config::{MidiDeviceConfig, MidiEventSpec, load_settings, save_settings},
+    config::{LcdDisplayConfig, MidiDeviceConfig, MidiEventSpec, load_settings, save_settings},
     input::KeyboardLayout,
     midi,
-    midi_control::{MidiControlMap, ControlAction},
+    midi_control::{ControlAction, MidiControlMap},
     midi_recorder::MidiRecorder,
     organ::Organ,
 };
 
 use anyhow::Result;
-use midir::{MidiInput, MidiInputConnection, MidiInputPort};
+use midir::{MidiInput, MidiInputConnection, MidiInputPort, MidiOutputConnection};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeSet, HashMap, VecDeque},
@@ -54,9 +54,16 @@ pub fn connect_to_midi(
     config: MidiDeviceConfig, // New Argument
     shared_midi_recorder: Arc<Mutex<Option<MidiRecorder>>>,
 ) -> Result<MidiInputConnection<()>> {
-    // We delegate to the logic in midi.rs, which sets up the callback 
+    // We delegate to the logic in midi.rs, which sets up the callback
     // with the specific channel mapping rules found in `config`.
-    midi::connect_to_midi(midi_input, port, port_name, tui_tx, config, shared_midi_recorder)
+    midi::connect_to_midi(
+        midi_input,
+        port,
+        port_name,
+        tui_tx,
+        config,
+        shared_midi_recorder,
+    )
 }
 
 // --- Shared State Struct ---
@@ -102,25 +109,35 @@ pub struct AppState {
     pub midi_file_stop_signal: Arc<AtomicBool>,
     pub midi_current_time_secs: u32,
     pub midi_total_time_secs: u32,
+
+    // LCD Helpers
+    pub last_recalled_preset_name: String,
+    pub last_stop_change_name: String,
+
     pub midi_seek_tx: Option<Sender<i32>>, // Sends seconds to skip (+15 or -15)
     pub last_sysex: Option<Vec<u8>>, // Kept for legacy compatibility if needed, but MidiEventSpec::SysEx covers this
+
+    // LCD / MIDI Out
+    pub midi_out: Vec<MidiOutputConnection>,
+    pub lcd_displays: Vec<LcdDisplayConfig>,
 }
 
 pub fn get_preset_file_path() -> PathBuf {
     let config_path = confy::get_configuration_file_path("rusty-pipes", "settings")
         .expect("Could not get configuration file path");
-    let preset_dir = config_path.parent().expect("Could not get preset directory");
+    let preset_dir = config_path
+        .parent()
+        .expect("Could not get preset directory");
     preset_dir.join(PRESET_FILE_NAME)
 }
 
 impl AppState {
     pub fn new(
-        organ: Arc<Organ>, 
-        gain: f32, 
+        organ: Arc<Organ>,
+        gain: f32,
         polyphony: usize,
         keyboard_layout: KeyboardLayout,
     ) -> Result<Self> {
-
         let presets = Self::load_presets(&organ.name);
         let midi_control_map = MidiControlMap::load(&organ.name);
         let mut midi_log = VecDeque::with_capacity(MIDI_LOG_CAPACITY);
@@ -160,11 +177,15 @@ impl AppState {
             midi_file_stop_signal: Arc::new(AtomicBool::new(false)),
             midi_current_time_secs: 0,
             midi_total_time_secs: 0,
+            last_recalled_preset_name: "None".to_string(),
+            last_stop_change_name: "None".to_string(),
             midi_seek_tx: None,
             last_sysex: None,
+            midi_out: Vec::new(),
+            lcd_displays: Vec::new(),
         })
     }
-    
+
     // Helper to calculate the actual MIDI note
     pub fn get_keyboard_midi_note(&self, semitone: u8) -> u8 {
         // Base C3 = 48
@@ -174,10 +195,11 @@ impl AppState {
     pub fn persist_settings(&self) {
         // Load existing settings to preserve other fields (like devices)
         let mut settings = load_settings().unwrap_or_default();
-        
+
         // Update values
         settings.gain = self.gain;
         settings.polyphony = self.polyphony;
+        settings.lcd_displays = self.lcd_displays.clone();
 
         // Save back to disk
         if let Err(e) = save_settings(&settings) {
@@ -189,6 +211,78 @@ impl AppState {
         self.gain = (self.gain + delta).clamp(0.0, 1.0);
         let _ = audio_tx.send(AppMessage::SetGain(self.gain));
         self.persist_settings();
+        self.refresh_lcds();
+    }
+
+    pub fn refresh_lcds(&mut self) {
+        log::info!("Refreshing LCDs");
+
+        // Return early if no connections
+        if self.midi_out.is_empty() {
+            return;
+        }
+
+        log::info!("Sending LCD refresh message");
+        // Retrieve values once
+        let organ_name = self.organ.name.clone();
+
+        // Format system status
+        let cpu_str = format!("CPU:{:.0}%", self.cpu_load * 100.0);
+        let status_str = format!("Ready {}", cpu_str);
+
+        let gain_str = format!("Gain: {:.2}", self.gain);
+        let reverb_str = format!("Rev: {:.2}", self.reverb_mix);
+
+        let midi_status = if self.is_midi_file_playing {
+            format!(
+                "{}/{}s",
+                self.midi_current_time_secs, self.midi_total_time_secs
+            )
+        } else {
+            "Stopped".to_string()
+        };
+
+        let last_log = self.midi_log.back().cloned().unwrap_or_default();
+
+        // Loop through displays
+        for display in &self.lcd_displays {
+            use crate::config::LcdLineType;
+
+            let text_line1 = match display.line1 {
+                LcdLineType::Empty => "".to_string(),
+                LcdLineType::OrganName => organ_name.clone(),
+                LcdLineType::SystemStatus => status_str.clone(),
+                LcdLineType::LastPreset => self.last_recalled_preset_name.clone(),
+                LcdLineType::LastStopChange => self.last_stop_change_name.clone(),
+                LcdLineType::MidiLog => last_log.clone(),
+                LcdLineType::Gain => gain_str.clone(),
+                LcdLineType::ReverbMix => reverb_str.clone(),
+                LcdLineType::MidiPlayerStatus => midi_status.clone(),
+            };
+
+            let text_line2 = match display.line2 {
+                LcdLineType::Empty => "".to_string(),
+                LcdLineType::OrganName => organ_name.clone(),
+                LcdLineType::SystemStatus => status_str.clone(),
+                LcdLineType::LastPreset => self.last_recalled_preset_name.clone(),
+                LcdLineType::LastStopChange => self.last_stop_change_name.clone(),
+                LcdLineType::MidiLog => last_log.clone(),
+                LcdLineType::Gain => gain_str.clone(),
+                LcdLineType::ReverbMix => reverb_str.clone(),
+                LcdLineType::MidiPlayerStatus => midi_status.clone(),
+            };
+
+            // Send to ALL connected value outputs
+            for conn in &mut self.midi_out {
+                midi::send_lcd_sysex(
+                    conn,
+                    display.id,
+                    display.background_color.to_byte(),
+                    &text_line1,
+                    &text_line2,
+                );
+            }
+        }
     }
 
     pub fn modify_polyphony(&mut self, delta: i32, audio_tx: &Sender<AppMessage>) {
@@ -196,9 +290,15 @@ impl AppState {
         self.polyphony = new_val as usize;
         let _ = audio_tx.send(AppMessage::SetPolyphony(self.polyphony));
         self.persist_settings();
+        self.refresh_lcds();
     }
 
-    pub fn set_tremulant_active(&mut self, trem_id: String, active: bool, audio_tx: &Sender<AppMessage>) {
+    pub fn set_tremulant_active(
+        &mut self,
+        trem_id: String,
+        active: bool,
+        audio_tx: &Sender<AppMessage>,
+    ) {
         if active {
             self.active_tremulants.insert(trem_id.clone());
         } else {
@@ -230,7 +330,9 @@ impl AppState {
         // Load the entire config file (all organs)
         let mut config: PresetConfig = File::open(preset_path.clone())
             .map_err(anyhow::Error::from)
-            .and_then(|file| serde_json::from_reader(BufReader::new(file)).map_err(anyhow::Error::from))
+            .and_then(|file| {
+                serde_json::from_reader(BufReader::new(file)).map_err(anyhow::Error::from)
+            })
             .unwrap_or_default(); // Create a new map if it doesn't exist
 
         // Update or insert the preset bank for the current organ
@@ -245,28 +347,39 @@ impl AppState {
 
     /// Processes an incoming TuiMessage, updates state, and sends AppMessages.
     /// This is the core message-handling logic for both UIs.
-    pub fn handle_tui_message(&mut self, msg: TuiMessage, audio_tx: &Sender<AppMessage>) -> Result<()> {
-         match msg {
-            TuiMessage::ForceClose => {
-            },
+    pub fn handle_tui_message(
+        &mut self,
+        msg: TuiMessage,
+        audio_tx: &Sender<AppMessage>,
+    ) -> Result<()> {
+        match msg {
+            TuiMessage::ForceClose => {}
             // --- Raw MIDI events ---
             TuiMessage::MidiNoteOn(note, vel, channel) => {
                 // Create Spec
-                let spec = MidiEventSpec::Note { channel, note, is_note_off: false };
+                let spec = MidiEventSpec::Note {
+                    channel,
+                    note,
+                    is_note_off: false,
+                };
 
                 // MIDI control learning / Organ switching detection
                 self.last_midi_event_received = Some((spec.clone(), Instant::now()));
-                
+
                 // Check if this triggers any stop changes
                 let actions = self.midi_control_map.check_event(&spec);
                 for action in actions {
                     match action {
-                        ControlAction::SetStop { index, internal_channel, active } => {
+                        ControlAction::SetStop {
+                            index,
+                            internal_channel,
+                            active,
+                        } => {
                             self.set_stop_channel_state(index, internal_channel, active, audio_tx)?;
-                        },
+                        }
                         ControlAction::SetTremulant { id, active } => {
                             self.set_tremulant_active(id, active, audio_tx);
-                        },
+                        }
                         ControlAction::LoadPreset { slot_index } => {
                             let _ = self.recall_preset(slot_index, audio_tx);
                         }
@@ -274,7 +387,10 @@ impl AppState {
                 }
 
                 // Track the active note (for visuals/logic)
-                self.channel_active_notes.entry(channel).or_default().insert(note);
+                self.channel_active_notes
+                    .entry(channel)
+                    .or_default()
+                    .insert(note);
                 // Find all stops mapped to this channel and send AppMessage
                 for (stop_index, active_channels) in &self.stop_channels {
                     if active_channels.contains(&channel) {
@@ -284,10 +400,14 @@ impl AppState {
                         }
                     }
                 }
-            },
+            }
             TuiMessage::MidiNoteOff(note, channel) => {
                 // Create Spec
-                let spec = MidiEventSpec::Note { channel, note, is_note_off: true };
+                let spec = MidiEventSpec::Note {
+                    channel,
+                    note,
+                    is_note_off: true,
+                };
 
                 // MIDI control learning / Organ switching detection
                 self.last_midi_event_received = Some((spec.clone(), Instant::now()));
@@ -296,18 +416,22 @@ impl AppState {
                 let actions = self.midi_control_map.check_event(&spec);
                 for action in actions {
                     match action {
-                        ControlAction::SetStop { index, internal_channel, active } => {
+                        ControlAction::SetStop {
+                            index,
+                            internal_channel,
+                            active,
+                        } => {
                             self.set_stop_channel_state(index, internal_channel, active, audio_tx)?;
-                        },
+                        }
                         ControlAction::SetTremulant { id, active } => {
                             self.set_tremulant_active(id, active, audio_tx);
-                        },
-                                                ControlAction::LoadPreset { slot_index } => {
+                        }
+                        ControlAction::LoadPreset { slot_index } => {
                             let _ = self.recall_preset(slot_index, audio_tx);
                         }
                     }
                 }
-                
+
                 // Stop tracking the active note
                 if let Some(notes) = self.channel_active_notes.get_mut(&channel) {
                     notes.remove(&note);
@@ -321,11 +445,11 @@ impl AppState {
                         }
                     }
                 }
-            },
+            }
             TuiMessage::MidiSysEx(data) => {
                 // Create Spec
                 let spec = MidiEventSpec::SysEx(data.clone());
-                
+
                 // Store for "Learn" UI and Organ Switching
                 self.last_midi_event_received = Some((spec.clone(), Instant::now()));
                 self.last_sysex = Some(data); // Kept for legacy if needed
@@ -334,18 +458,22 @@ impl AppState {
                 let actions = self.midi_control_map.check_event(&spec);
                 for action in actions {
                     match action {
-                        ControlAction::SetStop { index, internal_channel, active } => {
+                        ControlAction::SetStop {
+                            index,
+                            internal_channel,
+                            active,
+                        } => {
                             self.set_stop_channel_state(index, internal_channel, active, audio_tx)?;
-                        },
+                        }
                         ControlAction::SetTremulant { id, active } => {
                             self.set_tremulant_active(id, active, audio_tx);
-                        },
+                        }
                         ControlAction::LoadPreset { slot_index } => {
                             let _ = self.recall_preset(slot_index, audio_tx);
                         }
                     }
                 }
-            },
+            }
             TuiMessage::MidiChannelNotesOff(channel) => {
                 // Handle channel-specific all notes off
                 if let Some(notes_to_stop) = self.channel_active_notes.remove(&channel) {
@@ -362,25 +490,31 @@ impl AppState {
                         }
                     }
                 }
-            },
-            
+            }
+
             // --- Other TUI messages ---
             TuiMessage::CpuLoadUpdate(cpu_load) => self.cpu_load = cpu_load,
             TuiMessage::ActiveVoicesUpdate(count) => self.active_voice_count = count,
             TuiMessage::AudioUnderrun => self.last_underrun = Some(Instant::now()),
             TuiMessage::MidiLog(log) => self.add_midi_log(log),
             TuiMessage::Error(err) => self.error_msg = Some(err),
-            TuiMessage::TuiNoteOn(note, channel, start_time) => self.handle_tui_note_on(note, channel, start_time),
-            TuiMessage::TuiNoteOff(note, channel, end_time) => self.handle_tui_note_off(note, channel, end_time),
+            TuiMessage::TuiNoteOn(note, channel, start_time) => {
+                self.handle_tui_note_on(note, channel, start_time)
+            }
+            TuiMessage::TuiNoteOff(note, channel, end_time) => {
+                self.handle_tui_note_off(note, channel, end_time)
+            }
             TuiMessage::TuiAllNotesOff => self.handle_tui_all_notes_off(),
             TuiMessage::MidiProgress(progress_0_to_1, current_time_secs, total_time_secs) => {
                 self.midi_playback_progress = progress_0_to_1;
                 self.midi_current_time_secs = current_time_secs;
                 self.midi_total_time_secs = total_time_secs;
-            },
+                // TODO: Throttle LCD updates?
+                self.refresh_lcds();
+            }
             TuiMessage::MidiSeekChannel(tx) => {
                 self.midi_seek_tx = Some(tx);
-            },
+            }
             TuiMessage::MidiPlaybackFinished => {
                 self.is_midi_file_playing = false;
                 self.midi_file_stop_signal.store(false, Ordering::Relaxed);
@@ -428,7 +562,7 @@ impl AppState {
 
         if velocity > 0 {
             // --- NOTE ON ---
-            
+
             let played_note = crate::app_state::PlayedNote {
                 note,
                 channel,
@@ -436,7 +570,8 @@ impl AppState {
                 end_time: None,
             };
 
-            self.currently_playing_notes.insert(note, played_note.clone());
+            self.currently_playing_notes
+                .insert(note, played_note.clone());
             self.active_midi_notes.insert((channel, note), played_note);
 
             // Update Log
@@ -448,13 +583,14 @@ impl AppState {
                 if let Some(channels) = self.stop_channels.get(&stop_idx) {
                     if channels.contains(&channel) {
                         // This stop is mapped to Ch 1, play it!
-                        let _ = audio_tx.send(AppMessage::NoteOn(note, velocity, stop.name.clone()));
+                        let _ =
+                            audio_tx.send(AppMessage::NoteOn(note, velocity, stop.name.clone()));
                     }
                 }
             }
         } else {
             // --- NOTE OFF ---
-            
+
             // Update Visuals (Piano Roll)
             if let Some(played_note) = self.currently_playing_notes.remove(&note) {
                 // Move to finished notes for the "trail" effect
@@ -464,7 +600,7 @@ impl AppState {
             }
 
             self.active_midi_notes.remove(&(channel, note));
-            
+
             // Update Log
             self.add_midi_log(format!("Key Off: {} (Ch 1)", note_name));
 
@@ -484,13 +620,13 @@ impl AppState {
         &mut self,
         stop_index: usize,
         channel: u8,
-        audio_tx: &Sender<AppMessage>
+        audio_tx: &Sender<AppMessage>,
     ) -> Result<()> {
         let stop_set = self.stop_channels.entry(stop_index).or_default();
-        
+
         if stop_set.contains(&channel) {
             stop_set.remove(&channel);
-            
+
             // --- Send NoteOff for all active notes on this channel for this stop ---
             if let Some(notes_to_stop) = self.channel_active_notes.get(&channel) {
                 if let Some(stop) = self.organ.stops.get(stop_index) {
@@ -505,7 +641,7 @@ impl AppState {
         };
         Ok(())
     }
-    
+
     /// Activates all channels for the specified stop.
     pub fn select_all_channels_for_stop(&mut self, stop_index: usize) {
         let stop_set = self.stop_channels.entry(stop_index).or_default();
@@ -513,18 +649,17 @@ impl AppState {
             stop_set.insert(channel);
         }
     }
-    
+
     /// Deactivates all channels for the specified stop.
     pub fn select_none_channels_for_stop(
         &mut self,
         stop_index: usize,
-        audio_tx: &Sender<AppMessage>
+        audio_tx: &Sender<AppMessage>,
     ) -> Result<()> {
         if let Some(stop_set) = self.stop_channels.get_mut(&stop_index) {
             // Collect channels to deactivate
-            let channels_to_deactivate: Vec<u8> = stop_set.iter().copied()
-                .filter(|&c| c < 16)
-                .collect();
+            let channels_to_deactivate: Vec<u8> =
+                stop_set.iter().copied().filter(|&c| c < 16).collect();
 
             if !channels_to_deactivate.is_empty() {
                 if let Some(stop) = self.organ.stops.get(stop_index) {
@@ -549,12 +684,13 @@ impl AppState {
         }
         Ok(())
     }
-    
+
     pub fn add_midi_log(&mut self, msg: String) {
         if self.midi_log.len() == MIDI_LOG_CAPACITY {
             self.midi_log.pop_front();
         }
         self.midi_log.push_back(msg);
+        self.refresh_lcds();
     }
 
     pub fn handle_tui_note_on(&mut self, note: u8, channel: u8, start_time: Instant) {
@@ -564,7 +700,8 @@ impl AppState {
             start_time,
             end_time: None,
         };
-        self.currently_playing_notes.insert(note, played_note.clone());
+        self.currently_playing_notes
+            .insert(note, played_note.clone());
         self.active_midi_notes.insert((channel, note), played_note);
     }
 
@@ -603,8 +740,10 @@ impl AppState {
 
     /// Saves the current `stop_channels` to a preset slot with a given name.
     pub fn save_preset(&mut self, slot: usize, name: String) {
-        if slot >= 12 { return; }
-        
+        if slot >= 12 {
+            return;
+        }
+
         // Create the new Preset struct
         let new_preset = Preset {
             name: name.clone(),
@@ -613,17 +752,20 @@ impl AppState {
         self.presets[slot] = Some(new_preset);
 
         self.add_midi_log(format!("Preset slot F{} saved as '{}'", slot + 1, name));
-        
+
         // After saving in memory, write the change to disk.
         if let Err(e) = self.save_all_presets_to_file() {
             self.add_midi_log(format!("ERROR saving presets: {}", e));
         }
+        self.refresh_lcds();
     }
 
     /// Recalls a preset from a slot into `stop_channels`.
     /// Only releases notes if their controlling MIDI channel is no longer mapped to the stop.
     pub fn recall_preset(&mut self, slot: usize, audio_tx: &Sender<AppMessage>) -> Result<()> {
-        if slot >= 12 { return Ok(()); }
+        if slot >= 12 {
+            return Ok(());
+        }
         if let Some(preset_data) = &self.presets[slot] {
             let new_preset_map = &preset_data.stop_channels;
             let _preset_name = &preset_data.name;
@@ -642,7 +784,6 @@ impl AppState {
 
                 // We iterate over the OLD map to find Stop -> Channel mappings that have been removed.
                 for (stop_index, old_active_channels) in &old_map {
-                    
                     // Get the set of channels enabled for this stop in the new preset
                     let new_active_channels_opt = self.stop_channels.get(stop_index);
 
@@ -661,7 +802,7 @@ impl AppState {
                             {
                                 if let Some(stop) = self.organ.stops.get(*stop_index) {
                                     let stop_name = stop.name.clone();
-                                    
+
                                     // Send NoteOff for currently active notes on this specific channel/stop combo
                                     for &note in active_notes_on_channel {
                                         audio_tx
@@ -673,6 +814,7 @@ impl AppState {
                     }
                 }
                 log::info!("Recalled preset from slot F{}", slot + 1);
+                self.last_recalled_preset_name = format!("F{}: {}", slot + 1, _preset_name);
                 self.add_midi_log(format!("Recalled preset F{}", slot + 1));
             } else {
                 // This can happen if the organ definition file changed
@@ -688,9 +830,10 @@ impl AppState {
             log::warn!("{}", err_msg);
             self.add_midi_log(err_msg);
         }
+        self.refresh_lcds();
         Ok(())
     }
-    
+
     pub fn update_piano_roll_state(&mut self) {
         let now = Instant::now();
 
