@@ -824,6 +824,14 @@ pub fn start_audio_playback(
             tui_tx,
             err_callback,
         )?,
+        SampleFormat::I32 => build_stream::<i32>(
+            &device,
+            &stream_config,
+            consumer,
+            device_channels,
+            tui_tx,
+            err_callback,
+        )?,
         SampleFormat::I16 => build_stream::<i16>(
             &device,
             &stream_config,
@@ -840,7 +848,11 @@ pub fn start_audio_playback(
             tui_tx,
             err_callback,
         )?,
-        _ => return Err(anyhow!("Unsupported sample format: {:?}", sample_format)),
+        _ => {
+            let errormessage = format!("Unsupported sample format: {:?}", sample_format);
+            log::error!("{:?}", errormessage.to_string());
+            return Err(anyhow!(errormessage))
+        },
     };
 
     stream.play()?;
