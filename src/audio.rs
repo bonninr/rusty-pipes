@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
-    BufferSize, Device, FromSample, SampleFormat, SizedSample, Stream, StreamConfig,
+    BufferSize, Device, FromSample, HostId, SampleFormat, SizedSample, Stream, StreamConfig,
     SupportedBufferSize,
 };
 use ringbuf::HeapRb;
@@ -41,16 +41,113 @@ impl Drop for AudioHandle {
     }
 }
 
-pub fn get_supported_sample_rates(device_name: Option<String>) -> Result<Vec<u32>> {
-    let host = get_cpal_host();
-    let device = if let Some(name) = device_name {
-        host.output_devices()?
-            .find(|d| d.id().map_or(false, |n| n.to_string() == name))
-            .ok_or_else(|| anyhow!("Device not found"))?
+/// Helper to format the unique identifier for a device: "[Host] DeviceName"
+fn format_device_id(host_id: HostId, device_name: &str) -> String {
+    format!("[{:?}] {}", host_id, device_name)
+}
+
+/// Helper to parse "[Host] DeviceName" back into a HostId and a Device Name
+fn parse_device_id(full_id: &str) -> Option<(HostId, String)> {
+    let start_bracket = full_id.find('[')?;
+    let end_bracket = full_id.find(']')?;
+
+    if start_bracket != 0 || end_bracket <= start_bracket {
+        return None;
+    }
+
+    let host_str = &full_id[1..end_bracket];
+    let device_name = full_id[end_bracket + 1..].trim().to_string();
+
+    // Determine HostId from string (Case sensitive debug matching)
+    let available = cpal::available_hosts();
+    for host_id in available {
+        if format!("{:?}", host_id) == host_str {
+            return Some((host_id, device_name));
+        }
+    }
+    None
+}
+
+/// Helper to locate a specific device based on our custom identifier string
+fn get_device_by_name(name_opt: Option<String>) -> Result<(Device, StreamConfig)> {
+    // If no name provided, use system default
+    let (device, config) = if let Some(full_name) = name_opt {
+        // Parse the "[Host] Name" format
+        if let Some((host_id, dev_name)) = parse_device_id(&full_name) {
+            log::info!(
+                "[Audio] Attempting to find device on host {:?}: '{}'",
+                host_id,
+                dev_name
+            );
+            let host = cpal::host_from_id(host_id)?;
+
+            let mut found_device = None;
+
+            // Iterate devices on this specific host
+            if let Ok(devices) = host.output_devices() {
+                for d in devices {
+                    match d.supported_output_configs() {
+                        Ok(mut configs) => {
+                            if configs.next().is_some() {
+                                if let Ok(description) = d.description() {
+                                    if format!("{:?}/{:?}", description.name(), d.id())
+                                        .eq_ignore_ascii_case(dev_name.as_str())
+                                    {
+                                        found_device = Some(d);
+                                        break;
+                                    }
+                                }
+                            } else {
+                                log::warn!(
+                                    "[Audio] Device {:?} found, but it has 0 supported configs. Skipping.",
+                                    d.id()
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[Audio] Device '{:?}' failed config query: {}. Skipping.",
+                                d.id(),
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+
+            let device = found_device
+                .ok_or_else(|| anyhow!("Device '{}' not found on host {:?}", dev_name, host_id))?;
+            let config = device.default_output_config()?;
+            (device, config)
+        } else {
+            // Fallback if parsing fails (legacy name or direct system default)
+            log::warn!(
+                "[Audio] Could not parse device string '{}', falling back to default host.",
+                full_name
+            );
+            let host = cpal::default_host();
+            let device = host
+                .default_output_device()
+                .ok_or_else(|| anyhow!("No default device available"))?;
+            let config = device.default_output_config()?;
+            (device, config)
+        }
     } else {
-        host.default_output_device()
-            .ok_or_else(|| anyhow!("No default device"))?
+        // Absolute Default
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
+            .ok_or_else(|| anyhow!("No default device available"))?;
+        let config = device.default_output_config()?;
+        (device, config)
     };
+
+    Ok((device, config.into()))
+}
+
+pub fn get_supported_sample_rates(device_name: Option<String>) -> Result<Vec<u32>> {
+    let (device, _) = get_device_by_name(device_name)?;
+
     let supported_configs = device.supported_output_configs()?;
     let mut available_rates = Vec::new();
     let standard_rates = [44100, 48000, 88200, 96000, 176400, 192000];
@@ -70,108 +167,60 @@ pub fn get_supported_sample_rates(device_name: Option<String>) -> Result<Vec<u32
     Ok(available_rates)
 }
 
-fn get_cpal_host() -> cpal::Host {
-    #[cfg(target_os = "windows")]
-    let host_ids = [cpal::HostId::Asio, cpal::HostId::Wasapi];
-
-    #[cfg(target_os = "linux")]
-    let host_ids = [cpal::HostId::Jack, cpal::HostId::Alsa];
-
-    #[cfg(target_os = "macos")]
-    let host_ids = [cpal::HostId::CoreAudio];
-
-    // Fallback for other OSs or if strict selection fails
-    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-    let host_ids = [cpal::HostId::Asio]; // Generic fallback
-
+/// Returns a list of all devices across all available hosts.
+/// Format: "[HostID] DeviceName/DeviceID"
+pub fn get_audio_device_names() -> Result<Vec<String>> {
     let available_hosts = cpal::available_hosts();
-    log::info!("[Audio] Available Hosts: {:?}", available_hosts);
+    let mut names = Vec::new();
 
-    for host_id in host_ids {
-        if available_hosts.contains(&host_id) {
-            let host = match cpal::host_from_id(host_id) {
-                Ok(h) => h,
-                Err(e) => {
-                    log::warn!(
-                        "[Audio] Failed to create host from id {:?}: {}. Skipping.",
-                        host_id,
-                        e
-                    );
-                    continue;
-                }
-            };
-            log::info!("[Audio] Probing Host: {}", host.id().name());
+    log::info!("[Audio] Scanning hosts: {:?}", available_hosts);
 
-            match host.output_devices() {
-                Ok(mut devices) => {
-                    // Get the first device (or fail if none)
-                    if let Some(device) = devices.next() {
-                        // Interrogate the device!
-                        // Merely existing isn't enough. We try to query its supported configurations.
-                        // If the JACK server is down, this call will fail or return an empty iterator.
-                        match device.supported_output_configs() {
-                            Ok(mut configs) => {
-                                if configs.next().is_some() {
-                                    log::info!(
-                                        "[Audio] Selected Host: {} (Validated)",
-                                        host.id().name()
-                                    );
-                                    return host;
-                                } else {
-                                    log::warn!(
-                                        "[Audio] Host '{}' found a device, but it has 0 supported configs. Skipping.",
-                                        host.id().name()
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "[Audio] Host '{}' device failed config query: {}. Skipping.",
-                                    host.id().name(),
-                                    e
-                                );
-                            }
-                        }
-                    } else {
-                        log::warn!(
-                            "[Audio] Host '{}' initialized but found NO devices. Skipping.",
-                            host.id().name()
-                        );
-                    }
+    for host_id in available_hosts {
+        let host = match cpal::host_from_id(host_id) {
+            Ok(h) => h,
+            Err(e) => {
+                log::warn!("[Audio] Failed to init host {:?}: {}", host_id, e);
+                continue;
+            }
+        };
+
+        match host.output_devices() {
+            Ok(devices) => {
+                for device in devices {
+                    let dev_description = device.description()?;
+                    let dev_id = device.id();
+                    let dev_name = dev_description.name();
+                    let full_id =
+                        format_device_id(host_id, format!("{:?}/{:?}", dev_name, dev_id).as_str());
+                    log::info!("Found device: {:?}", full_id);
+                    names.push(full_id);
                 }
-                Err(e) => {
-                    log::warn!(
-                        "[Audio] Host '{}' failed to list devices: {}. Skipping.",
-                        host.id().name(),
-                        e
-                    );
-                }
+            }
+            Err(e) => {
+                log::warn!("[Audio] Host {:?} failed to list devices: {}", host_id, e);
             }
         }
     }
 
-    // Final Fallback
-    log::info!("[Audio] No prioritized hosts were usable. Falling back to system default.");
-    cpal::default_host()
-}
-
-pub fn get_audio_device_names() -> Result<Vec<String>> {
-    let host = get_cpal_host();
-    let devices = host.output_devices()?;
-    let mut names = Vec::new();
-    for device in devices {
-        if let Ok(name) = device.id() {
-            names.push(name.to_string());
-        }
+    if names.is_empty() {
+        return Err(anyhow!("No audio devices found on any host."));
     }
+
     Ok(names)
 }
 
 #[allow(non_snake_case)]
 pub fn get_default_audio_device_name() -> Result<Option<String>> {
-    let host = get_cpal_host();
+    let host = cpal::default_host();
     match host.default_output_device() {
-        Some(device) => Ok(Some(device.id()?.to_string())),
+        Some(device) => {
+            let dev_description = device.description()?;
+            let dev_id = device.id();
+            let dev_name = dev_description.name();
+            let full_id =
+                format_device_id(host.id(), format!("{:?}/{:?}", dev_name, dev_id).as_str());
+            Ok(Some(format_device_id(host.id(), &full_id)))
+        }
         None => Ok(None),
     }
 }
@@ -672,24 +721,10 @@ pub fn start_audio_playback(
     tui_tx: mpsc::Sender<TuiMessage>,
     shared_midi_recorder: Arc<Mutex<Option<MidiRecorder>>>,
 ) -> Result<AudioHandle> {
-    let host = get_cpal_host();
+    let (device, mut stream_config) = get_device_by_name(audio_device_name)?;
 
-    // Select Device
-    let device: Device = if let Some(name) = audio_device_name {
-        host.output_devices()?
-            // Fix: Use .name() instead of .id() or .description()
-            .find(|d| d.id().map_or(false, |n| n.to_string() == name))
-            .ok_or_else(|| anyhow!("Device '{}' not found. Using default.", name))
-            .or_else(|_| {
-                host.default_output_device()
-                    .ok_or_else(|| anyhow!("No default device"))
-            })?
-    } else {
-        host.default_output_device()
-            .ok_or_else(|| anyhow!("No default device"))?
-    };
-
-    let device_name = device.id()?.to_string();
+    let device_description = device.description()?;
+    let device_name = device_description.name();
     log::info!("[Cpal] Using device: {}", device_name);
 
     // Find Best Config
@@ -739,9 +774,9 @@ pub fn start_audio_playback(
         SupportedBufferSize::Unknown => BufferSize::Fixed(requested_buffer_size as u32),
     };
 
-    let mut stream_config: StreamConfig = best_config_range.with_sample_rate(sample_rate).into();
-
+    // Update the config with our specific rate and buffer size
     stream_config.buffer_size = buffer_size;
+    stream_config.sample_rate = sample_rate;
 
     log::info!(
         "[Cpal] Final Config: Rate={}Hz, Channels={}, Format={:?}, Buffer={:?}",
