@@ -53,6 +53,8 @@ use config::{AppSettings, MidiDeviceConfig, RuntimeConfig};
 use input::KeyboardLayout;
 use organ::Organ;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 #[value(rename_all = "lower")]
 enum LogLevel {
@@ -188,6 +190,7 @@ fn main() -> Result<()> {
     let log_path = log_dir.join("rusty-pipes.log");
 
     WriteLogger::init(log_level, Config::default(), File::create(log_path)?)?;
+    log::info!("RustyPipes v{}", VERSION);
 
     // --- List MIDI devices and exit ---
     if args.list_midi_devices {
