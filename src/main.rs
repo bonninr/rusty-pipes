@@ -632,10 +632,10 @@ fn main() -> Result<()> {
         // We store multiple connections to keep them alive
         let mut midi_connections = Vec::new();
 
-        // --- Use live MIDI input (Multiple Devices) ---
-        // Iterate over the configured active devices
+        // Iterate over the configured MIDI devices
         if !config.active_midi_devices.is_empty() {
             for (port, dev_config) in &config.active_midi_devices {
+                log::info!("Connecting to MIDI Device: {}", dev_config.name);
                 let client_name = format!("Rusty Pipes - {}", dev_config.name);
 
                 // Create a new client for each connection (midir consumes the client on connect)
@@ -676,6 +676,7 @@ fn main() -> Result<()> {
                     ),
                 }
             }
+            log::info!("MIDI initialization complete.");
         } else if tui_mode {
             println!("{}", t!("main.no_midi_devices"));
         }
