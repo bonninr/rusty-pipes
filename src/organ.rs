@@ -197,12 +197,6 @@ impl Organ {
         }
     }
 
-    /// Reads a file to a String, falling back to Latin-1 (ISO-8859-1) if UTF-8 fails.
-    pub fn read_file_tolerant(path: &Path) -> Result<String> {
-        let bytes = fs::read(path).with_context(|| format!("Failed to read file {:?}", path))?;
-        Ok(Self::bytes_to_string_tolerant(bytes))
-    }
-
     /// Helper to get the cache directory for a specific organ
     pub fn get_organ_cache_dir(organ_name: &str) -> Result<PathBuf> {
         let settings_path = confy::get_configuration_file_path("rusty-pipes", "settings")?;

@@ -3,7 +3,7 @@ use ini::inistr;
 use rust_i18n::t;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, canonicalize};
-use std::io::{Read, Cursor};
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, mpsc};
 
@@ -47,8 +47,10 @@ fn resolve_definition_content(data: Vec<u8>) -> Result<String> {
         // Scan for the best candidate file
         for i in 0..archive.len() {
             let file = archive.by_index(i)?;
-            if file.is_dir() { continue; }
-            
+            if file.is_dir() {
+                continue;
+            }
+
             let name = file.name().to_lowercase();
             // Ignore OS metadata
             if name.contains("__macosx") || name.starts_with('.') {
@@ -68,11 +70,12 @@ fn resolve_definition_content(data: Vec<u8>) -> Result<String> {
             }
         }
 
-        let idx = candidate_index.ok_or_else(|| anyhow!("Empty or invalid compressed definition file"))?;
+        let idx = candidate_index
+            .ok_or_else(|| anyhow!("Empty or invalid compressed definition file"))?;
         let mut file = archive.by_index(idx)?;
         let mut inner_buffer = Vec::new();
         file.read_to_end(&mut inner_buffer)?;
-        
+
         log::info!("Extracted inner definition file: {}", file.name());
         return Ok(Organ::bytes_to_string_tolerant(inner_buffer));
     }
@@ -103,11 +106,11 @@ pub fn load_grandorgue_dir(
         "Loading GrandOrgue organ from directory: {:?}",
         logical_path
     );
-    
+
     // Read raw bytes instead of string to handle potential compression
     let file_bytes = fs::read(&logical_path)?;
     let file_content = resolve_definition_content(file_bytes)?;
-    
+
     let organ_name = get_organ_name(&logical_path);
     let cache_path = Organ::get_organ_cache_dir(&organ_name)?;
 
@@ -168,7 +171,7 @@ pub fn load_grandorgue_zip(
         let mut file = archive.by_name(&definition_filename)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
-        
+
         // Use helper to resolve content (handles if the inner .organ file is itself a zip)
         resolve_definition_content(buffer)?
     };
