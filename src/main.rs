@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::time::Duration;
 use std::thread::{self, JoinHandle};
 
 rust_i18n::i18n!("locales");
@@ -43,6 +44,7 @@ mod tui_lcd;
 mod tui_midi;
 mod tui_midi_learn;
 mod tui_organ_manager;
+mod tui_progress;
 mod voice;
 mod wav;
 mod wav_converter;
@@ -408,49 +410,58 @@ fn main() -> Result<()> {
 
             organ = Arc::new(organ_result?);
         } else {
-            // --- TUI Loading (Simple text progress) ---
+            // --- TUI Loading ---
+            log::info!("Starting TUI loading process...");
+
+            let (tui_progress_tx, tui_progress_rx) = mpsc::channel::<(f32, String)>();
+            let load_config = config.clone();
+            
+            // Result container for the background thread
+            let organ_result_arc = Arc::new(Mutex::new(None));
+            let organ_result_clone = Arc::clone(&organ_result_arc);
+
+            // Start the loading thread
+            thread::spawn(move || {
+                let load_result = Organ::load(
+                    &load_config.organ_file,
+                    load_config.convert_to_16bit,
+                    load_config.precache,
+                    load_config.original_tuning,
+                    load_config.sample_rate,
+                    Some(tui_progress_tx),
+                    (load_config.max_ram_gb * 1024.0) as usize,
+                );
+                *organ_result_clone.lock().unwrap() = Some(load_result);
+            });
+
+            // Initialize Terminal for Progress UI
             if tui_mode {
-                println!("{}", t!("main.loading_organ"));
+                use ratatui::backend::CrosstermBackend;
+                use ratatui::Terminal;
+                
+                crossterm::terminal::enable_raw_mode()?;
+                let mut stdout = std::io::stdout();
+                crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)?;
+                let backend = CrosstermBackend::new(stdout);
+                let mut terminal = Terminal::new(backend)?;
+
+                // Run the progress UI (blocks until thread sends enough updates or drops)
+                let _ = tui_progress::run_progress_ui(&mut terminal, tui_progress_rx);
+
+                // Cleanup Terminal immediately so we can print or transition
+                crossterm::terminal::disable_raw_mode()?;
+                crossterm::execute!(terminal.backend_mut(), crossterm::terminal::LeaveAlternateScreen)?;
             }
 
-            // Create a dummy transmitter for TUI progress
-            let (tui_progress_tx, tui_progress_rx) = mpsc::channel::<(f32, String)>();
-
-            // TUI progress-printing thread
-            let _tui_progress_thread = if tui_mode {
-                Some(thread::spawn(move || {
-                    while let Ok((progress, file_name)) = tui_progress_rx.recv() {
-                        // Simple TUI progress
-                        use std::io::Write;
-                        print!(
-                            "\r{}               ",
-                            t!(
-                                "main.loading_samples_fmt",
-                                percent = (progress * 100.0) as i32,
-                                file = file_name
-                            )
-                        );
-                        std::io::stdout().flush().unwrap();
-                    }
-                    println!("\r{}              ", t!("main.loading_complete"));
-                }))
-            } else {
-                None
+            // Retrieve the result
+            let organ_result = loop {
+                if let Some(res) = organ_result_arc.lock().unwrap().take() {
+                    break res;
+                }
+                thread::sleep(Duration::from_millis(50));
             };
 
-            organ = Arc::new(Organ::load(
-                &config.organ_file,
-                config.convert_to_16bit,
-                config.precache,
-                config.original_tuning,
-                config.sample_rate,
-                if tui_mode {
-                    Some(tui_progress_tx)
-                } else {
-                    None
-                },
-                (config.max_ram_gb * 1024.0) as usize,
-            )?);
+            organ = Arc::new(organ_result?);
         }
 
         if tui_mode {
