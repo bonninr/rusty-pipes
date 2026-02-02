@@ -3,7 +3,7 @@ use ini::inistr;
 use rust_i18n::t;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, canonicalize};
-use std::io::Read;
+use std::io::{Read, Cursor};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, mpsc};
 
@@ -30,7 +30,59 @@ fn get_organ_name(path: &Path) -> String {
         .to_string()
 }
 
-/// Standard Folder Loader: Just reads the file and points base_path to the folder.
+/// Helper to resolve definition content from bytes.
+/// If the bytes represent a ZIP file (magic bytes PK..), it opens the zip
+/// and finds the definition file inside (heuristic: .organ extension or largest file).
+/// Otherwise, it decodes the bytes directly.
+fn resolve_definition_content(data: Vec<u8>) -> Result<String> {
+    // Check for ZIP Local File Header signature (0x04034b50 -> PK\x03\x04)
+    if data.len() > 4 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04 {
+        log::info!("Detected compressed organ definition file. Unzipping in memory...");
+        let cursor = Cursor::new(data);
+        let mut archive = zip::ZipArchive::new(cursor)?;
+
+        let mut candidate_index = None;
+        let mut max_size = 0;
+
+        // Scan for the best candidate file
+        for i in 0..archive.len() {
+            let file = archive.by_index(i)?;
+            if file.is_dir() { continue; }
+            
+            let name = file.name().to_lowercase();
+            // Ignore OS metadata
+            if name.contains("__macosx") || name.starts_with('.') {
+                continue;
+            }
+
+            // Ends with .organ
+            if name.ends_with(".organ") {
+                candidate_index = Some(i);
+                break; // Found it explicitly
+            }
+
+            // Fallback to largest file (often the definition has no extension inside the zip)
+            if file.size() > max_size {
+                max_size = file.size();
+                candidate_index = Some(i);
+            }
+        }
+
+        let idx = candidate_index.ok_or_else(|| anyhow!("Empty or invalid compressed definition file"))?;
+        let mut file = archive.by_index(idx)?;
+        let mut inner_buffer = Vec::new();
+        file.read_to_end(&mut inner_buffer)?;
+        
+        log::info!("Extracted inner definition file: {}", file.name());
+        return Ok(Organ::bytes_to_string_tolerant(inner_buffer));
+    }
+
+    // Not a zip, just decode text
+    Ok(Organ::bytes_to_string_tolerant(data))
+}
+
+/// Standard Folder Loader: Reads the file (or unzips it if it's a compressed .organ)
+/// and points base_path to the folder.
 pub fn load_grandorgue_dir(
     path: &Path,
     convert_to_16_bit: bool,
@@ -51,7 +103,11 @@ pub fn load_grandorgue_dir(
         "Loading GrandOrgue organ from directory: {:?}",
         logical_path
     );
-    let file_content = Organ::read_file_tolerant(&logical_path)?;
+    
+    // Read raw bytes instead of string to handle potential compression
+    let file_bytes = fs::read(&logical_path)?;
+    let file_content = resolve_definition_content(file_bytes)?;
+    
     let organ_name = get_organ_name(&logical_path);
     let cache_path = Organ::get_organ_cache_dir(&organ_name)?;
 
@@ -112,10 +168,9 @@ pub fn load_grandorgue_zip(
         let mut file = archive.by_name(&definition_filename)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
-        match String::from_utf8(buffer.clone()) {
-            Ok(s) => s,
-            Err(_) => buffer.into_iter().map(|b| b as char).collect(),
-        }
+        
+        // Use helper to resolve content (handles if the inner .organ file is itself a zip)
+        resolve_definition_content(buffer)?
     };
 
     // Prepare Closure

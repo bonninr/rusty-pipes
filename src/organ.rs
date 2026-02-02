@@ -184,23 +184,23 @@ impl Organ {
         }
     }
 
-    /// Reads a file to a String, falling back to Latin-1 (ISO-8859-1) if UTF-8 fails.
-    pub fn read_file_tolerant(path: &Path) -> Result<String> {
-        let bytes = fs::read(path).with_context(|| format!("Failed to read file {:?}", path))?;
-
+    /// Helper that converts bytes to a string, trying UTF-8 first, then falling back to Latin-1.
+    pub fn bytes_to_string_tolerant(bytes: Vec<u8>) -> String {
         match String::from_utf8(bytes) {
-            Ok(s) => Ok(s),
+            Ok(s) => s,
             Err(e) => {
-                log::warn!(
-                    "File {:?} is not valid UTF-8. Falling back to Latin-1 decoding.",
-                    path
-                );
                 // Recover the bytes from the error
                 let bytes = e.into_bytes();
                 // Manual ISO-8859-1 decoding: bytes map 1:1 to chars
-                Ok(bytes.into_iter().map(|b| b as char).collect())
+                bytes.into_iter().map(|b| b as char).collect()
             }
         }
+    }
+
+    /// Reads a file to a String, falling back to Latin-1 (ISO-8859-1) if UTF-8 fails.
+    pub fn read_file_tolerant(path: &Path) -> Result<String> {
+        let bytes = fs::read(path).with_context(|| format!("Failed to read file {:?}", path))?;
+        Ok(Self::bytes_to_string_tolerant(bytes))
     }
 
     /// Helper to get the cache directory for a specific organ
