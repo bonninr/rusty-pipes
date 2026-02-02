@@ -851,8 +851,8 @@ pub fn start_audio_playback(
         _ => {
             let errormessage = format!("Unsupported sample format: {:?}", sample_format);
             log::error!("{:?}", errormessage.to_string());
-            return Err(anyhow!(errormessage))
-        },
+            return Err(anyhow!(errormessage));
+        }
     };
 
     stream.play()?;

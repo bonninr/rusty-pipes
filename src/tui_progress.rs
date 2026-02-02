@@ -1,13 +1,17 @@
 use ratatui::{
+    Frame, Terminal,
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
     text::Span,
     widgets::{Block, BorderType, Borders, Gauge, Paragraph},
-    Frame, Terminal,
 };
 use rust_i18n::t;
-use std::{io, sync::mpsc::{Receiver, TryRecvError}, time::Duration};
+use std::{
+    io,
+    sync::mpsc::{Receiver, TryRecvError},
+    time::Duration,
+};
 
 pub fn run_progress_ui<B: Backend>(
     terminal: &mut Terminal<B>,
@@ -34,7 +38,8 @@ pub fn run_progress_ui<B: Backend>(
         }
 
         // Render
-        terminal.draw(|f| render_ui(f, progress, &status_text))
+        terminal
+            .draw(|f| render_ui(f, progress, &status_text))
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
         // Check if loading thread disconnected (finished)
@@ -87,11 +92,15 @@ fn render_ui(f: &mut Frame, progress: f32, status: &str) {
 
     f.render_widget(
         Paragraph::new(t!("loading.status_init")).alignment(Alignment::Center),
-        content[0]
+        content[0],
     );
 
     let gauge = Gauge::default()
-        .gauge_style(Style::default().fg(Color::Rgb(255, 165, 0)).bg(Color::Black))
+        .gauge_style(
+            Style::default()
+                .fg(Color::Rgb(255, 165, 0))
+                .bg(Color::Black),
+        )
         .use_unicode(true)
         .ratio(progress as f64)
         .label(format!("{:.1}%", progress * 100.0));
@@ -100,6 +109,6 @@ fn render_ui(f: &mut Frame, progress: f32, status: &str) {
     f.render_widget(
         Paragraph::new(Span::styled(status, Style::default().fg(Color::DarkGray)))
             .alignment(Alignment::Center),
-        content[2]
+        content[2],
     );
 }

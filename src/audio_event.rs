@@ -235,11 +235,12 @@ pub fn process_message(
             if let Some(idx) = stop_map.get(&s) {
                 if let Some(list) = active_notes.get_mut(&n) {
                     // Partition into notes to release and notes to keep
-                    let (to_release, to_keep) = 
-                        list.drain(..).partition(|active_note| active_note.stop_index == *idx);
+                    let (to_release, to_keep) = list
+                        .drain(..)
+                        .partition(|active_note| active_note.stop_index == *idx);
                     *list = to_keep;
-                    
-                    for stopped in to_release{
+
+                    for stopped in to_release {
                         trigger_note_release(
                             stopped,
                             organ,

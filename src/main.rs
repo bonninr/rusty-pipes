@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::time::Duration;
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 rust_i18n::i18n!("locales");
 
@@ -415,7 +415,7 @@ fn main() -> Result<()> {
 
             let (tui_progress_tx, tui_progress_rx) = mpsc::channel::<(f32, String)>();
             let load_config = config.clone();
-            
+
             // Result container for the background thread
             let organ_result_arc = Arc::new(Mutex::new(None));
             let organ_result_clone = Arc::clone(&organ_result_arc);
@@ -436,9 +436,9 @@ fn main() -> Result<()> {
 
             // Initialize Terminal for Progress UI
             if tui_mode {
-                use ratatui::backend::CrosstermBackend;
                 use ratatui::Terminal;
-                
+                use ratatui::backend::CrosstermBackend;
+
                 crossterm::terminal::enable_raw_mode()?;
                 let mut stdout = std::io::stdout();
                 crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)?;
@@ -450,7 +450,10 @@ fn main() -> Result<()> {
 
                 // Cleanup Terminal immediately so we can print or transition
                 crossterm::terminal::disable_raw_mode()?;
-                crossterm::execute!(terminal.backend_mut(), crossterm::terminal::LeaveAlternateScreen)?;
+                crossterm::execute!(
+                    terminal.backend_mut(),
+                    crossterm::terminal::LeaveAlternateScreen
+                )?;
             }
 
             // Retrieve the result
