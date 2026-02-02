@@ -2,6 +2,7 @@ use ratatui::{
     Frame, Terminal,
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
+    prelude::*,
     style::{Color, Style},
     text::Span,
     widgets::{Block, BorderType, Borders, Gauge, Paragraph},
@@ -12,6 +13,8 @@ use std::{
     sync::mpsc::{Receiver, TryRecvError},
     time::Duration,
 };
+
+use crate::app::{LOGO, PIPES};
 
 pub fn run_progress_ui<B: Backend>(
     terminal: &mut Terminal<B>,
@@ -54,23 +57,72 @@ pub fn run_progress_ui<B: Backend>(
 }
 
 fn render_ui(f: &mut Frame, progress: f32, status: &str) {
-    let chunks = Layout::default()
+    let area = f.area();
+
+    // Calculate Header Height
+    let pipes_lines = PIPES.lines().count();
+    let logo_lines_count = LOGO.lines().count();
+    let header_height = (pipes_lines + logo_lines_count) as u16;
+
+    // Create Main Layout (Header vs Rest)
+    let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(30),
-            Constraint::Length(10),
-            Constraint::Min(0),
+            Constraint::Length(header_height), // Logo Header
+            Constraint::Min(0),                // Remaining space for Progress Bar
         ])
-        .split(f.area());
+        .split(area);
 
-    let area = Layout::default()
+    // Render Header
+    let orange_style = Style::default().fg(Color::Rgb(255, 165, 0));
+    let gray_style = Style::default().fg(Color::Gray);
+    let white_style = Style::default().fg(Color::White);
+
+    let mut logo_lines_vec: Vec<Line> = PIPES
+        .lines()
+        .map(|line| Line::from(Span::styled(line, gray_style)))
+        .collect();
+
+    for line in LOGO.lines() {
+        logo_lines_vec.push(Line::from(Span::styled(line, orange_style)));
+    }
+
+    logo_lines_vec.push(Line::from(Span::styled(
+        t!("config.subtitle"),
+        orange_style,
+    )));
+    logo_lines_vec.push(Line::from(""));
+
+    logo_lines_vec.push(Line::from(Span::styled(
+        t!("tui_config.header_title"),
+        white_style.add_modifier(Modifier::BOLD),
+    )));
+
+    let header_widget = Paragraph::new(logo_lines_vec)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::NONE));
+
+    f.render_widget(header_widget, main_layout[0]);
+
+    // Render Progress Box (Centered in remaining space)
+    let center_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Fill(1),    // Spacer top
+            Constraint::Length(10), // Progress box height
+            Constraint::Fill(1),    // Spacer bottom
+        ])
+        .split(main_layout[1]);
+
+    // Center horizontally
+    let box_area = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Percentage(15),
             Constraint::Percentage(70),
             Constraint::Percentage(15),
         ])
-        .split(chunks[1])[1];
+        .split(center_layout[1])[1];
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -78,8 +130,8 @@ fn render_ui(f: &mut Frame, progress: f32, status: &str) {
         .title(t!("loading.window_title"))
         .title_alignment(Alignment::Center);
 
-    let inner = block.inner(area);
-    f.render_widget(block, area);
+    let inner = block.inner(box_area);
+    f.render_widget(block, box_area);
 
     let content = Layout::default()
         .margin(1)

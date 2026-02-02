@@ -47,7 +47,7 @@ pub fn load_grandorgue_dir(
         logical_path.parent().unwrap().to_path_buf()
     };
 
-    println!(
+    log::info!(
         "Loading GrandOrgue organ from directory: {:?}",
         logical_path
     );

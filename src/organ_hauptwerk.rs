@@ -192,7 +192,7 @@ pub fn load_hauptwerk(
     target_sample_rate: u32,
     progress_tx: &Option<mpsc::Sender<(f32, String)>>,
 ) -> Result<Organ> {
-    println!("Loading Hauptwerk organ from: {:?}", path);
+    log::info!("Loading Hauptwerk organ from: {:?}", path);
     let organ_root_path = detect_hauptwerk_organ_root(path)?;
 
     let file = File::open(&path).with_context(|| format!("Failed to open {:?}", path))?;

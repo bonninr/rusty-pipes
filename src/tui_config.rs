@@ -9,7 +9,7 @@ use rust_i18n::t;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::app::{LOGO, PIPES};
+use crate::app::LOGO;
 use crate::audio::get_supported_sample_rates;
 use crate::config::{AppSettings, ConfigState, RuntimeConfig};
 use crate::tui::{cleanup_terminal, setup_terminal};
@@ -678,11 +678,9 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
         }
     }
 
-    // --- Calculate new header height ---
-    let pipes_lines = PIPES.lines().count(); // 7
-    let logo_lines_count = LOGO.lines().count(); // 5
-    // 7(pipes) + 5(logo) + 1(indicia) + 1(blank) + 1(title) + 2(borders) = 17
-    let header_height = (pipes_lines + logo_lines_count + 5) as u16;
+    // --- Calculate header height ---
+    let logo_lines_count = LOGO.lines().count();
+    let header_height = (logo_lines_count + 5) as u16;
 
     // --- Main Layout ---
     let main_layout = Layout::default()
@@ -696,13 +694,9 @@ fn draw_config_ui(frame: &mut Frame, state: &mut TuiConfigState) {
 
     // --- Build the logo header ---
     let orange_style = Style::default().fg(Color::Rgb(255, 165, 0));
-    let gray_style = Style::default().fg(Color::Gray);
     let white_style = Style::default().fg(Color::White);
 
-    let mut logo_lines_vec: Vec<Line> = PIPES
-        .lines()
-        .map(|line| Line::from(Span::styled(line, gray_style)))
-        .collect();
+    let mut logo_lines_vec: Vec<Line> = Vec::new();
     for line in LOGO.lines() {
         logo_lines_vec.push(Line::from(Span::styled(line, orange_style)));
     }
