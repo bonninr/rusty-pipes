@@ -870,7 +870,7 @@ where
                 .to_string();
             let mut name = get_prop("Name", "name", "");
 
-            if name.contains("noise") || name.is_empty() {
+            if name.is_empty() || name.to_lowercase().contains("noise") {
                 continue;
             }
 
