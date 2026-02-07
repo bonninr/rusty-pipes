@@ -1,4 +1,5 @@
 use anyhow::{Result, anyhow};
+use flate2::read::GzDecoder;
 use ini::inistr;
 use rust_i18n::t;
 use std::collections::{HashMap, HashSet};
@@ -31,56 +32,164 @@ fn get_organ_name(path: &Path) -> String {
 }
 
 /// Helper to resolve definition content from bytes.
-/// If the bytes represent a ZIP file (magic bytes PK..), it opens the zip
-/// and finds the definition file inside (heuristic: .organ extension or largest file).
-/// Otherwise, it decodes the bytes directly.
+/// It attempts to detect if the content is GZIP or ZIP.
+/// If valid compression is found, it decompresses and recurses.
+/// If not, it checks for binary garbage before decoding as text.
 fn resolve_definition_content(data: Vec<u8>) -> Result<String> {
-    // Check for ZIP Local File Header signature (0x04034b50 -> PK\x03\x04)
-    if data.len() > 4 && data[0] == 0x50 && data[1] == 0x4B && data[2] == 0x03 && data[3] == 0x04 {
-        log::info!("Detected compressed organ definition file. Unzipping in memory...");
-        let cursor = Cursor::new(data);
-        let mut archive = zip::ZipArchive::new(cursor)?;
+    // GZIP Detection (Magic: 1F 8B)
+    // Many legacy .organ files inside .orgue archives are actually Gzipped text files.
+    if data.len() > 2 && data[0] == 0x1F && data[1] == 0x8B {
+        log::info!("Detected GZIP compressed definition (Magic: 1F 8B). Decompressing...");
+        let mut decoder = GzDecoder::new(&data[..]);
+        let mut decompressed = Vec::new();
+        // Decode to bytes first
+        decoder.read_to_end(&mut decompressed)?;
 
-        let mut candidate_index = None;
-        let mut max_size = 0;
-
-        // Scan for the best candidate file
-        for i in 0..archive.len() {
-            let file = archive.by_index(i)?;
-            if file.is_dir() {
-                continue;
-            }
-
-            let name = file.name().to_lowercase();
-            // Ignore OS metadata
-            if name.contains("__macosx") || name.starts_with('.') {
-                continue;
-            }
-
-            // Ends with .organ
-            if name.ends_with(".organ") {
-                candidate_index = Some(i);
-                break; // Found it explicitly
-            }
-
-            // Fallback to largest file (often the definition has no extension inside the zip)
-            if file.size() > max_size {
-                max_size = file.size();
-                candidate_index = Some(i);
-            }
-        }
-
-        let idx = candidate_index
-            .ok_or_else(|| anyhow!("Empty or invalid compressed definition file"))?;
-        let mut file = archive.by_index(idx)?;
-        let mut inner_buffer = Vec::new();
-        file.read_to_end(&mut inner_buffer)?;
-
-        log::info!("Extracted inner definition file: {}", file.name());
-        return Ok(Organ::bytes_to_string_tolerant(inner_buffer));
+        // RECURSION: The result might be a ZIP, or just plain text.
+        // We recurse to let the standard logic decide.
+        return resolve_definition_content(decompressed);
     }
 
-    // Not a zip, just decode text
+    // ZIP Detection
+    // We scan the first 2KB for the Local File Header signature (PK\x03\x04)
+    let scan_limit = std::cmp::min(data.len(), 2048);
+    let zip_signature = [0x50, 0x4B, 0x03, 0x04];
+
+    let zip_offset = data[0..scan_limit]
+        .windows(zip_signature.len())
+        .position(|window| window == zip_signature);
+
+    if let Some(offset) = zip_offset {
+        log::info!(
+            "Detected compressed organ definition (Zip) at offset {}. Unzipping...",
+            offset
+        );
+
+        let mut cursor = Cursor::new(&data);
+        cursor.set_position(offset as u64);
+
+        // Try to open as Zip Archive
+        match zip::ZipArchive::new(cursor) {
+            Ok(mut archive) => {
+                let mut candidate_index = None;
+                let mut best_score = -1;
+                let mut max_size = 0;
+
+                // Priority Logic to find the actual definition file inside
+                for i in 0..archive.len() {
+                    let file = match archive.by_index(i) {
+                        Ok(f) => f,
+                        Err(_) => continue,
+                    };
+
+                    if file.is_dir() {
+                        continue;
+                    }
+
+                    let name = file.name();
+                    let name_lower = name.replace('\\', "/").to_lowercase();
+
+                    if name_lower.contains("__macosx")
+                        || name_lower.starts_with('.')
+                        || name_lower.contains("/.")
+                    {
+                        continue;
+                    }
+
+                    let path = Path::new(name);
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+
+                    let score = if ext == "organ" {
+                        3 // Explicit match
+                    } else if ext.is_empty() {
+                        2 // Legacy files often have no extension
+                    } else if ext == "txt" || ext == "ini" {
+                        1 // Text fallback
+                    } else if matches!(
+                        ext.as_str(),
+                        "bmp"
+                            | "png"
+                            | "jpg"
+                            | "jpeg"
+                            | "gif"
+                            | "wav"
+                            | "mp3"
+                            | "flac"
+                            | "cache"
+                            | "exe"
+                            | "dll"
+                            | "rar"
+                            | "zip"
+                            | "7z"
+                    ) {
+                        -1 // Explicitly ignore media/binary
+                    } else {
+                        0
+                    };
+
+                    if score == -1 {
+                        continue;
+                    }
+
+                    if score > best_score {
+                        best_score = score;
+                        candidate_index = Some(i);
+                        max_size = file.size();
+                    } else if score == best_score {
+                        if file.size() > max_size {
+                            max_size = file.size();
+                            candidate_index = Some(i);
+                        }
+                    }
+                }
+
+                if let Some(idx) = candidate_index {
+                    let mut file = archive.by_index(idx)?;
+                    log::info!(
+                        "Extracted inner definition file: {} (Size: {})",
+                        file.name(),
+                        file.size()
+                    );
+
+                    let mut inner_buffer = Vec::new();
+                    file.read_to_end(&mut inner_buffer)?;
+
+                    // The extracted file might itself be a Gzip or Zip.
+                    return resolve_definition_content(inner_buffer);
+                } else {
+                    log::warn!(
+                        "Zip archive opened, but no valid definition file candidate found inside."
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Found Zip signature but failed to read archive structure: {}",
+                    e
+                );
+                // Fallthrough to text/binary check
+            }
+        }
+    }
+
+    // Binary Safety Check
+    // If we failed to decompress, check if the data is binary before passing to INI parser.
+    // Null bytes are a strong indicator of binary data (GrandOrgue ODFs are text).
+    let check_len = std::cmp::min(data.len(), 8192);
+    if data[0..check_len].contains(&0) {
+        let snippet = &data[0..std::cmp::min(data.len(), 16)];
+        return Err(anyhow!(
+            "Definition file content appears to be binary/compressed (Start bytes: {:02X?}) but could not be unzipped. \
+            It may be a format not supported by the internal decompressor (e.g. Rar, 7z) or encrypted.",
+            snippet
+        ));
+    }
+
+    // 4. Decode as Text
     Ok(Organ::bytes_to_string_tolerant(data))
 }
 
