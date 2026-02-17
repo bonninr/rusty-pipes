@@ -23,20 +23,22 @@ jobs:
 
       - name: Install cross-compilation tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            libasound2-dev:arm64 libpulse-dev:arm64 \
-            libx11-dev:arm64 libxkbcommon-dev:arm64 libwayland-dev:arm64 \
-            libegl-dev:arm64 libgl-dev:arm64 cmake pkg-config || true
-          # Add arm64 architecture for cross-compilation libs
+          # Add arm64 architecture and sources first
           sudo dpkg --add-architecture arm64
-          sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list.d/*.list 2>/dev/null || true
+          # Pin existing sources to amd64 only
+          sudo sed -i 's/^deb \([^[]\)/deb [arch=amd64] \1/' /etc/apt/sources.list 2>/dev/null || true
+          for f in /etc/apt/sources.list.d/*.list; do
+            [ -f "$f" ] && sudo sed -i 's/^deb \([^[]\)/deb [arch=amd64] \1/' "$f" 2>/dev/null || true
+          done
+          # Add arm64 package sources
           echo "deb [arch=arm64] http://ports.ubuntu.com/ noble main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
           echo "deb [arch=arm64] http://ports.ubuntu.com/ noble-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
-          sudo apt-get update || true
+          sudo apt-get update
+          # Install cross-compiler and arm64 dev libraries
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake pkg-config
           sudo apt-get install -y libasound2-dev:arm64 libpulse-dev:arm64 \
             libjack-jackd2-dev:arm64 libx11-dev:arm64 libxkbcommon-dev:arm64 \
-            libwayland-dev:arm64 libegl-dev:arm64 libgl-dev:arm64 || true
+            libwayland-dev:arm64 libegl-dev:arm64 libgl-dev:arm64
 
       - name: Cargo cache
         uses: actions/cache@v4
