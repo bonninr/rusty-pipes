@@ -21,30 +21,6 @@ jobs:
         with:
           targets: aarch64-unknown-linux-gnu
 
-      - name: Install cross-compilation tools
-        run: |
-          # Add arm64 architecture
-          sudo dpkg --add-architecture arm64
-          # Pin ALL existing sources to amd64 only (sources.list and .d/*.list and .d/*.sources)
-          sudo sed -i 's/^deb http/deb [arch=amd64] http/' /etc/apt/sources.list 2>/dev/null || true
-          sudo sed -i 's/^deb-src http/deb-src [arch=amd64] http/' /etc/apt/sources.list 2>/dev/null || true
-          for f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
-            [ -f "$f" ] && sudo sed -i '/^Types:/a Architectures: amd64' "$f" 2>/dev/null || true
-            [ -f "$f" ] && sudo sed -i 's/^deb http/deb [arch=amd64] http/' "$f" 2>/dev/null || true
-          done
-          # Add arm64 sources (only ports.ubuntu.com has arm64)
-          cat <<'SOURCES' | sudo tee /etc/apt/sources.list.d/arm64-ports.list
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ noble main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ noble-updates main restricted universe multiverse
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ noble-security main restricted universe multiverse
-          SOURCES
-          sudo apt-get update
-          # Install cross-compiler (amd64) and arm64 dev libraries
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake pkg-config
-          sudo apt-get install -y libasound2-dev:arm64 libpulse-dev:arm64 \
-            libjack-jackd2-dev:arm64 libx11-dev:arm64 libxkbcommon-dev:arm64 \
-            libwayland-dev:arm64 libegl-dev:arm64 libgl-dev:arm64
-
       - name: Cargo cache
         uses: actions/cache@v4
         with:
@@ -53,15 +29,13 @@ jobs:
             ./target
           key: arm64-deb-cargo-${{ hashFiles('Cargo.lock') }}
 
-      - name: Install cargo-deb
-        run: cargo install cargo-deb
+      - name: Install cross and cargo-deb
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+          cargo install cargo-deb
 
-      - name: Build arm64 binary
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
-          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
-        run: cargo build --release --target aarch64-unknown-linux-gnu
+      - name: Build arm64 binary with cross
+        run: cross build --release --target aarch64-unknown-linux-gnu
 
       - name: Build deb package
         run: cargo deb --no-build --target aarch64-unknown-linux-gnu
