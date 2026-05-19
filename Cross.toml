@@ -1,0 +1,5 @@
+[target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "dpkg --add-architecture arm64",
+    "apt-get update && apt-get install -y libasound2-dev:arm64 libjack-jackd2-dev:arm64 libpulse-dev:arm64 libx11-dev:arm64 libxkbcommon-dev:arm64 libwayland-dev:arm64 libegl-dev:arm64 libgl-dev:arm64 cmake"
+]
